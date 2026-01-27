@@ -1,0 +1,185 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Novo oficio - Etapa 2{% endblock %}
+
+{% block breadcrumb %}
+  Oficios <span class="breadcrumb-sep">/</span> Transporte
+{% endblock %}
+
+{% block content %}
+  <nav class="stepper" aria-label="Etapas" data-stepper-form="oficioStep2Form">
+    <button class="stepper-step is-done" type="button" data-step="1">
+      <span class="stepper-index">1</span>
+      Dados
+    </button>
+    <button class="stepper-step is-active" type="button" data-step="2" disabled>
+      <span class="stepper-index">2</span>
+      Transporte
+    </button>
+    <button class="stepper-step" type="button" data-step="3">
+      <span class="stepper-index">3</span>
+      Roteiro
+    </button>
+  </nav>
+
+  <h2 class="page-title">Etapa 2 - Transporte</h2>
+  <p class="page-subtitle">Informe veiculo e motorista. O motorista pode ser um viajante.</p>
+
+  <div class="page-grid page-grid--preview">
+    <div class="card">
+      <form method="post" id="oficioStep2Form">
+        {% csrf_token %}
+        {% if erro %}
+          <div class="error">{{ erro }}</div>
+        {% endif %}
+
+        <section class="grid">
+          <label>
+            Placa
+            <div class="field-row">
+              <input type="text" name="placa" id="plateInput" value="{{ placa }}" required data-preview-target="placa" autocomplete="off" />
+              <button
+                class="icon-btn"
+                type="button"
+                aria-label="Cadastrar veiculo"
+                data-modal-url="{% url 'modal_veiculo_form' %}"
+                data-modal-kind="veiculo"
+                data-target-plate="plateInput"
+                data-target-model="modelInput"
+                data-target-fuel="fuelInput"
+              >
+                +
+              </button>
+            </div>
+            <span class="field-help">Ao sair do campo, tentamos buscar o veiculo cadastrado.</span>
+          </label>
+          <label>
+            Modelo
+            <input type="text" name="modelo" id="modelInput" value="{{ modelo }}" required data-preview-target="modelo" />
+            <span class="field-help">Modelo oficial do veiculo.</span>
+          </label>
+          <label>
+            Combustivel
+            <input type="text" name="combustivel" id="fuelInput" value="{{ combustivel }}" required data-preview-target="combustivel" />
+            <span class="field-help">Ex.: Gasolina, Diesel, Flex.</span>
+          </label>
+        </section>
+
+        <section class="grid">
+          <label class="full">
+            Motorista (viajantes)
+            <div class="field-row">
+              <select
+                name="motorista_id"
+                id="motoristaSelect"
+                data-preview-target="motorista_id"
+                data-autocomplete-url="/api/motoristas/"
+                data-autocomplete-type="servidor"
+              >
+                <option value="">Selecione</option>
+                {% for viajante in viajantes %}
+                  <option value="{{ viajante.id }}" data-nome="{{ viajante.nome }}" data-cpf="{{ viajante.cpf }}" data-rg="{{ viajante.rg }}" data-cargo="{{ viajante.cargo }}" {% if motorista_id|stringformat:"s" == viajante.id|stringformat:"s" %}selected{% endif %}>{{ viajante.nome }}</option>
+                {% endfor %}
+              </select>
+              <button
+                class="icon-btn"
+                type="button"
+                aria-label="Cadastrar motorista"
+                data-modal-url="{% url 'modal_viajante_form' %}"
+                data-modal-kind="viajante"
+                data-target-select="#motoristaSelect"
+              >
+                +
+              </button>
+            </div>
+            <span class="field-help">Selecione um viajante ou cadastre rapidamente pelo botao +.</span>
+          </label>
+          <label class="full">
+            Motorista (nome manual)
+            <input type="text" name="motorista_nome" id="motoristaNome" value="{{ motorista_nome }}" placeholder="Digite caso nao esteja na lista" data-preview-target="motorista_nome" />
+            <span class="field-help">Use este campo somente quando o motorista nao estiver cadastrado.</span>
+          </label>
+        </section>
+
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'formulario' %}">Voltar</a>
+          <button class="btn-primary" type="submit">Avancar</button>
+        </div>
+      </form>
+    </div>
+
+    <aside class="preview-card" aria-live="polite">
+      <h3>Relatorio rapido</h3>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Oficio</span>
+          <span class="preview-value" data-preview-field="oficio">{{ oficio|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Protocolo</span>
+          <span class="preview-value" data-preview-field="protocolo">{{ protocolo|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Data</span>
+          <span class="preview-value" data-preview-field="data_oficio">{{ data_oficio|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Assunto</span>
+          <span class="preview-value" data-preview-field="assunto">{{ assunto|default:"-" }}</span>
+        </div>
+      </div>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Placa</span>
+          <span class="preview-value" data-preview-field="placa">{{ placa|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Modelo</span>
+          <span class="preview-value" data-preview-field="modelo">{{ modelo|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Combustivel</span>
+          <span class="preview-value" data-preview-field="combustivel">{{ combustivel|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista</span>
+          <span class="preview-value" data-preview-field="motorista_nome">{{ motorista_preview.nome|default:motorista_nome|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista CPF</span>
+          <span class="preview-value" data-preview-field="motorista_cpf">{{ motorista_preview.cpf|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista RG</span>
+          <span class="preview-value" data-preview-field="motorista_rg">{{ motorista_preview.rg|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista cargo</span>
+          <span class="preview-value" data-preview-field="motorista_cargo">{{ motorista_preview.cargo|default:"-" }}</span>
+        </div>
+      </div>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Servidores</span>
+          <span class="preview-value">{{ preview_viajantes|length }}</span>
+        </div>
+        {% if preview_viajantes %}
+          {% for servidor in preview_viajantes %}
+            <div class="preview-line">
+              <span class="preview-label">{{ servidor.nome }}</span>
+              <span class="preview-value">{{ servidor.cargo|default:"-" }}</span>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty">Nenhum servidor selecionado.</div>
+        {% endif %}
+      </div>
+    </aside>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/form.js' %}"></script>
+  <script src="{% static 'viagens/oficio_wizard.js' %}"></script>
+{% endblock %}

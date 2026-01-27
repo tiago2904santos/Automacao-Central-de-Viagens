@@ -1,0 +1,45 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Cadastrar veiculo{% endblock %}
+
+{% block breadcrumb %}
+  Veiculos <span class="breadcrumb-sep">/</span> Cadastro
+{% endblock %}
+
+{% block content %}
+  <h2 class="page-title">Cadastrar veiculo</h2>
+  <p class="page-subtitle">Informe placa, modelo e combustivel.</p>
+
+  <div class="page-grid">
+    <div class="card">
+      <form method="post">
+        {% csrf_token %}
+        {% if erro %}
+          <div class="error">{{ erro }}</div>
+        {% endif %}
+        <section class="grid">
+          <label>
+            Placa
+            <input type="text" name="placa" required />
+          </label>
+          <label>
+            Modelo
+            <input type="text" name="modelo" required />
+          </label>
+          <label>
+            Combustivel
+            <input type="text" name="combustivel" required />
+          </label>
+        </section>
+        <button class="btn-primary" type="submit">Salvar veiculo</button>
+      </form>
+    </div>
+
+    <div class="illustration-card">
+      <div class="icon">CV</div>
+      <h3>Cadastro de veiculos</h3>
+      <p>Padronize as informacoes para agilizar a criacao de oficios.</p>
+      <p class="muted">A placa e usada para buscar automaticamente os dados.</p>
+    </div>
+  </div>
+{% endblock %}

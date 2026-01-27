@@ -1,0 +1,96 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Lista de oficios{% endblock %}
+
+{% block breadcrumb %}
+  Oficios <span class="breadcrumb-sep">/</span> Lista
+{% endblock %}
+
+{% block content %}
+  <div id="pageTop"></div>
+  <h2 class="page-title">Oficios salvos</h2>
+  <p class="page-subtitle">Historico de documentos gerados.</p>
+
+  <div class="list-card">
+    <div class="filter-bar">
+      <form method="get" class="filter-form">
+        <div class="filter-left">
+          <div class="filter-group">
+            <label>Buscar</label>
+            <input type="text" name="q" value="{{ q }}" placeholder="Numero, protocolo, destino ou viajante" />
+          </div>
+          <div class="filter-group">
+            <label>Filtros</label>
+            <div class="inline-checks">
+              <label>
+                <input type="checkbox" name="com_veiculo" value="1" {% if com_veiculo %}checked{% endif %} />
+                Somente com veiculo
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn-primary">Filtrar</button>
+          <a href="{% url 'oficios_lista' %}" class="btn-clear">Limpar</a>
+        </div>
+      </form>
+    </div>
+
+    {% if oficios %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Oficio</th>
+            <th>Protocolo</th>
+            <th>Data</th>
+            <th>Destino</th>
+            <th>Viajantes</th>
+            <th>Veiculo</th>
+            <th>Criado em</th>
+            <th>Documento</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for oficio in oficios %}
+            <tr>
+              <td>{{ oficio.oficio }}</td>
+              <td>{{ oficio.protocolo }}</td>
+              <td>{{ oficio.data }}</td>
+              <td>
+                {% if oficio.cidade_destino %}
+                  {{ oficio.cidade_destino.nome }}/{{ oficio.cidade_destino.estado.sigla }}
+                {% else %}
+                  {{ oficio.destino }}
+                {% endif %}
+              </td>
+              <td>
+                {% for viajante in oficio.viajantes.all %}
+                  <span class="badge">{{ viajante.nome }}</span>
+                {% empty %}
+                  -
+                {% endfor %}
+              </td>
+              <td>
+                {% if oficio.veiculo %}
+                  {{ oficio.veiculo.placa }} - {{ oficio.veiculo.modelo }}
+                {% else %}
+                  {{ oficio.placa|default:"-" }}
+                {% endif %}
+              </td>
+              <td>{{ oficio.created_at|date:"d/m/Y H:i" }}</td>
+              <td>
+                <a href="{% url 'documento_oficio' oficio.id %}" class="btn-link">Documento</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty">Nenhum oficio salvo.</div>
+    {% endif %}
+  </div>
+
+  <div class="fab-stack" aria-label="Atalhos">
+    <a class="fab" href="{% url 'formulario' %}">+ Novo oficio</a>
+  </div>
+{% endblock %}

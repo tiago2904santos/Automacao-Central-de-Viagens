@@ -1,0 +1,135 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Painel - Central de Viagens{% endblock %}
+
+{% block breadcrumb %}
+  Painel
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Painel de controle</h2>
+      <p class="page-subtitle">Visao geral de oficios, roteiros e cadastros recentes.</p>
+    </div>
+    <div class="page-actions period-filter" role="group" aria-label="Filtro de periodo">
+      <button class="btn-clear btn-small period-btn" type="button" data-period="7">7 dias</button>
+      <button class="btn-clear btn-small period-btn is-active" type="button" data-period="30">30 dias</button>
+      <button class="btn-clear btn-small period-btn" type="button" data-period="90">90 dias</button>
+    </div>
+  </div>
+
+  <div class="dashboard" data-dashboard data-period="{{ periodo }}" data-endpoint="{% url 'dashboard_data_api' %}">
+    <section class="kpi-grid" data-kpi-grid>
+      <article class="kpi-card" data-kpi="oficios">
+        <div class="kpi-head">
+          <div class="kpi-title">Oficios</div>
+          <i data-lucide="file-text" class="kpi-icon"></i>
+        </div>
+        <div class="kpi-value" data-kpi-value>{{ kpis.oficios.total }}</div>
+        <div class="kpi-meta" data-kpi-meta>
+          {{ kpis.oficios.periodo }} {{ kpis.oficios.rotulo_periodo }}
+        </div>
+        <div class="kpi-actions">
+          <a class="btn-link" href="{% url 'oficios_lista' %}">Ver oficios</a>
+          <a class="btn-clear btn-small" href="{% url 'formulario' %}">Novo oficio</a>
+        </div>
+      </article>
+
+      <article class="kpi-card" data-kpi="veiculos">
+        <div class="kpi-head">
+          <div class="kpi-title">Veiculos</div>
+          <i data-lucide="car" class="kpi-icon"></i>
+        </div>
+        <div class="kpi-value" data-kpi-value>{{ kpis.veiculos.total }}</div>
+        <div class="kpi-meta" data-kpi-meta>
+          {{ kpis.veiculos.periodo }} {{ kpis.veiculos.rotulo_periodo }}
+        </div>
+        <div class="kpi-actions">
+          <a class="btn-link" href="{% url 'veiculos_lista' %}">Ver veiculos</a>
+          <a class="btn-clear btn-small" href="{% url 'veiculo_cadastro' %}">Novo veiculo</a>
+        </div>
+      </article>
+
+      <article class="kpi-card" data-kpi="viajantes">
+        <div class="kpi-head">
+          <div class="kpi-title">Viajantes</div>
+          <i data-lucide="users" class="kpi-icon"></i>
+        </div>
+        <div class="kpi-value" data-kpi-value>{{ kpis.viajantes.total }}</div>
+        <div class="kpi-meta" data-kpi-meta>
+          {{ kpis.viajantes.periodo }} {{ kpis.viajantes.rotulo_periodo }}
+        </div>
+        <div class="kpi-actions">
+          <a class="btn-link" href="{% url 'viajantes_lista' %}">Ver viajantes</a>
+          <a class="btn-clear btn-small" href="{% url 'viajante_cadastro' %}">Novo viajante</a>
+        </div>
+      </article>
+
+      <article class="kpi-card" data-kpi="trechos">
+        <div class="kpi-head">
+          <div class="kpi-title">Trechos</div>
+          <i data-lucide="route" class="kpi-icon"></i>
+        </div>
+        <div class="kpi-value" data-kpi-value>{{ kpis.trechos.total }}</div>
+        <div class="kpi-meta" data-kpi-meta>
+          {{ kpis.trechos.periodo }} {{ kpis.trechos.rotulo_periodo }}
+        </div>
+        <div class="kpi-actions">
+          <a class="btn-link" href="{% url 'oficios_lista' %}">Ver roteiros</a>
+          <a class="btn-clear btn-small" href="{% url 'formulario' %}">Planejar</a>
+        </div>
+      </article>
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="chart-card">
+        <div class="chart-head">
+          <h3>Oficios por dia</h3>
+          <span class="chart-note" data-chart-note>ultimos {{ periodo }} dias</span>
+        </div>
+        <div class="chart" data-chart="oficios" aria-label="Grafico de oficios por dia"></div>
+      </article>
+
+      <article class="chart-card">
+        <div class="chart-head">
+          <h3>Trechos por dia</h3>
+          <span class="chart-note" data-chart-note>ultimos {{ periodo }} dias</span>
+        </div>
+        <div class="chart" data-chart="trechos" aria-label="Grafico de trechos por dia"></div>
+      </article>
+
+      <article class="recent-card">
+        <div class="chart-head">
+          <h3>Oficios recentes</h3>
+          <a class="btn-link" href="{% url 'oficios_lista' %}">Abrir lista</a>
+        </div>
+        <div class="recent-list" data-recentes>
+          {% if recentes %}
+            {% for item in recentes %}
+              <div class="recent-item">
+                <div class="recent-main">
+                  <strong>Oficio {{ item.oficio }}</strong>
+                  <span class="recent-meta">Protocolo {{ item.protocolo }}</span>
+                </div>
+                <div class="recent-side">
+                  <span class="recent-destino">{{ item.destino|default:"-" }}</span>
+                  <span class="recent-data">{{ item.created_at }}</span>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="empty">Nenhum oficio recente.</div>
+          {% endif %}
+        </div>
+      </article>
+    </section>
+  </div>
+
+  {{ initial_payload|json_script:"dashboard-initial" }}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/dashboard.js' %}"></script>
+{% endblock %}

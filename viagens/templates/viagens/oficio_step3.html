@@ -1,0 +1,204 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Novo oficio - Etapa 3{% endblock %}
+
+{% block breadcrumb %}
+  Oficios <span class="breadcrumb-sep">/</span> Roteiro
+{% endblock %}
+
+{% block content %}
+  <nav class="stepper" aria-label="Etapas">
+    <a class="stepper-step is-done" href="{% url 'formulario' %}" data-step="1" data-step-mode="link">
+      <span class="stepper-index">1</span>
+      Dados
+    </a>
+    <a class="stepper-step is-done" href="{% url 'oficio_step2' %}" data-step="2" data-step-mode="link">
+      <span class="stepper-index">2</span>
+      Transporte
+    </a>
+    <button class="stepper-step is-active" type="button" data-step="3" disabled>
+      <span class="stepper-index">3</span>
+      Roteiro
+    </button>
+  </nav>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa 3 - Roteiro e destino</h2>
+      <p class="page-subtitle">Defina sede, destinos e datas/horas por trecho.</p>
+    </div>
+    <div class="page-actions">
+      <button class="btn-clear btn-small" type="button" id="addTrechoBtn">Adicionar trecho</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="post" id="roteiroForm" data-formset-prefix="trechos">
+      {% csrf_token %}
+      {% if erro %}
+        <div class="error">{{ erro }}</div>
+      {% endif %}
+      {% if formset.non_form_errors %}
+        <div class="error">{{ formset.non_form_errors }}</div>
+      {% endif %}
+
+      {{ formset.management_form }}
+
+      <div class="trecho-list" id="trechosList" data-trechos-list>
+        {% for form in formset %}
+          <div class="trecho-card{% if forloop.first %} is-first{% endif %}" data-index="{{ forloop.counter0 }}">
+            <div class="trecho-header">
+              <div>
+                <span class="badge">Trecho {{ forloop.counter }}{% if forloop.first %} (Ida){% endif %}</span>
+                <div class="trecho-subtitle">Origem e destino do deslocamento.</div>
+              </div>
+              <button class="btn-link trecho-remove" type="button" data-action="remove" {% if forloop.first %}disabled aria-disabled="true"{% endif %}>
+                Remover
+              </button>
+            </div>
+
+            {% if form.non_field_errors %}
+              <div class="field-errors">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            {{ form.id }}
+
+            <div class="trecho-body">
+              <div class="sub-card">
+                <div class="sub-card-title">Origem{% if forloop.first %} (Sede){% endif %}</div>
+                <div class="grid">
+                  <label>
+                    UF
+                    {{ form.origem_estado }}
+                    {{ form.origem_estado.errors }}
+                    <span class="field-help" data-first-only>Selecione o estado-sede do roteiro.</span>
+                  </label>
+                  <label>
+                    Cidade
+                    {{ form.origem_cidade }}
+                    {{ form.origem_cidade.errors }}
+                    <span class="field-help" data-first-only>Defina a cidade sede.</span>
+                  </label>
+                  <label>
+                    Saida (data)
+                    {{ form.saida_data }}
+                    {{ form.saida_data.errors }}
+                  </label>
+                  <label>
+                    Saida (hora)
+                    {{ form.saida_hora }}
+                    {{ form.saida_hora.errors }}
+                  </label>
+                </div>
+              </div>
+
+              <div class="sub-card">
+                <div class="sub-card-title">Destino</div>
+                <div class="grid">
+                  <label>
+                    UF
+                    {{ form.destino_estado }}
+                    {{ form.destino_estado.errors }}
+                  </label>
+                  <label>
+                    Cidade
+                    {{ form.destino_cidade }}
+                    {{ form.destino_cidade.errors }}
+                  </label>
+                  <label>
+                    Chegada (data)
+                    {{ form.chegada_data }}
+                    {{ form.chegada_data.errors }}
+                  </label>
+                  <label>
+                    Chegada (hora)
+                    {{ form.chegada_hora }}
+                    {{ form.chegada_hora.errors }}
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <template id="trechoTemplate">
+        <div class="trecho-card" data-index="__prefix__">
+          <div class="trecho-header">
+            <div>
+              <span class="badge">Trecho</span>
+              <div class="trecho-subtitle">Origem e destino do deslocamento.</div>
+            </div>
+            <button class="btn-link trecho-remove" type="button" data-action="remove">Remover</button>
+          </div>
+
+          {{ formset.empty_form.id }}
+
+          <div class="trecho-body">
+            <div class="sub-card">
+              <div class="sub-card-title">Origem</div>
+              <div class="grid">
+                <label>
+                  UF
+                  {{ formset.empty_form.origem_estado }}
+                </label>
+                <label>
+                  Cidade
+                  {{ formset.empty_form.origem_cidade }}
+                </label>
+                <label>
+                  Saida (data)
+                  {{ formset.empty_form.saida_data }}
+                </label>
+                <label>
+                  Saida (hora)
+                  {{ formset.empty_form.saida_hora }}
+                </label>
+              </div>
+            </div>
+
+            <div class="sub-card">
+              <div class="sub-card-title">Destino</div>
+              <div class="grid">
+                <label>
+                  UF
+                  {{ formset.empty_form.destino_estado }}
+                </label>
+                <label>
+                  Cidade
+                  {{ formset.empty_form.destino_cidade }}
+                </label>
+                <label>
+                  Chegada (data)
+                  {{ formset.empty_form.chegada_data }}
+                </label>
+                <label>
+                  Chegada (hora)
+                  {{ formset.empty_form.chegada_hora }}
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <section class="grid">
+        <label class="full">
+          Motivo da viagem
+          <textarea name="motivo" rows="3" placeholder="Descreva o motivo">{{ motivo }}</textarea>
+          <span class="field-help">Informe o objetivo institucional da viagem.</span>
+        </label>
+      </section>
+
+      <div class="wizard-actions">
+        <a class="btn-clear" href="{% url 'oficio_step2' %}">Voltar</a>
+        <button class="btn-primary" type="submit">Finalizar</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/oficio_wizard.js' %}"></script>
+{% endblock %}

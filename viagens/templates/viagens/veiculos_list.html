@@ -1,0 +1,66 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Lista de veiculos{% endblock %}
+
+{% block breadcrumb %}
+  Veiculos <span class="breadcrumb-sep">/</span> Lista
+{% endblock %}
+
+{% block content %}
+  <div id="pageTop"></div>
+  <h2 class="page-title">Lista de veiculos</h2>
+  <p class="page-subtitle">Registros cadastrados para uso nos oficios.</p>
+
+  <div class="list-card">
+    <div class="filter-bar">
+      <form method="get" class="filter-form">
+        <div class="filter-left">
+          <div class="filter-group">
+            <label>Buscar</label>
+            <input type="text" name="q" value="{{ q }}" placeholder="Placa ou modelo" />
+          </div>
+          <div class="filter-group">
+            <label>Combustivel</label>
+            <select name="combustivel">
+              <option value="">Todos</option>
+              {% for item in combustivel_choices %}
+                <option value="{{ item }}" {% if combustivel_selecionado == item %}selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn-primary">Filtrar</button>
+          <a href="{% url 'veiculos_lista' %}" class="btn-clear">Limpar</a>
+        </div>
+      </form>
+    </div>
+
+    {% if veiculos %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Placa</th>
+            <th>Modelo</th>
+            <th>Combustivel</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for veiculo in veiculos %}
+            <tr>
+              <td>{{ veiculo.placa }}</td>
+              <td>{{ veiculo.modelo }}</td>
+              <td>{{ veiculo.combustivel }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty">Nenhum veiculo cadastrado.</div>
+    {% endif %}
+  </div>
+
+  <div class="fab-stack" aria-label="Atalhos">
+    <a class="fab" href="{% url 'veiculo_cadastro' %}">+ Novo veiculo</a>
+  </div>
+{% endblock %}

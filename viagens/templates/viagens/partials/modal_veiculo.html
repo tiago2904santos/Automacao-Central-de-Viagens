@@ -1,0 +1,37 @@
+<div class="modal-backdrop" data-modal role="dialog" aria-modal="true" aria-labelledby="modalVeiculoTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="modalVeiculoTitle">Cadastrar veiculo</h3>
+      <button class="modal-close" type="button" data-modal-close aria-label="Fechar">&times;</button>
+    </div>
+
+    <form method="post" action="{% url 'modal_veiculo_form' %}" class="modal-form">
+      {% csrf_token %}
+      <div class="grid">
+        <label>
+          Placa
+          <input type="text" name="placa" value="{{ values.placa|default_if_none:'' }}" required />
+          {% if erros.placa %}<span class="field-errors">{{ erros.placa }}</span>{% endif %}
+        </label>
+        <label>
+          Modelo
+          <input type="text" name="modelo" value="{{ values.modelo|default_if_none:'' }}" required />
+          {% if erros.modelo %}<span class="field-errors">{{ erros.modelo }}</span>{% endif %}
+        </label>
+        <label>
+          Combustivel
+          <input type="text" name="combustivel" value="{{ values.combustivel|default_if_none:'' }}" required />
+          {% if erros.combustivel %}<span class="field-errors">{{ erros.combustivel }}</span>{% endif %}
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-clear" type="button" data-modal-close>Cancelar</button>
+        <button class="btn-primary" type="submit">
+          <span class="btn-label">Salvar</span>
+          <span class="btn-loading">Salvando...</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

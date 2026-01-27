@@ -1,0 +1,167 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Central de Viagens{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'viagens/form.css' %}" />
+    <script src="https://unpkg.com/lucide@latest"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="topbar-title">Central de Viagens ASCOM</h1>
+        <div class="breadcrumb">
+          {% block breadcrumb %}Painel{% endblock %}
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span class="user">Usuario: {{ request.user }}</span>
+      </div>
+    </header>
+
+    <div class="container">
+      <aside class="sidebar">
+        <ul>
+          <li>
+            <a href="{% url 'dashboard_home' %}">
+              <i data-lucide="layout-dashboard"></i>
+              Painel
+            </a>
+          </li>
+          <li class="has-submenu">
+            <a href="#" class="submenu-toggle">
+              <i data-lucide="file-text"></i>
+              Oficios
+              <i data-lucide="chevron-down" class="chevron"></i>
+            </a>
+            <ul class="submenu">
+              <li>
+                <a href="{% url 'formulario' %}">
+                  <i data-lucide="plus-circle"></i>
+                  Criar oficio
+                </a>
+              </li>
+              <li>
+                <a href="{% url 'oficios_lista' %}">
+                  <i data-lucide="list"></i>
+                  Lista de oficios
+                </a>
+              </li>
+            </ul>
+          </li>
+
+          <li class="has-submenu">
+            <a href="#" class="submenu-toggle">
+              <i data-lucide="users"></i>
+              Viajantes
+              <i data-lucide="chevron-down" class="chevron"></i>
+            </a>
+            <ul class="submenu">
+              <li>
+                <a href="{% url 'viajante_cadastro' %}">
+                  <i data-lucide="user-plus"></i>
+                  Cadastrar viajante
+                </a>
+              </li>
+              <li>
+                <a href="{% url 'viajantes_lista' %}">
+                  <i data-lucide="list"></i>
+                  Lista de viajantes
+                </a>
+              </li>
+            </ul>
+          </li>
+
+          <li class="has-submenu">
+            <a href="#" class="submenu-toggle">
+              <i data-lucide="car"></i>
+              Veiculos
+              <i data-lucide="chevron-down" class="chevron"></i>
+            </a>
+            <ul class="submenu">
+              <li>
+                <a href="{% url 'veiculo_cadastro' %}">
+                  <i data-lucide="plus"></i>
+                  Cadastrar veiculo
+                </a>
+              </li>
+              <li>
+                <a href="{% url 'veiculos_lista' %}">
+                  <i data-lucide="list"></i>
+                  Lista de veiculos
+                </a>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </aside>
+
+      <main class="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+
+    <div id="modalRoot"></div>
+    <div id="toastRoot" class="toast-root" aria-live="polite" aria-atomic="true"></div>
+
+    <footer class="app-footer">
+      <div class="footer-content">
+        <span>Central de Viagens</span>
+        <span class="footer-divider">-</span>
+        <span>Desenvolvido por <strong>Tiago dos Santos</strong></span>
+        <span class="footer-divider">-</span>
+        <span>(c) {% now "Y" %}</span>
+      </div>
+    </footer>
+
+    <script>
+      lucide.createIcons();
+
+      document.querySelectorAll('.submenu-toggle').forEach(toggle => {
+        toggle.addEventListener('click', function (e) {
+          e.preventDefault();
+
+          const parent = this.parentElement;
+          const submenu = parent.querySelector('.submenu');
+          const isOpen = parent.classList.contains('open');
+
+          document.querySelectorAll('.has-submenu.open').forEach(item => {
+            if (item !== parent) {
+              closeSubmenu(item);
+            }
+          });
+
+          if (isOpen) {
+            closeSubmenu(parent);
+          } else {
+            openSubmenu(parent);
+          }
+        });
+      });
+
+      function openSubmenu(parent) {
+        const submenu = parent.querySelector('.submenu');
+        parent.classList.add('open');
+        submenu.style.height = submenu.scrollHeight + 'px';
+        submenu.style.opacity = '1';
+      }
+
+      function closeSubmenu(parent) {
+        const submenu = parent.querySelector('.submenu');
+        submenu.style.height = submenu.scrollHeight + 'px';
+
+        requestAnimationFrame(() => {
+          submenu.style.height = '0px';
+          submenu.style.opacity = '0';
+        });
+
+        parent.classList.remove('open');
+      }
+    </script>
+
+    <script src="{% static 'viagens/ui.js' %}"></script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

@@ -1,0 +1,53 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Cadastrar viajante{% endblock %}
+
+{% block breadcrumb %}
+  Viajantes <span class="breadcrumb-sep">/</span> Cadastro
+{% endblock %}
+
+{% block content %}
+  <h2 class="page-title">Cadastrar viajante</h2>
+  <p class="page-subtitle">Informe os dados do servidor para usar nos oficios.</p>
+
+  <div class="page-grid">
+    <div class="card">
+      <form method="post">
+        {% csrf_token %}
+        {% if erro %}
+          <div class="error">{{ erro }}</div>
+        {% endif %}
+        <section class="grid">
+          <label>
+            Nome
+            <input type="text" name="nome" required />
+          </label>
+          <label>
+            RG
+            <input type="text" name="rg" required />
+          </label>
+          <label>
+            CPF
+            <input type="text" name="cpf" required />
+          </label>
+          <label>
+            Telefone
+            <input type="text" name="telefone" />
+          </label>
+          <label>
+            Cargo
+            <input type="text" name="cargo" required />
+          </label>
+        </section>
+        <button class="btn-primary" type="submit">Salvar viajante</button>
+      </form>
+    </div>
+
+    <div class="illustration-card">
+      <div class="icon">CV</div>
+      <h3>Cadastro de viajantes</h3>
+      <p>Registre os servidores para usar nos oficios de viagem.</p>
+      <p class="muted">Todos os campos sao obrigatorios.</p>
+    </div>
+  </div>
+{% endblock %}

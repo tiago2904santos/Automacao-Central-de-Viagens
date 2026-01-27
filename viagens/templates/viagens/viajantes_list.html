@@ -1,0 +1,70 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Lista de viajantes{% endblock %}
+
+{% block breadcrumb %}
+  Viajantes <span class="breadcrumb-sep">/</span> Lista
+{% endblock %}
+
+{% block content %}
+  <div id="pageTop"></div>
+  <h2 class="page-title">Lista de viajantes</h2>
+  <p class="page-subtitle">Registros cadastrados para uso nos oficios.</p>
+
+  <div class="list-card">
+    <div class="filter-bar">
+      <form method="get" class="filter-form">
+        <div class="filter-left">
+          <div class="filter-group">
+            <label>Buscar</label>
+            <input type="text" name="q" value="{{ q }}" placeholder="Nome, RG, CPF, telefone ou cargo" />
+          </div>
+          <div class="filter-group">
+            <label>Cargo</label>
+            <select name="cargo">
+              <option value="">Todos</option>
+              {% for cargo in cargo_choices %}
+                <option value="{{ cargo }}" {% if cargo_selecionado == cargo %}selected{% endif %}>{{ cargo }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn-primary">Filtrar</button>
+          <a href="{% url 'viajantes_lista' %}" class="btn-clear">Limpar</a>
+        </div>
+      </form>
+    </div>
+
+    {% if viajantes %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>RG</th>
+            <th>CPF</th>
+            <th>Telefone</th>
+            <th>Cargo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for viajante in viajantes %}
+            <tr>
+              <td>{{ viajante.nome }}</td>
+              <td>{{ viajante.rg }}</td>
+              <td>{{ viajante.cpf }}</td>
+              <td>{{ viajante.telefone }}</td>
+              <td>{{ viajante.cargo }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty">Nenhum viajante cadastrado.</div>
+    {% endif %}
+  </div>
+
+  <div class="fab-stack" aria-label="Atalhos">
+    <a class="fab" href="{% url 'viajante_cadastro' %}">+ Novo viajante</a>
+  </div>
+{% endblock %}

@@ -1,0 +1,136 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Novo oficio - Etapa 1{% endblock %}
+
+{% block breadcrumb %}
+  Oficios <span class="breadcrumb-sep">/</span> Dados
+{% endblock %}
+
+{% block content %}
+  <nav class="stepper" aria-label="Etapas" data-stepper-form="oficioStep1Form">
+    <button class="stepper-step is-active" type="button" data-step="1" disabled>
+      <span class="stepper-index">1</span>
+      Dados
+    </button>
+    <button class="stepper-step" type="button" data-step="2">
+      <span class="stepper-index">2</span>
+      Transporte
+    </button>
+    <button class="stepper-step is-disabled" type="button" data-step="3" disabled>
+      <span class="stepper-index">3</span>
+      Roteiro
+    </button>
+  </nav>
+
+  <h2 class="page-title">Etapa 1 - Dados do oficio</h2>
+  <p class="page-subtitle">Preencha numero do oficio, protocolo e selecione os viajantes.</p>
+
+  <div class="page-grid page-grid--preview">
+    <div class="card">
+      <form method="post" id="oficioStep1Form">
+        {% csrf_token %}
+        {% if erro %}
+          <div class="error">{{ erro }}</div>
+        {% endif %}
+
+        <section class="grid">
+          <label>
+            Oficio
+            <input type="text" name="oficio" value="{{ oficio }}" required data-preview-target="oficio" />
+            <span class="field-help">Use o numero oficial do documento.</span>
+          </label>
+          <label>
+            Protocolo
+            <input type="text" name="protocolo" value="{{ protocolo }}" required data-preview-target="protocolo" />
+            <span class="field-help">Informe o protocolo interno.</span>
+          </label>
+          <label>
+            Data do oficio
+            <input type="text" name="data" value="{{ data }}" placeholder="Ex: 11/08/2025" data-preview-target="data" />
+            <span class="field-help">Formato livre, conforme padrao do setor.</span>
+          </label>
+          <label>
+            Assunto
+            <input type="text" name="assunto" value="{{ assunto }}" placeholder="Solicitacao de autorizacao" data-preview-target="assunto" />
+            <span class="field-help">Resumo institucional do pedido.</span>
+          </label>
+        </section>
+
+        <section class="grid">
+          <div class="full">
+            <div class="field-label">Buscar viajante</div>
+            <div class="field-row">
+              <input type="text" id="viajantesSearch" placeholder="Digite para filtrar" autocomplete="off" />
+              <button
+                class="icon-btn"
+                type="button"
+                aria-label="Cadastrar viajante"
+                data-modal-url="{% url 'modal_viajante_form' %}"
+                data-modal-kind="viajante"
+                data-target-list="#viajantesList"
+              >
+                +
+              </button>
+            </div>
+            <span class="field-help">Use o campo para localizar por nome, RG ou CPF.</span>
+          </div>
+          <div class="full">
+            <div class="field-label">Viajantes (selecione mais de um)</div>
+            <div class="checkbox-list" id="viajantesList" data-preview-list="viajantes">
+              {% for viajante in viajantes %}
+                <label class="checkbox-item">
+                  <input type="checkbox" name="viajantes_ids" value="{{ viajante.id }}" data-nome="{{ viajante.nome }}" data-cargo="{{ viajante.cargo }}" data-rg="{{ viajante.rg }}" data-cpf="{{ viajante.cpf }}" {% if viajante.id|stringformat:"s" in selected_ids %}checked{% endif %} />
+                  <span>{{ viajante.nome }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="full">
+            <h3>Documentos vinculados</h3>
+            <div id="viajantesPreview" class="preview"></div>
+            <span class="field-help">A pre-visualizacao ajuda a conferir os dados antes de avancar.</span>
+          </div>
+        </section>
+
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'dashboard_home' %}">Voltar</a>
+          <button class="btn-primary" type="submit">Avancar</button>
+        </div>
+      </form>
+    </div>
+
+    <aside class="preview-card" aria-live="polite">
+      <h3>Relatorio rapido</h3>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Oficio</span>
+          <span class="preview-value" data-preview-field="oficio">{{ oficio|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Protocolo</span>
+          <span class="preview-value" data-preview-field="protocolo">{{ protocolo|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Data</span>
+          <span class="preview-value" data-preview-field="data">{{ data|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Assunto</span>
+          <span class="preview-value" data-preview-field="assunto">{{ assunto|default:"-" }}</span>
+        </div>
+      </div>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Servidores</span>
+          <span class="preview-value" data-preview-field="viajantes-count">0</span>
+        </div>
+        <div data-preview-field="viajantes" class="empty">Nenhum servidor selecionado.</div>
+      </div>
+    </aside>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/form.js' %}"></script>
+{% endblock %}

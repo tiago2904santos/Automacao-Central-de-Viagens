@@ -1,0 +1,46 @@
+<div class="modal-backdrop" data-modal role="dialog" aria-modal="true" aria-labelledby="modalViajanteTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="modalViajanteTitle">Cadastrar viajante</h3>
+      <button class="modal-close" type="button" data-modal-close aria-label="Fechar">&times;</button>
+    </div>
+
+    <form method="post" action="{% url 'modal_viajante_form' %}" class="modal-form">
+      {% csrf_token %}
+      <div class="grid">
+        <label>
+          Nome
+          <input type="text" name="nome" value="{{ values.nome|default_if_none:'' }}" required />
+          {% if erros.nome %}<span class="field-errors">{{ erros.nome }}</span>{% endif %}
+        </label>
+        <label>
+          RG
+          <input type="text" name="rg" value="{{ values.rg|default_if_none:'' }}" required />
+          {% if erros.rg %}<span class="field-errors">{{ erros.rg }}</span>{% endif %}
+        </label>
+        <label>
+          CPF
+          <input type="text" name="cpf" value="{{ values.cpf|default_if_none:'' }}" required />
+          {% if erros.cpf %}<span class="field-errors">{{ erros.cpf }}</span>{% endif %}
+        </label>
+        <label>
+          Telefone
+          <input type="text" name="telefone" value="{{ values.telefone|default_if_none:'' }}" />
+        </label>
+        <label class="full">
+          Cargo
+          <input type="text" name="cargo" value="{{ values.cargo|default_if_none:'' }}" required />
+          {% if erros.cargo %}<span class="field-errors">{{ erros.cargo }}</span>{% endif %}
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-clear" type="button" data-modal-close>Cancelar</button>
+        <button class="btn-primary" type="submit">
+          <span class="btn-label">Salvar</span>
+          <span class="btn-loading">Salvando...</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
