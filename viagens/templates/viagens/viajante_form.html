@@ -36,7 +36,12 @@
           </label>
           <label>
             Cargo
-            <input type="text" name="cargo" required />
+            <select name="cargo" required>
+              <option value="">Selecione</option>
+              {% for cargo in cargo_choices %}
+                <option value="{{ cargo }}">{{ cargo }}</option>
+              {% endfor %}
+            </select>
           </label>
         </section>
         <button class="btn-primary" type="submit">Salvar viajante</button>
