@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from typing import Iterable
 
+from django.conf import settings
 from django.forms import inlineformset_factory
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -71,6 +72,82 @@ def _format_trecho_local(cidade: Cidade | None, estado: Estado | None) -> str:
     if estado:
         return estado.sigla
     return ""
+
+
+DEFAULT_CARGO_CHOICES = [
+    "Agente de Policia Judiciaria",
+    "Assessora",
+    "Delegado de Policia",
+    "Papiloscopista",
+    "Motorista",
+]
+
+DEFAULT_COMBUSTIVEL_CHOICES = [
+    "Gasolina",
+    "Diesel",
+    "Flex",
+    "Etanol",
+    "GNV",
+    "Eletrico",
+    "Hibrido",
+]
+
+
+def _get_cargo_choices() -> list[str]:
+    custom = getattr(settings, "CARGO_CHOICES", None)
+    if custom:
+        return list(custom)
+    cargos = (
+        Viajante.objects.exclude(cargo="")
+        .order_by("cargo")
+        .values_list("cargo", flat=True)
+        .distinct()
+    )
+    return list(cargos) or DEFAULT_CARGO_CHOICES
+
+
+def _get_combustivel_choices() -> list[str]:
+    custom = getattr(settings, "COMBUSTIVEL_CHOICES", None)
+    if custom:
+        return list(custom)
+    combustiveis = (
+        Veiculo.objects.exclude(combustivel="")
+        .order_by("combustivel")
+        .values_list("combustivel", flat=True)
+        .distinct()
+    )
+    return list(combustiveis) or DEFAULT_COMBUSTIVEL_CHOICES
+
+
+def _prune_trailing_trechos_post(data, prefix: str):
+    try:
+        total = int(data.get(f"{prefix}-TOTAL_FORMS", 0))
+    except (TypeError, ValueError):
+        return data
+    if total <= 1:
+        return data
+
+    mutable = data.copy()
+
+    def has_user_data(index: int) -> bool:
+        for field in (
+            "destino_estado",
+            "destino_cidade",
+            "saida_data",
+            "saida_hora",
+            "chegada_data",
+            "chegada_hora",
+        ):
+            value = mutable.get(f"{prefix}-{index}-{field}", "")
+            if str(value).strip():
+                return True
+        return False
+
+    while total > 1 and not has_user_data(total - 1):
+        total -= 1
+
+    mutable[f"{prefix}-TOTAL_FORMS"] = str(total)
+    return mutable
 
 
 def _parse_period(request) -> int:
@@ -427,7 +504,8 @@ def oficio_step3(request):
 
     if request.method == "POST":
         motivo_val = request.POST.get("motivo", "").strip()
-        formset = TrechoFormSet(request.POST, instance=Oficio(), prefix="trechos")
+        post_data = _prune_trailing_trechos_post(request.POST, "trechos")
+        formset = TrechoFormSet(post_data, instance=Oficio(), prefix="trechos")
 
         if formset.is_valid():
             forms_validas = [form for form in formset.forms if form.cleaned_data]
@@ -556,9 +634,16 @@ def viajante_cadastro(request):
         return render(
             request,
             "viagens/viajante_form.html",
-            {"erro": "Preencha nome, RG, CPF e cargo."},
+            {
+                "erro": "Preencha nome, RG, CPF e cargo.",
+                "cargo_choices": _get_cargo_choices(),
+            },
         )
-    return render(request, "viagens/viajante_form.html")
+    return render(
+        request,
+        "viagens/viajante_form.html",
+        {"cargo_choices": _get_cargo_choices()},
+    )
 
 
 @require_http_methods(["GET"])
@@ -579,12 +664,7 @@ def viajantes_lista(request):
         viajantes = viajantes.filter(cargo__iexact=cargo)
 
     viajantes = viajantes.order_by("nome")
-    cargo_choices = (
-        Viajante.objects.exclude(cargo="")
-        .order_by("cargo")
-        .values_list("cargo", flat=True)
-        .distinct()
-    )
+    cargo_choices = _get_cargo_choices()
     return render(
         request,
         "viagens/viajantes_list.html",
@@ -617,9 +697,16 @@ def veiculo_cadastro(request):
         return render(
             request,
             "viagens/veiculo_form.html",
-            {"erro": "Preencha todos os campos."},
+            {
+                "erro": "Preencha todos os campos.",
+                "combustivel_choices": _get_combustivel_choices(),
+            },
         )
-    return render(request, "viagens/veiculo_form.html")
+    return render(
+        request,
+        "viagens/veiculo_form.html",
+        {"combustivel_choices": _get_combustivel_choices()},
+    )
 
 
 @require_http_methods(["GET"])
@@ -636,12 +723,7 @@ def veiculos_lista(request):
         veiculos = veiculos.filter(combustivel__iexact=combustivel)
 
     veiculos = veiculos.order_by("placa")
-    combustivel_choices = (
-        Veiculo.objects.exclude(combustivel="")
-        .order_by("combustivel")
-        .values_list("combustivel", flat=True)
-        .distinct()
-    )
+    combustivel_choices = _get_combustivel_choices()
     return render(
         request,
         "viagens/veiculos_list.html",
@@ -890,11 +972,19 @@ def modal_viajante_form(request):
         return render(
             request,
             "viagens/partials/modal_viajante.html",
-            {"erros": erros, "values": request.POST},
+            {
+                "erros": erros,
+                "values": request.POST,
+                "cargo_choices": _get_cargo_choices(),
+            },
             status=400,
         )
 
-    return render(request, "viagens/partials/modal_viajante.html")
+    return render(
+        request,
+        "viagens/partials/modal_viajante.html",
+        {"cargo_choices": _get_cargo_choices()},
+    )
 
 
 @require_http_methods(["GET", "POST"])
@@ -938,8 +1028,16 @@ def modal_veiculo_form(request):
         return render(
             request,
             "viagens/partials/modal_veiculo.html",
-            {"erros": erros, "values": request.POST},
+            {
+                "erros": erros,
+                "values": request.POST,
+                "combustivel_choices": _get_combustivel_choices(),
+            },
             status=400,
         )
 
-    return render(request, "viagens/partials/modal_veiculo.html")
+    return render(
+        request,
+        "viagens/partials/modal_veiculo.html",
+        {"combustivel_choices": _get_combustivel_choices()},
+    )

@@ -28,7 +28,12 @@
           </label>
           <label>
             Combustivel
-            <input type="text" name="combustivel" required />
+            <select name="combustivel" required>
+              <option value="">Selecione</option>
+              {% for item in combustivel_choices %}
+                <option value="{{ item }}">{{ item }}</option>
+              {% endfor %}
+            </select>
           </label>
         </section>
         <button class="btn-primary" type="submit">Salvar veiculo</button>

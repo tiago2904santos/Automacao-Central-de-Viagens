@@ -20,7 +20,12 @@
         </label>
         <label>
           Combustivel
-          <input type="text" name="combustivel" value="{{ values.combustivel|default_if_none:'' }}" required />
+          <select name="combustivel" required>
+            <option value="">Selecione</option>
+            {% for item in combustivel_choices %}
+              <option value="{{ item }}" {% if values.combustivel == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
           {% if erros.combustivel %}<span class="field-errors">{{ erros.combustivel }}</span>{% endif %}
         </label>
       </div>
