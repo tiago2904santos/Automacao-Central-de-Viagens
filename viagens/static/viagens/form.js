@@ -2,10 +2,14 @@ const viajantesPreview = document.getElementById("viajantesPreview");
 const placaInput = document.getElementById("plateInput");
 const modeloInput = document.getElementById("modelInput");
 const combustivelInput = document.getElementById("fuelInput");
-const viajantesSearch = document.getElementById("viajantesSearch");
+const servidoresSelect = document.getElementById("servidoresSelect");
 const viajantesList = document.getElementById("viajantesList");
 const motoristaSelect = document.getElementById("motoristaSelect");
+const motoristaChipList = document.getElementById("motoristaChipList");
 const motoristaNome = document.getElementById("motoristaNome");
+const motoristaOficio = document.getElementById("motoristaOficio");
+const motoristaProtocolo = document.getElementById("motoristaProtocolo");
+const caronaFields = document.getElementById("caronaFields");
 
 function debounce(fn, wait = 260) {
   let timer = null;
@@ -16,9 +20,16 @@ function debounce(fn, wait = 260) {
 }
 
 function idsSelecionados() {
-  return Array.from(document.querySelectorAll('input[name="viajantes_ids"]:checked')).map(
-    (checkbox) => checkbox.value
-  );
+  if (servidoresSelect) {
+    return Array.from(servidoresSelect.selectedOptions)
+      .map((option) => option.value)
+      .filter(Boolean);
+  }
+  return Array.from(
+    document.querySelectorAll('input[name="viajantes_ids"], select[name="servidores"] option:checked')
+  )
+    .map((input) => input.value)
+    .filter(Boolean);
 }
 
 function getPreviewField(name) {
@@ -117,34 +128,100 @@ function filtrarViajantesLocal(termo) {
     return;
   }
   const term = termo.toLowerCase();
-  viajantesList.querySelectorAll(".checkbox-item").forEach((item) => {
+  viajantesList.querySelectorAll(".chip").forEach((item) => {
     const texto = item.textContent.toLowerCase();
     item.style.display = texto.includes(term) ? "" : "none";
   });
 }
 
-function ensureCheckbox(viajante) {
-  if (!viajantesList || !viajante) {
+function toggleChipEmptyState() {
+  if (!viajantesList) {
     return;
   }
-  const existing = viajantesList.querySelector(`input[value='${viajante.id}']`);
-  if (existing) {
-    existing.checked = true;
-    existing.dispatchEvent(new Event("change", { bubbles: true }));
-    return;
-  }
-  const label = document.createElement("label");
-  label.className = "checkbox-item";
-  label.innerHTML = `
-    <input type="checkbox" name="viajantes_ids" value="${viajante.id}" checked />
-    <span>${viajante.nome || viajante.label || "Novo viajante"}</span>
-  `;
-  viajantesList.prepend(label);
-  const input = label.querySelector("input");
-  input?.dispatchEvent(new Event("change", { bubbles: true }));
+  const hasItems = servidoresSelect
+    ? servidoresSelect.selectedOptions.length > 0
+    : Boolean(viajantesList.querySelector(".chip"));
+  viajantesList.classList.toggle("is-empty", !hasItems);
 }
 
-function attachSearchSuggestions(input, fetchFn, onSelect) {
+function addServidorChip(viajante) {
+  if (!viajante) {
+    return;
+  }
+  const id = String(viajante.id || "");
+  if (!id) {
+    return;
+  }
+  if (servidoresSelect) {
+    let option = Array.from(servidoresSelect.options).find(
+      (item) => String(item.value) === id
+    );
+    if (!option) {
+      option = document.createElement("option");
+      option.value = id;
+      option.textContent = viajante.nome || viajante.label || "Servidor";
+      servidoresSelect.appendChild(option);
+    }
+    if (option.selected) {
+      window.showToast?.("Servidor ja selecionado.", "info");
+      return;
+    }
+    option.selected = true;
+    servidoresSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+  if (!viajantesList) {
+    return;
+  }
+}
+
+function removeServidorChip(id) {
+  if (!id) {
+    return;
+  }
+  if (servidoresSelect) {
+    const option = Array.from(servidoresSelect.options).find(
+      (item) => String(item.value) === String(id)
+    );
+    if (option) {
+      option.selected = false;
+      servidoresSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    return;
+  }
+  if (!viajantesList) {
+    return;
+  }
+}
+
+function renderServidoresChips() {
+  if (!viajantesList) {
+    return;
+  }
+  viajantesList.innerHTML = "";
+  if (!servidoresSelect) {
+    toggleChipEmptyState();
+    return;
+  }
+  const options = Array.from(servidoresSelect.selectedOptions);
+  options.forEach((option) => {
+    const id = option.value;
+    const label = option.textContent?.trim() || "Servidor";
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.dataset.id = id;
+    chip.innerHTML = `
+      ${label}
+      <button type="button" class="chip-remove" data-remove-id="${id}" aria-label="Remover">
+        &times;
+      </button>
+    `;
+    viajantesList.appendChild(chip);
+  });
+  toggleChipEmptyState();
+}
+
+function attachSearchSuggestions(input, fetchFn, onSelect, options = {}) {
   if (!input) {
     return;
   }
@@ -157,6 +234,7 @@ function attachSearchSuggestions(input, fetchFn, onSelect) {
   suggestions.className = "search-suggestions";
   row.appendChild(suggestions);
 
+  const { allowEmpty = false, minChars = 1 } = options;
   let items = [];
   let activeIndex = -1;
 
@@ -169,7 +247,8 @@ function attachSearchSuggestions(input, fetchFn, onSelect) {
 
   function render() {
     if (!items.length) {
-      clear();
+      suggestions.innerHTML = '<div class="autocomplete-hint">Nenhum resultado.</div>';
+      row.classList.add("is-open");
       return;
     }
     suggestions.innerHTML = items
@@ -183,7 +262,11 @@ function attachSearchSuggestions(input, fetchFn, onSelect) {
   }
 
   async function load(term) {
-    if (!term) {
+    if (!term && !allowEmpty) {
+      clear();
+      return;
+    }
+    if (!allowEmpty && term.length < minChars) {
       clear();
       return;
     }
@@ -199,6 +282,13 @@ function attachSearchSuggestions(input, fetchFn, onSelect) {
   input.addEventListener("input", () => {
     const term = input.value.trim();
     debounced(term);
+  });
+
+  input.addEventListener("focus", () => {
+    const term = input.value.trim();
+    if (allowEmpty || term.length >= minChars) {
+      debounced(term);
+    }
   });
 
   input.addEventListener("keydown", (event) => {
@@ -251,24 +341,30 @@ function attachSearchSuggestions(input, fetchFn, onSelect) {
   });
 }
 
-async function buscarServidores(term) {
-  const url = new URL("/api/servidores/", window.location.origin);
-  url.searchParams.set("q", term);
-  const response = await fetch(url.toString(), {
-    headers: { "X-Requested-With": "XMLHttpRequest" },
-  });
-  const data = await response.json();
-  return data.results || [];
+async function fetchResults(url, fallback = []) {
+  try {
+    const response = await fetch(url, {
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      return fallback;
+    }
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return fallback;
+    }
+    const data = await response.json();
+    return data.results || fallback;
+  } catch (err) {
+    return fallback;
+  }
 }
 
 async function buscarVeiculos(term) {
   const url = new URL("/api/veiculos/", window.location.origin);
   url.searchParams.set("placa", term);
-  const response = await fetch(url.toString(), {
-    headers: { "X-Requested-With": "XMLHttpRequest" },
-  });
-  const data = await response.json();
-  return data.results || [];
+  return fetchResults(url.toString(), []);
 }
 
 function aplicarVeiculo(veiculo) {
@@ -282,7 +378,21 @@ function aplicarVeiculo(veiculo) {
     modeloInput.value = veiculo.modelo || modeloInput.value;
   }
   if (combustivelInput) {
-    combustivelInput.value = veiculo.combustivel || combustivelInput.value;
+    const valor = veiculo.combustivel || combustivelInput.value;
+    if (combustivelInput.tagName === "SELECT") {
+      const option = Array.from(combustivelInput.options).find(
+        (opt) => opt.value === valor
+      );
+      if (option) {
+        combustivelInput.value = valor;
+      } else {
+        combustivelInput.value = "";
+        window.showToast?.("Combustivel fora da lista, selecione manualmente.", "info");
+      }
+    } else {
+      combustivelInput.value = valor;
+    }
+    combustivelInput.dispatchEvent(new Event("change", { bubbles: true }));
   }
   updatePreviewFromInputs();
   window.showToast?.("Veiculo selecionado.", "success");
@@ -300,35 +410,118 @@ async function carregarVeiculoPorPlaca() {
   }
 }
 
-function updateMotoristaPreview() {
-  if (!motoristaSelect && !motoristaNome) {
-    return;
-  }
+let currentMotorista = null;
+
+function isMotoristaCarona() {
+  const motoristaId = motoristaSelect?.value || "";
   const manual = motoristaNome?.value.trim() || "";
-  if (manual) {
-    setPreviewValue("motorista_nome", manual);
-    setPreviewValue("motorista_cpf", "-");
-    setPreviewValue("motorista_rg", "-");
-    setPreviewValue("motorista_cargo", "-");
+  if (!motoristaId && !manual) {
+    return false;
+  }
+  if (motoristaId) {
+    return !idsSelecionados().includes(motoristaId);
+  }
+  return true;
+}
+
+function updateCaronaVisibility() {
+  if (!caronaFields) {
     return;
   }
-  const selected = motoristaSelect?.selectedOptions?.[0];
-  const nome = selected && selected.value ? selected.textContent.trim() : "";
-  setPreviewValue("motorista_nome", nome);
-  setPreviewValue("motorista_cpf", selected?.dataset.cpf || "");
-  setPreviewValue("motorista_rg", selected?.dataset.rg || "");
-  setPreviewValue("motorista_cargo", selected?.dataset.cargo || "");
+  const isCarona = isMotoristaCarona();
+  caronaFields.classList.toggle("is-visible", isCarona);
+  document.querySelectorAll("[data-carona-preview]").forEach((el) => {
+    el.classList.toggle("is-hidden", !isCarona);
+  });
+}
+
+function renderMotoristaChip(motorista) {
+  if (!motoristaChipList) {
+    return;
+  }
+  motoristaChipList.innerHTML = "";
+  if (!motorista) {
+    return;
+  }
+  const id = motorista.id ? String(motorista.id) : "manual";
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.dataset.id = id;
+  chip.innerHTML = `
+    ${motorista.nome || motorista.label || "Motorista"}
+    <button type="button" class="chip-remove" data-remove-motorista="1" aria-label="Remover">
+      &times;
+    </button>
+  `;
+  motoristaChipList.appendChild(chip);
+}
+
+function setMotorista(motorista) {
+  if (!motorista) {
+    return;
+  }
+  currentMotorista = motorista;
+  if (motoristaSelect) {
+    const id = motorista.id ? String(motorista.id) : "";
+    if (id) {
+      let option = Array.from(motoristaSelect.options).find(
+        (item) => String(item.value) === id
+      );
+      if (!option) {
+        option = document.createElement("option");
+        option.value = id;
+        option.textContent = motorista.nome || motorista.label || "Motorista";
+        motoristaSelect.appendChild(option);
+      }
+      motoristaSelect.value = id;
+      window.syncAutocompleteDisplay?.(motoristaSelect);
+    } else {
+      motoristaSelect.value = "";
+      window.syncAutocompleteDisplay?.(motoristaSelect);
+    }
+  }
+  if (motoristaNome) {
+    motoristaNome.value = "";
+  }
+  renderMotoristaChip(motorista);
+  updateMotoristaPreview();
+}
+
+function clearMotorista() {
+  currentMotorista = null;
+  if (motoristaSelect) {
+    motoristaSelect.value = "";
+    window.syncAutocompleteDisplay?.(motoristaSelect);
+  }
+  if (motoristaChipList) {
+    motoristaChipList.innerHTML = "";
+  }
+  updateMotoristaPreview();
+}
+
+function updateMotoristaPreview() {
+  if (!motoristaNome) {
+    return;
+  }
+  const manual = motoristaNome.value.trim();
+  const isCarona = isMotoristaCarona();
+  const nome = manual || currentMotorista?.nome || currentMotorista?.label || "";
+  const suffix = nome && isCarona ? " (Carona)" : "";
+  setPreviewValue("motorista_nome", nome ? `${nome}${suffix}` : "-");
+  setPreviewValue("motorista_cpf", currentMotorista?.cpf || "-");
+  setPreviewValue("motorista_rg", currentMotorista?.rg || "-");
+  setPreviewValue("motorista_cargo", currentMotorista?.cargo || "-");
+  setPreviewValue("motorista_oficio", motoristaOficio?.value || "-");
+  setPreviewValue("motorista_protocolo", motoristaProtocolo?.value || "-");
+  updateCaronaVisibility();
 }
 
 function initBindings() {
-  document.addEventListener("change", (event) => {
-    if (event.target.matches('input[name="viajantes_ids"]')) {
-      carregarViajantesPreview();
-    }
-  });
-  if (document.querySelector('input[name="viajantes_ids"]')) {
+  if (idsSelecionados().length) {
     carregarViajantesPreview();
   }
+  renderServidoresChips();
+  toggleChipEmptyState();
 
   document.querySelectorAll("[data-preview-target]").forEach((input) => {
     input.addEventListener("input", updatePreviewFromInputs);
@@ -336,36 +529,115 @@ function initBindings() {
   });
   updatePreviewFromInputs();
 
-  if (motoristaSelect) {
-    motoristaSelect.addEventListener("change", updateMotoristaPreview);
-  }
   if (motoristaNome) {
-    motoristaNome.addEventListener("input", updateMotoristaPreview);
+    motoristaNome.addEventListener("input", () => {
+      const nomeManual = motoristaNome.value.trim();
+      if (motoristaSelect?.value) {
+        motoristaSelect.value = "";
+        window.syncAutocompleteDisplay?.(motoristaSelect);
+        currentMotorista = null;
+        if (nomeManual) {
+          renderMotoristaChip({ nome: nomeManual });
+        } else {
+          renderMotoristaChip(null);
+        }
+        updateMotoristaPreview();
+        return;
+      }
+      if (!nomeManual) {
+        renderMotoristaChip(null);
+        updateMotoristaPreview();
+        return;
+      }
+      renderMotoristaChip({ nome: nomeManual });
+      updateMotoristaPreview();
+    });
   }
+  motoristaOficio?.addEventListener("input", updateMotoristaPreview);
+  motoristaProtocolo?.addEventListener("input", updateMotoristaPreview);
   updateMotoristaPreview();
 
-  if (viajantesSearch && viajantesList) {
-    viajantesSearch.addEventListener("input", () => {
-      const termo = viajantesSearch.value.trim();
-      filtrarViajantesLocal(termo);
-    });
-
-    attachSearchSuggestions(
-      viajantesSearch,
-      buscarServidores,
-      (servidor) => {
-        ensureCheckbox(servidor);
-        viajantesSearch.value = servidor.nome || servidor.label || "";
-        filtrarViajantesLocal("");
+  if (viajantesList) {
+    viajantesList.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-remove-id]");
+      if (!btn) {
+        return;
       }
-    );
+      const id = btn.getAttribute("data-remove-id");
+      removeServidorChip(id);
+      updateMotoristaPreview();
+    });
+  }
+
+  if (servidoresSelect) {
+    servidoresSelect.addEventListener("change", () => {
+      renderServidoresChips();
+      carregarViajantesPreview();
+      updateMotoristaPreview();
+    });
+  }
+
+  if (motoristaChipList) {
+    motoristaChipList.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-remove-motorista]");
+      if (!btn) {
+        return;
+      }
+      if (motoristaNome) {
+        motoristaNome.value = "";
+      }
+      clearMotorista();
+    });
+  }
+
+  if (motoristaSelect) {
+    motoristaSelect.addEventListener("change", () => {
+      const motoristaId = motoristaSelect.value || "";
+      if (!motoristaId) {
+        currentMotorista = null;
+        if (!motoristaNome?.value.trim()) {
+          renderMotoristaChip(null);
+        }
+        updateMotoristaPreview();
+        return;
+      }
+      if (motoristaNome) {
+        motoristaNome.value = "";
+      }
+      fetch(`/api/motoristas/${motoristaId}/`)
+        .then((response) => response.json())
+        .then((data) => {
+          if (data && data.id) {
+            currentMotorista = data;
+            renderMotoristaChip(data);
+            updateMotoristaPreview();
+          }
+        })
+        .catch(() => {
+          currentMotorista = null;
+          updateMotoristaPreview();
+        });
+    });
   }
 
   if (placaInput) {
-    attachSearchSuggestions(placaInput, buscarVeiculos, aplicarVeiculo);
+    attachSearchSuggestions(placaInput, buscarVeiculos, aplicarVeiculo, { minChars: 2 });
     placaInput.addEventListener("blur", () => {
       carregarVeiculoPorPlaca().catch(() => {});
     });
+  }
+
+  if (motoristaSelect && motoristaSelect.value) {
+    fetch(`/api/motoristas/${motoristaSelect.value}/`)
+      .then((response) => response.json())
+      .then((data) => {
+        if (data && data.id) {
+          currentMotorista = data;
+          renderMotoristaChip(data);
+          updateMotoristaPreview();
+        }
+      })
+      .catch(() => {});
   }
 }
 
@@ -374,3 +646,6 @@ if (document.readyState === "loading") {
 } else {
   initBindings();
 }
+
+window.addServidorChip = addServidorChip;
+window.setMotoristaFromViajante = setMotorista;

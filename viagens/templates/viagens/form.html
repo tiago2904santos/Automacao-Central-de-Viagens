@@ -46,9 +46,9 @@
             <span class="field-help">Informe o protocolo interno.</span>
           </label>
           <label>
-            Data do oficio
-            <input type="text" name="data" value="{{ data }}" placeholder="Ex: 11/08/2025" data-preview-target="data" />
-            <span class="field-help">Formato livre, conforme padrao do setor.</span>
+            Data de criacao
+            <input type="text" value="{{ data_criacao|default:'Automatica apos salvar' }}" readonly />
+            <span class="field-help">Definida automaticamente ao salvar o oficio.</span>
           </label>
           <label>
             Assunto
@@ -61,35 +61,33 @@
           <div class="full">
             <div class="field-label">Buscar viajante</div>
             <div class="field-row">
-              <input type="text" id="viajantesSearch" placeholder="Digite para filtrar" autocomplete="off" />
+              {{ servidores_form.servidores }}
+            </div>
+            <div class="field-actions">
               <button
-                class="icon-btn"
+                class="btn-clear btn-small"
                 type="button"
-                aria-label="Cadastrar viajante"
                 data-modal-url="{% url 'modal_viajante_form' %}"
                 data-modal-kind="viajante"
-                data-target-list="#viajantesList"
+                data-target-select="#servidoresSelect"
               >
-                +
+                Cadastrar viajante
               </button>
             </div>
             <span class="field-help">Use o campo para localizar por nome, RG ou CPF.</span>
           </div>
           <div class="full">
             <div class="field-label">Viajantes (selecione mais de um)</div>
-            <div class="checkbox-list" id="viajantesList" data-preview-list="viajantes">
-              {% for viajante in viajantes %}
-                <label class="checkbox-item">
-                  <input type="checkbox" name="viajantes_ids" value="{{ viajante.id }}" data-nome="{{ viajante.nome }}" data-cargo="{{ viajante.cargo }}" data-rg="{{ viajante.rg }}" data-cpf="{{ viajante.cpf }}" {% if viajante.id|stringformat:"s" in selected_ids %}checked{% endif %} />
-                  <span>{{ viajante.nome }}</span>
-                </label>
+            <div class="chip-list" id="viajantesList" data-preview-list="viajantes">
+              {% for viajante in selected_viajantes %}
+                <span class="chip" data-id="{{ viajante.id }}">
+                  {{ viajante.nome }}
+                  <button type="button" class="chip-remove" data-remove-id="{{ viajante.id }}" aria-label="Remover">
+                    &times;
+                  </button>
+                </span>
               {% endfor %}
             </div>
-          </div>
-          <div class="full">
-            <h3>Documentos vinculados</h3>
-            <div id="viajantesPreview" class="preview"></div>
-            <span class="field-help">A pre-visualizacao ajuda a conferir os dados antes de avancar.</span>
           </div>
         </section>
 
@@ -112,8 +110,8 @@
           <span class="preview-value" data-preview-field="protocolo">{{ protocolo|default:"-" }}</span>
         </div>
         <div class="preview-line">
-          <span class="preview-label">Data</span>
-          <span class="preview-value" data-preview-field="data">{{ data|default:"-" }}</span>
+          <span class="preview-label">Data de criacao</span>
+          <span class="preview-value">{{ data_criacao|default:"Automatica apos salvar" }}</span>
         </div>
         <div class="preview-line">
           <span class="preview-label">Assunto</span>

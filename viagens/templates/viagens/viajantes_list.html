@@ -45,6 +45,7 @@
             <th>CPF</th>
             <th>Telefone</th>
             <th>Cargo</th>
+            <th>Acoes</th>
           </tr>
         </thead>
         <tbody>
@@ -55,12 +56,36 @@
               <td>{{ viajante.cpf }}</td>
               <td>{{ viajante.telefone }}</td>
               <td>{{ viajante.cargo }}</td>
+              <td>
+                <a href="{% url 'viajante_editar' viajante.id %}" class="btn-edit">Editar</a>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+      {% if page_obj.paginator.num_pages > 1 %}
+        <div class="pagination">
+          {% if page_obj.has_previous %}
+            <a class="btn-clear btn-small" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>
+          {% else %}
+            <span class="btn-clear btn-small is-disabled">Anterior</span>
+          {% endif %}
+          <span class="pagination-info">Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a class="btn-clear btn-small" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.next_page_number }}">Proxima</a>
+          {% else %}
+            <span class="btn-clear btn-small is-disabled">Proxima</span>
+          {% endif %}
+        </div>
+      {% endif %}
     {% else %}
-      <div class="empty">Nenhum viajante cadastrado.</div>
+      <div class="empty-state">
+        <div>
+          <strong>Nenhum viajante encontrado</strong>
+          <p>Cadastre servidores para usar nos oficios.</p>
+        </div>
+        <a class="btn-primary" href="{% url 'viajante_cadastro' %}">Novo viajante</a>
+      </div>
     {% endif %}
   </div>
 

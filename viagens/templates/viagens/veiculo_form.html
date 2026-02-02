@@ -20,18 +20,18 @@
         <section class="grid">
           <label>
             Placa
-            <input type="text" name="placa" required />
+            <input type="text" name="placa" value="{{ values.placa|default_if_none:'' }}" required />
           </label>
           <label>
             Modelo
-            <input type="text" name="modelo" required />
+            <input type="text" name="modelo" value="{{ values.modelo|default_if_none:'' }}" required />
           </label>
           <label>
             Combustivel
             <select name="combustivel" required>
               <option value="">Selecione</option>
               {% for item in combustivel_choices %}
-                <option value="{{ item }}">{{ item }}</option>
+                <option value="{{ item }}" {% if values.combustivel == item %}selected{% endif %}>{{ item }}</option>
               {% endfor %}
             </select>
           </label>

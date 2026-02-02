@@ -4,7 +4,7 @@ from datetime import datetime, time
 
 from django import forms
 
-from .models import Cidade, Estado, Trecho
+from .models import Cidade, Estado, Trecho, Viajante
 
 
 class TrechoForm(forms.ModelForm):
@@ -164,3 +164,33 @@ class TrechoForm(forms.ModelForm):
                 )
 
         return cleaned_data
+
+
+class ServidoresSelectForm(forms.Form):
+    servidores = forms.ModelMultipleChoiceField(
+        queryset=Viajante.objects.order_by("nome"),
+        required=False,
+        widget=forms.SelectMultiple(
+            attrs={
+                "id": "servidoresSelect",
+                "class": "input-field",
+                "data-autocomplete-url": "/api/servidores/",
+                "data-autocomplete-type": "servidor",
+            }
+        ),
+    )
+
+
+class MotoristaSelectForm(forms.Form):
+    motorista = forms.ModelChoiceField(
+        queryset=Viajante.objects.order_by("nome"),
+        required=False,
+        widget=forms.Select(
+            attrs={
+                "id": "motoristaSelect",
+                "class": "input-field",
+                "data-autocomplete-url": "/api/motoristas/",
+                "data-autocomplete-type": "motorista",
+            }
+        ),
+    )

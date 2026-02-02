@@ -1,0 +1,559 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Editar oficio{% endblock %}
+
+{% block breadcrumb %}
+  Oficios <span class="breadcrumb-sep">/</span> Editar
+{% endblock %}
+
+{% block content %}
+  <h2 class="page-title">Editar oficio</h2>
+  <p class="page-subtitle">Mantenha os dados organizados como no cadastro.</p>
+
+  <div class="page-grid page-grid--preview">
+    <div class="card">
+      <form method="post" data-servidores-count="{{ quantidade_servidores|default:0 }}">
+        {% csrf_token %}
+        {% if erros %}
+          <div class="error">Revise os campos destacados.</div>
+        {% endif %}
+
+        <section class="grid">
+          <label>
+            Oficio
+            <input type="text" name="oficio" value="{{ oficio.oficio }}" required data-preview-target="oficio" />
+            {% if erros.oficio %}<span class="field-errors">{{ erros.oficio }}</span>{% endif %}
+          </label>
+          <label>
+            Protocolo
+            <input type="text" name="protocolo" value="{{ oficio.protocolo }}" required data-preview-target="protocolo" />
+            {% if erros.protocolo %}<span class="field-errors">{{ erros.protocolo }}</span>{% endif %}
+          </label>
+          <label>
+            Data de criacao
+            <input type="text" value="{{ data_criacao|default:'-' }}" readonly />
+            <span class="field-help">Definida automaticamente na criacao.</span>
+          </label>
+          <label>
+            Assunto
+            <input type="text" name="assunto" value="{{ oficio.assunto }}" data-preview-target="assunto" />
+          </label>
+        </section>
+
+        <section class="grid">
+          <div class="full">
+            <div class="field-label">Buscar viajante</div>
+            <div class="field-row">
+              {{ servidores_form.servidores }}
+            </div>
+            <div class="field-actions">
+              <button
+                class="btn-clear btn-small"
+                type="button"
+                data-modal-url="{% url 'modal_viajante_form' %}"
+                data-modal-kind="viajante"
+                data-target-select="#servidoresSelect"
+              >
+                Cadastrar viajante
+              </button>
+            </div>
+            <span class="field-help">Use o campo para localizar por nome, RG ou CPF.</span>
+          </div>
+          <div class="full">
+            <div class="field-label">Viajantes (selecione mais de um)</div>
+            <div class="chip-list" id="viajantesList" data-preview-list="viajantes">
+              {% for viajante in selected_viajantes %}
+                <span class="chip" data-id="{{ viajante.id }}">
+                  {{ viajante.nome }}
+                  <button type="button" class="chip-remove" data-remove-id="{{ viajante.id }}" aria-label="Remover">
+                    &times;
+                  </button>
+                </span>
+              {% endfor %}
+            </div>
+          </div>
+        </section>
+
+        <section class="grid">
+          <label>
+            Placa
+            <div class="field-row">
+              <input type="text" name="placa" id="plateInput" value="{{ oficio.placa }}" data-preview-target="placa" autocomplete="off" />
+              <button
+                class="icon-btn"
+                type="button"
+                aria-label="Cadastrar veiculo"
+                data-modal-url="{% url 'modal_veiculo_form' %}"
+                data-modal-kind="veiculo"
+                data-target-plate="plateInput"
+                data-target-model="modelInput"
+                data-target-fuel="fuelInput"
+              >
+                +
+              </button>
+            </div>
+            <span class="field-help">Ao sair do campo, tentamos buscar o veiculo cadastrado.</span>
+          </label>
+          <label>
+            Modelo
+            <input type="text" name="modelo" id="modelInput" value="{{ oficio.modelo }}" data-preview-target="modelo" />
+          </label>
+          <label>
+            Combustivel
+            <select name="combustivel" id="fuelInput" data-preview-target="combustivel">
+              <option value="">Selecione</option>
+              {% for item in combustivel_choices %}
+                <option value="{{ item }}" {% if oficio.combustivel == item %}selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </section>
+
+        <section class="grid">
+          <label class="full">
+            Motorista (viajantes)
+            <div class="field-row">
+              {{ motorista_form.motorista }}
+              <button
+                class="icon-btn"
+                type="button"
+                aria-label="Cadastrar motorista"
+                data-modal-url="{% url 'modal_viajante_form' %}"
+                data-modal-kind="viajante"
+                data-target-motorista="#motoristaSelect"
+              >
+                +
+              </button>
+            </div>
+            <div class="chip-list chip-list--single" id="motoristaChipList">
+              {% if motorista_preview %}
+                <span class="chip" data-id="{{ motorista_preview.id }}">
+                  {{ motorista_preview.nome }}
+                  <button type="button" class="chip-remove" data-remove-motorista="1" aria-label="Remover">
+                    &times;
+                  </button>
+                </span>
+              {% elif motorista_nome %}
+                <span class="chip" data-id="manual">
+                  {{ motorista_nome }}
+                  <button type="button" class="chip-remove" data-remove-motorista="1" aria-label="Remover">
+                    &times;
+                  </button>
+                </span>
+              {% endif %}
+            </div>
+            <span class="field-help">Selecione um viajante ou cadastre rapidamente pelo botao +.</span>
+          </label>
+          <label class="full">
+            Motorista (nome manual)
+            <input type="text" name="motorista_nome" id="motoristaNome" value="{{ motorista_nome }}" placeholder="Digite caso nao esteja na lista" data-preview-target="motorista_nome" />
+            <span class="field-help">Use este campo somente quando o motorista nao estiver cadastrado.</span>
+          </label>
+        </section>
+
+        <section class="grid carona-fields{% if motorista_carona %} is-visible{% endif %}" id="caronaFields" data-carona-fields>
+          <label>
+            Numero do oficio do motorista
+            <input type="text" name="motorista_oficio" id="motoristaOficio" value="{{ oficio.motorista_oficio }}" data-preview-target="motorista_oficio" />
+            {% if erros.motorista_oficio %}<span class="field-errors">{{ erros.motorista_oficio }}</span>{% endif %}
+          </label>
+          <label>
+            Protocolo do motorista
+            <input type="text" name="motorista_protocolo" id="motoristaProtocolo" value="{{ oficio.motorista_protocolo }}" data-preview-target="motorista_protocolo" />
+          </label>
+        </section>
+
+        <div class="page-header">
+          <div>
+            <h3 class="page-title">Roteiro</h3>
+            <p class="page-subtitle">Informe os trechos de ida e o retorno.</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn-clear btn-small" type="button" id="addTrechoBtn">Adicionar trecho</button>
+          </div>
+        </div>
+
+        {% if erros.trechos %}
+          <div class="error">{{ erros.trechos }}</div>
+        {% endif %}
+        {% if formset.non_form_errors %}
+          <div class="error">{{ formset.non_form_errors }}</div>
+        {% endif %}
+
+        {{ formset.management_form }}
+
+        <div class="trecho-list" id="trechosList" data-trechos-list>
+          {% for form in formset %}
+            <div class="trecho-card{% if forloop.first %} is-first{% endif %}" data-index="{{ forloop.counter0 }}">
+              <div class="trecho-header">
+                <div>
+                  <span class="badge">Trecho {{ forloop.counter }}{% if forloop.first %} (Ida){% endif %}</span>
+                  <div class="trecho-subtitle">Origem e destino do deslocamento.</div>
+                </div>
+                <button class="btn-link trecho-remove" type="button" data-action="remove" {% if forloop.first %}disabled aria-disabled="true"{% endif %}>
+                  Remover
+                </button>
+              </div>
+
+              {% if form.non_field_errors %}
+                <div class="field-errors">{{ form.non_field_errors }}</div>
+              {% endif %}
+
+              {{ form.id }}
+
+              <div class="trecho-body">
+                <div class="sub-card">
+                  <div class="sub-card-title">Origem{% if forloop.first %} (Sede){% endif %}</div>
+                  <div class="grid">
+                    <label>
+                      UF
+                      {{ form.origem_estado }}
+                      {{ form.origem_estado.errors }}
+                    </label>
+                    <label>
+                      Cidade
+                      {{ form.origem_cidade }}
+                      {{ form.origem_cidade.errors }}
+                    </label>
+                    <label>
+                      Saida (data)
+                      {{ form.saida_data }}
+                      {{ form.saida_data.errors }}
+                    </label>
+                    <label>
+                      Saida (hora)
+                      {{ form.saida_hora }}
+                      {{ form.saida_hora.errors }}
+                    </label>
+                  </div>
+                </div>
+
+                <div class="sub-card">
+                  <div class="sub-card-title">Destino</div>
+                  <div class="grid">
+                    <label>
+                      UF
+                      {{ form.destino_estado }}
+                      {{ form.destino_estado.errors }}
+                    </label>
+                    <label>
+                      Cidade
+                      {{ form.destino_cidade }}
+                      {{ form.destino_cidade.errors }}
+                    </label>
+                    <label>
+                      Chegada (data)
+                      {{ form.chegada_data }}
+                      {{ form.chegada_data.errors }}
+                    </label>
+                    <label>
+                      Chegada (hora)
+                      {{ form.chegada_hora }}
+                      {{ form.chegada_hora.errors }}
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <template id="trechoTemplate">
+          <div class="trecho-card" data-index="__prefix__">
+            <div class="trecho-header">
+              <div>
+                <span class="badge">Trecho</span>
+                <div class="trecho-subtitle">Origem e destino do deslocamento.</div>
+              </div>
+              <button class="btn-link trecho-remove" type="button" data-action="remove">Remover</button>
+            </div>
+
+            {{ formset.empty_form.id }}
+
+            <div class="trecho-body">
+              <div class="sub-card">
+                <div class="sub-card-title">Origem</div>
+                <div class="grid">
+                  <label>
+                    UF
+                    {{ formset.empty_form.origem_estado }}
+                  </label>
+                  <label>
+                    Cidade
+                    {{ formset.empty_form.origem_cidade }}
+                  </label>
+                  <label>
+                    Saida (data)
+                    {{ formset.empty_form.saida_data }}
+                  </label>
+                  <label>
+                    Saida (hora)
+                    {{ formset.empty_form.saida_hora }}
+                  </label>
+                </div>
+              </div>
+
+              <div class="sub-card">
+                <div class="sub-card-title">Destino</div>
+                <div class="grid">
+                  <label>
+                    UF
+                    {{ formset.empty_form.destino_estado }}
+                  </label>
+                  <label>
+                    Cidade
+                    {{ formset.empty_form.destino_cidade }}
+                  </label>
+                  <label>
+                    Chegada (data)
+                    {{ formset.empty_form.chegada_data }}
+                  </label>
+                  <label>
+                    Chegada (hora)
+                    {{ formset.empty_form.chegada_hora }}
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <div class="trecho-card" data-retorno-card>
+          <div class="trecho-header">
+            <div>
+              <span class="badge">Retorno</span>
+              <div class="trecho-subtitle">Trecho unico de volta para a sede.</div>
+            </div>
+          </div>
+
+          <div class="trecho-body">
+            <div class="sub-card">
+              <div class="sub-card-title">Origem</div>
+              <div class="grid">
+                <label>
+                  Cidade
+                  <input type="text" name="retorno_saida_cidade" id="retornoSaidaCidade" value="{{ oficio.retorno_saida_cidade|default:'' }}" readonly />
+                </label>
+                <label>
+                  Saida (data)
+                  <input type="date" name="retorno_saida_data" id="retornoSaidaData" value="{{ retorno_saida_data|default:'' }}" />
+                </label>
+                <label>
+                  Saida (hora)
+                  <input type="time" name="retorno_saida_hora" id="retornoSaidaHora" value="{{ retorno_saida_hora|default:'' }}" />
+                </label>
+              </div>
+            </div>
+
+            <div class="sub-card">
+              <div class="sub-card-title">Destino (Sede)</div>
+              <div class="grid">
+                <label>
+                  Cidade
+                  <input type="text" name="retorno_chegada_cidade" id="retornoChegadaCidade" value="{{ oficio.retorno_chegada_cidade|default:'' }}" readonly />
+                </label>
+                <label>
+                  Chegada (data)
+                  <input type="date" name="retorno_chegada_data" id="retornoChegadaData" value="{{ retorno_chegada_data|default:'' }}" />
+                </label>
+                <label>
+                  Chegada (hora)
+                  <input type="time" name="retorno_chegada_hora" id="retornoChegadaHora" value="{{ retorno_chegada_hora|default:'' }}" />
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% if erros.retorno %}
+          <div class="error">{{ erros.retorno }}</div>
+        {% endif %}
+
+        <div class="trecho-card" data-diarias-card>
+          <div class="trecho-header">
+            <div>
+              <span class="badge">Diarias</span>
+              <div class="trecho-subtitle">Calculo automatico conforme tipo de destino.</div>
+            </div>
+          </div>
+
+          <div class="trecho-body">
+            <div class="sub-card">
+              <div class="grid">
+                <label>
+                  Tipo de destino
+                  <select name="tipo_destino" id="tipoDestino" required>
+                    <option value="">Selecione</option>
+                    <option value="INTERIOR" {% if tipo_destino == 'INTERIOR' %}selected{% endif %}>Interior</option>
+                    <option value="CAPITAL" {% if tipo_destino == 'CAPITAL' %}selected{% endif %}>Capital</option>
+                    <option value="BRASILIA" {% if tipo_destino == 'BRASILIA' %}selected{% endif %}>Brasilia</option>
+                  </select>
+                  {% if erros.tipo_destino %}<span class="field-errors">{{ erros.tipo_destino }}</span>{% endif %}
+                </label>
+                <label>
+                  Quantidade de diarias
+                  <input type="text" name="quantidade_diarias" id="quantidadeDiarias" value="{{ oficio.quantidade_diarias|default:'' }}" readonly />
+                </label>
+                <label>
+                  Valor total das diarias
+                  <input type="text" name="valor_diarias" id="valorDiarias" value="{{ oficio.valor_diarias|default:'' }}" readonly />
+                </label>
+                <label class="full">
+                  Valor por extenso (manual)
+                  <input type="text" name="valor_diarias_extenso" id="valorDiariasExtenso" value="{{ valor_diarias_extenso|default:'' }}" />
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="trecho-card" data-diarias-preview>
+          <div class="trecho-header">
+            <div>
+              <span class="badge">Diarias (previa)</span>
+              <div class="trecho-subtitle">Atualiza automaticamente ao preencher os dados.</div>
+            </div>
+          </div>
+          <div class="trecho-body">
+            <div class="sub-card">
+              <div class="grid">
+                <label>
+                  Resultado
+                  <div class="preview" id="diariasPreviewText">Preencha saída/chegada para calcular</div>
+                </label>
+                <label>
+                  Valor por servidor
+                  <div class="preview" id="diariasPreviewPorServidor">-</div>
+                </label>
+                <label>
+                  Valor total
+                  <div class="preview" id="diariasPreviewTotal">-</div>
+                </label>
+                <label>
+                  Total de horas
+                  <div class="preview" id="diariasPreviewHoras">-</div>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section class="grid">
+          <label class="full">
+            Motivo da viagem
+            <textarea name="motivo" rows="3">{{ oficio.motivo }}</textarea>
+          </label>
+        </section>
+
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'oficios_lista' %}">Voltar</a>
+          <button class="btn-primary" type="submit">Salvar alteracoes</button>
+          <button class="btn-danger" type="button" data-confirm-open="#confirmDeleteOficio">Excluir</button>
+        </div>
+      </form>
+    </div>
+
+    <aside class="preview-card" aria-live="polite">
+      <h3>Relatorio rapido</h3>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Oficio</span>
+          <span class="preview-value" data-preview-field="oficio">{{ oficio.oficio|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Protocolo</span>
+          <span class="preview-value" data-preview-field="protocolo">{{ oficio.protocolo|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Data de criacao</span>
+          <span class="preview-value">{{ data_criacao|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Assunto</span>
+          <span class="preview-value" data-preview-field="assunto">{{ oficio.assunto|default:"-" }}</span>
+        </div>
+      </div>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Placa</span>
+          <span class="preview-value" data-preview-field="placa">{{ oficio.placa|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Modelo</span>
+          <span class="preview-value" data-preview-field="modelo">{{ oficio.modelo|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Combustivel</span>
+          <span class="preview-value" data-preview-field="combustivel">{{ oficio.combustivel|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista</span>
+          <span class="preview-value" data-preview-field="motorista_nome">
+            {{ motorista_preview.nome|default:motorista_nome|default:"-" }}{% if motorista_carona %} (Carona){% endif %}
+          </span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista CPF</span>
+          <span class="preview-value" data-preview-field="motorista_cpf">{{ motorista_preview.cpf|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista RG</span>
+          <span class="preview-value" data-preview-field="motorista_rg">{{ motorista_preview.rg|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista cargo</span>
+          <span class="preview-value" data-preview-field="motorista_cargo">{{ motorista_preview.cargo|default:"-" }}</span>
+        </div>
+        <div class="preview-line carona-preview{% if not motorista_carona %} is-hidden{% endif %}" data-carona-preview>
+          <span class="preview-label">Oficio motorista</span>
+          <span class="preview-value" data-preview-field="motorista_oficio">{{ oficio.motorista_oficio|default:"-" }}</span>
+        </div>
+        <div class="preview-line carona-preview{% if not motorista_carona %} is-hidden{% endif %}" data-carona-preview>
+          <span class="preview-label">Protocolo motorista</span>
+          <span class="preview-value" data-preview-field="motorista_protocolo">{{ oficio.motorista_protocolo|default:"-" }}</span>
+        </div>
+      </div>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Servidores</span>
+          <span class="preview-value" data-preview-field="viajantes-count">{{ preview_viajantes|length }}</span>
+        </div>
+        <div data-preview-field="viajantes" class="{% if not preview_viajantes %}empty{% endif %}">
+          {% if preview_viajantes %}
+            {% for servidor in preview_viajantes %}
+              <div class="preview-line">
+                <span class="preview-label">{{ servidor.nome }}</span>
+                <span class="preview-value">
+                  {{ servidor.cargo|default:"-" }}
+                  <span class="preview-sub">RG: {{ servidor.rg|default:"-" }} | CPF: {{ servidor.cpf|default:"-" }}</span>
+                </span>
+              </div>
+            {% endfor %}
+          {% else %}
+            Nenhum servidor selecionado.
+          {% endif %}
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="confirm-backdrop" id="confirmDeleteOficio" data-confirm-modal>
+    <div class="confirm-card">
+      <h3>Excluir oficio?</h3>
+      <p>Os trechos e vinculacoes serao removidos.</p>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete" />
+        <div class="modal-actions">
+          <button class="btn-clear" type="button" data-confirm-close>Cancelar</button>
+          <button class="btn-danger" type="submit">Excluir</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/form.js' %}"></script>
+  <script src="{% static 'viagens/oficio_wizard.js' %}"></script>
+{% endblock %}

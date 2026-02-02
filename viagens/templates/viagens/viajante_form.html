@@ -20,26 +20,26 @@
         <section class="grid">
           <label>
             Nome
-            <input type="text" name="nome" required />
+            <input type="text" name="nome" value="{{ values.nome|default_if_none:'' }}" required />
           </label>
           <label>
             RG
-            <input type="text" name="rg" required />
+            <input type="text" name="rg" value="{{ values.rg|default_if_none:'' }}" required />
           </label>
           <label>
             CPF
-            <input type="text" name="cpf" required />
+            <input type="text" name="cpf" value="{{ values.cpf|default_if_none:'' }}" required />
           </label>
           <label>
             Telefone
-            <input type="text" name="telefone" />
+            <input type="text" name="telefone" value="{{ values.telefone|default_if_none:'' }}" />
           </label>
           <label>
             Cargo
             <select name="cargo" required>
               <option value="">Selecione</option>
               {% for cargo in cargo_choices %}
-                <option value="{{ cargo }}">{{ cargo }}</option>
+                <option value="{{ cargo }}" {% if values.cargo == cargo %}selected{% endif %}>{{ cargo }}</option>
               {% endfor %}
             </select>
           </label>

@@ -16,21 +16,15 @@
       <form method="get" class="filter-form">
         <div class="filter-left">
           <div class="filter-group">
-            <label>Buscar</label>
-            <input type="text" name="q" value="{{ q }}" placeholder="Numero, protocolo, destino ou viajante" />
-          </div>
-          <div class="filter-group">
-            <label>Filtros</label>
-            <div class="inline-checks">
-              <label>
-                <input type="checkbox" name="com_veiculo" value="1" {% if com_veiculo %}checked{% endif %} />
-                Somente com veiculo
-              </label>
-            </div>
+            <label>Filtro rapido</label>
+            <input type="text" name="q" value="{{ q }}" placeholder="Filtrar por numero do oficio, destino, solicitante, motorista, placa..." />
           </div>
         </div>
         <div class="filter-actions">
-          <button type="submit" class="btn-primary">Filtrar</button>
+          <button type="submit" class="btn-primary" data-loading="false">
+            <span class="btn-label">Filtrar</span>
+            <span class="btn-loading">Carregando...</span>
+          </button>
           <a href="{% url 'oficios_lista' %}" class="btn-clear">Limpar</a>
         </div>
       </form>
@@ -40,22 +34,20 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Oficio</th>
-            <th>Protocolo</th>
+            <th>Nº Oficio</th>
             <th>Data</th>
             <th>Destino</th>
-            <th>Viajantes</th>
+            <th>Motorista</th>
             <th>Veiculo</th>
-            <th>Criado em</th>
-            <th>Documento</th>
+            <th>Status</th>
+            <th>Acoes</th>
           </tr>
         </thead>
         <tbody>
           {% for oficio in oficios %}
             <tr>
               <td>{{ oficio.oficio }}</td>
-              <td>{{ oficio.protocolo }}</td>
-              <td>{{ oficio.data }}</td>
+              <td>{{ oficio.created_at|date:"d/m/Y" }}</td>
               <td>
                 {% if oficio.cidade_destino %}
                   {{ oficio.cidade_destino.nome }}/{{ oficio.cidade_destino.estado.sigla }}
@@ -64,33 +56,75 @@
                 {% endif %}
               </td>
               <td>
-                {% for viajante in oficio.viajantes.all %}
-                  <span class="badge">{{ viajante.nome }}</span>
-                {% empty %}
-                  -
-                {% endfor %}
+                {% if oficio.motorista_viajante %}
+                  {{ oficio.motorista_viajante.nome }}
+                {% else %}
+                  {{ oficio.motorista|default:"-" }}
+                {% endif %}
               </td>
               <td>
                 {% if oficio.veiculo %}
                   {{ oficio.veiculo.placa }} - {{ oficio.veiculo.modelo }}
                 {% else %}
-                  {{ oficio.placa|default:"-" }}
+                  {{ oficio.placa|default:"-" }}{% if oficio.modelo %} - {{ oficio.modelo }}{% endif %}
                 {% endif %}
               </td>
-              <td>{{ oficio.created_at|date:"d/m/Y H:i" }}</td>
+              <td><span class="badge">Salvo</span></td>
               <td>
-                <a href="{% url 'documento_oficio' oficio.id %}" class="btn-link">Documento</a>
+                <div class="table-actions">
+                  <a href="{% url 'oficio_editar' oficio.id %}" class="btn-edit">Editar</a>
+                  <!-- Em qualquer template que tenha o objeto "oficio" (ex: oficio_edit.html ou lista) -->
+                  <a class="btn btn-primary" href="{% url 'oficio_download_docx' oficio.id %}">Baixar DOCX</a>
+                  <a class="btn btn-secondary" href="{% url 'oficio_download_pdf' oficio.id %}">
+                    Baixar PDF
+                  </a>
+                </div>
               </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+      {% if page_obj.paginator.num_pages > 1 %}
+        <div class="pagination">
+          {% if page_obj.has_previous %}
+            <a class="btn-clear btn-small" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>
+          {% else %}
+            <span class="btn-clear btn-small is-disabled">Anterior</span>
+          {% endif %}
+          <span class="pagination-info">Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a class="btn-clear btn-small" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.next_page_number }}">Proxima</a>
+          {% else %}
+            <span class="btn-clear btn-small is-disabled">Proxima</span>
+          {% endif %}
+        </div>
+      {% endif %}
     {% else %}
-      <div class="empty">Nenhum oficio salvo.</div>
+      <div class="empty-state">
+        <div>
+          <strong>Nenhum oficio encontrado</strong>
+          <p>Tente ajustar o filtro ou inicie um novo oficio.</p>
+        </div>
+        <a class="btn-primary" href="{% url 'formulario' %}">Novo oficio</a>
+      </div>
     {% endif %}
   </div>
 
   <div class="fab-stack" aria-label="Atalhos">
     <a class="fab" href="{% url 'formulario' %}">+ Novo oficio</a>
   </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const filterForm = document.querySelector(".filter-form");
+    if (filterForm) {
+      filterForm.addEventListener("submit", () => {
+        const btn = filterForm.querySelector("[data-loading]");
+        if (btn) {
+          btn.setAttribute("data-loading", "true");
+        }
+      });
+    }
+  </script>
 {% endblock %}

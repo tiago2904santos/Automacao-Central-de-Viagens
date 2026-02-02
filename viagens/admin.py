@@ -46,7 +46,7 @@ class TrechoInline(admin.TabularInline):
 
 @admin.register(Oficio)
 class OficioAdmin(admin.ModelAdmin):
-    list_display = ("oficio", "protocolo", "destino", "data", "created_at")
+    list_display = ("oficio", "protocolo", "destino", "created_at")
     list_filter = ("created_at",)
     search_fields = (
         "oficio",

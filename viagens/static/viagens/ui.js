@@ -39,7 +39,8 @@
     );
     const option = exists || document.createElement("option");
     option.value = String(item.id);
-    option.textContent = item.label || item.nome || item.placa || "Item";
+    option.textContent =
+      item.text || item.label || item.nome || item.placa || "Item";
     if (item.cpf) {
       option.dataset.cpf = item.cpf;
     }
@@ -52,7 +53,11 @@
     if (!exists) {
       select.appendChild(option);
     }
-    select.value = String(item.id);
+    if (select.multiple) {
+      option.selected = true;
+    } else {
+      select.value = String(item.id);
+    }
     select.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
@@ -60,20 +65,30 @@
     if (!listEl || !item) {
       return;
     }
-    const existing = listEl.querySelector(`input[value='${item.id}']`);
-    if (existing) {
-      existing.checked = true;
-      existing.dispatchEvent(new Event("change", { bubbles: true }));
+    if (window.addServidorChip) {
+      window.addServidorChip(item);
       return;
     }
-    const label = document.createElement("label");
-    label.className = "checkbox-item";
-    label.innerHTML = `
-      <input type="checkbox" name="viajantes_ids" value="${item.id}" checked />
-      <span>${item.nome || item.label || "Novo viajante"}</span>
+    const existing = listEl.querySelector(`[data-hidden-id='${item.id}']`);
+    if (existing) {
+      return;
+    }
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.dataset.id = String(item.id);
+    chip.innerHTML = `
+      ${item.nome || item.label || "Novo viajante"}
+      <button type="button" class="chip-remove" data-remove-id="${item.id}" aria-label="Remover">
+        &times;
+      </button>
     `;
-    listEl.prepend(label);
-    label.querySelector("input")?.dispatchEvent(new Event("change", { bubbles: true }));
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "viajantes_ids";
+    input.value = String(item.id);
+    input.dataset.hiddenId = String(item.id);
+    listEl.appendChild(chip);
+    listEl.appendChild(input);
   }
 
   function handleModalSuccess(trigger, item) {
@@ -82,11 +97,15 @@
     if (kind === "viajante") {
       const listSelector = trigger.getAttribute("data-target-list");
       const selectSelector = trigger.getAttribute("data-target-select");
+      const motoristaTarget = trigger.getAttribute("data-target-motorista");
       if (listSelector) {
         addCheckboxToList(document.querySelector(listSelector), item);
       }
       if (selectSelector) {
         addOptionToSelect(document.querySelector(selectSelector), item);
+      }
+      if (motoristaTarget && window.setMotoristaFromViajante) {
+        window.setMotoristaFromViajante(item);
       }
       window.showToast?.("Viajante cadastrado com sucesso.", "success");
       return;
@@ -113,8 +132,22 @@
       if (fuelId) {
         const fuel = document.getElementById(fuelId);
         if (fuel) {
-          fuel.value = item.combustivel || "";
-          fuel.dispatchEvent(new Event("input", { bubbles: true }));
+          const valor = item.combustivel || "";
+          if (fuel.tagName === "SELECT") {
+            const option = Array.from(fuel.options).find(
+              (opt) => opt.value === valor
+            );
+            if (option) {
+              fuel.value = valor;
+            } else {
+              fuel.value = "";
+              window.showToast?.("Combustivel fora da lista, selecione manualmente.", "info");
+            }
+            fuel.dispatchEvent(new Event("change", { bubbles: true }));
+          } else {
+            fuel.value = valor;
+            fuel.dispatchEvent(new Event("input", { bubbles: true }));
+          }
         }
       }
       window.showToast?.("Veiculo cadastrado e preenchido.", "success");
@@ -231,6 +264,46 @@
 })();
 
 (function () {
+  function openConfirm(modal) {
+    if (!modal) {
+      return;
+    }
+    modal.classList.add("is-visible");
+    document.body.classList.add("modal-open");
+  }
+
+  function closeConfirm(modal) {
+    if (!modal) {
+      return;
+    }
+    modal.classList.remove("is-visible");
+    document.body.classList.remove("modal-open");
+  }
+
+  document.addEventListener("click", (event) => {
+    const openBtn = event.target.closest("[data-confirm-open]");
+    if (openBtn) {
+      const selector = openBtn.getAttribute("data-confirm-open");
+      const modal = selector ? document.querySelector(selector) : null;
+      openConfirm(modal);
+      return;
+    }
+
+    const closeBtn = event.target.closest("[data-confirm-close]");
+    if (closeBtn) {
+      const modal = closeBtn.closest("[data-confirm-modal]");
+      closeConfirm(modal);
+      return;
+    }
+
+    const backdrop = event.target.closest("[data-confirm-modal]");
+    if (backdrop && event.target === backdrop) {
+      closeConfirm(backdrop);
+    }
+  });
+})();
+
+(function () {
   function ensureGotoInput(form) {
     let input = form.querySelector("input[name='goto_step']");
     if (!input) {
@@ -258,7 +331,15 @@
         }
         event.preventDefault();
         gotoInput.value = step;
-        form.requestSubmit();
+        if (typeof form.requestSubmit === "function") {
+          form.requestSubmit();
+          return;
+        }
+        if (typeof form.checkValidity === "function" && !form.checkValidity()) {
+          form.reportValidity?.();
+          return;
+        }
+        form.submit();
       });
     });
   }
@@ -304,6 +385,7 @@
     select._autocompleteInput = input;
 
     const type = select.getAttribute("data-autocomplete-type") || "";
+    const isMultiple = select.multiple;
     let items = [];
     let activeIndex = -1;
 
@@ -342,7 +424,43 @@
       const label =
         type === "uf"
           ? item.label || item.sigla || item.id || ""
-          : item.label || item.nome || "";
+          : item.text || item.label || item.nome || "";
+      if (isMultiple) {
+        if (!value) {
+          return;
+        }
+        const exists = Array.from(select.options).find(
+          (option) => String(option.value) === String(value)
+        );
+        const selectedAlready = Array.from(select.selectedOptions).some(
+          (option) => String(option.value) === String(value)
+        );
+        if (selectedAlready) {
+          clearList();
+          input.value = "";
+          return;
+        }
+        const option = exists || document.createElement("option");
+        option.value = String(value || "");
+        option.textContent = label;
+        if (item.cpf) {
+          option.dataset.cpf = item.cpf;
+        }
+        if (item.rg) {
+          option.dataset.rg = item.rg;
+        }
+        if (item.cargo) {
+          option.dataset.cargo = item.cargo;
+        }
+        if (!exists) {
+          select.appendChild(option);
+        }
+        option.selected = true;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        input.value = "";
+        clearList();
+        return;
+      }
       const exists = Array.from(select.options).find(
         (option) => String(option.value) === String(value)
       );
@@ -350,6 +468,15 @@
         const option = document.createElement("option");
         option.value = String(value || "");
         option.textContent = label;
+        if (item.cpf) {
+          option.dataset.cpf = item.cpf;
+        }
+        if (item.rg) {
+          option.dataset.rg = item.rg;
+        }
+        if (item.cargo) {
+          option.dataset.cargo = item.cargo;
+        }
         select.appendChild(option);
       }
       select.value = String(value || "");
@@ -364,11 +491,21 @@
         clearList();
         return;
       }
+      const selectedValues = isMultiple
+        ? new Set(
+            Array.from(select.selectedOptions).map((option) => String(option.value))
+          )
+        : null;
       list.innerHTML = items
         .map((item, index) => {
-          const label = item.label || item.nome || item.sigla || item.id;
+          const label =
+            item.text || item.label || item.nome || item.sigla || item.id;
+          const isSelected =
+            isMultiple && selectedValues?.has(String(item.id));
           const activeClass = index === activeIndex ? " is-active" : "";
-          return `<button type="button" class="autocomplete-item${activeClass}" data-index="${index}" role="option">${label}</button>`;
+          const disabledAttr = isSelected ? " disabled aria-disabled=\"true\"" : "";
+          const selectedClass = isSelected ? " is-selected" : "";
+          return `<button type="button" class="autocomplete-item${activeClass}${selectedClass}" data-index="${index}" role="option"${disabledAttr}>${label}</button>`;
         })
         .join("");
       setExpanded(true);
@@ -403,9 +540,11 @@
     }, 260);
 
     input.addEventListener("focus", () => {
-      const selectedOption = select.selectedOptions[0];
-      if (selectedOption && selectedOption.value) {
-        input.value = selectedOption.textContent.trim();
+      if (!isMultiple) {
+        const selectedOption = select.selectedOptions[0];
+        if (selectedOption && selectedOption.value) {
+          input.value = selectedOption.textContent.trim();
+        }
       }
       debouncedFetch(input.value.trim());
     });
@@ -445,6 +584,9 @@
       if (!btn) {
         return;
       }
+      if (btn.hasAttribute("disabled")) {
+        return;
+      }
       const index = Number(btn.getAttribute("data-index"));
       selectItem(items[index]);
     });
@@ -456,6 +598,10 @@
     });
 
     select.addEventListener("change", () => {
+      if (isMultiple) {
+        input.value = "";
+        return;
+      }
       const selectedOption = select.selectedOptions[0];
       input.value =
         selectedOption && selectedOption.value
@@ -464,7 +610,7 @@
     });
 
     const selected = select.selectedOptions[0];
-    if (selected && selected.value) {
+    if (selected && selected.value && !isMultiple) {
       input.value = selected.textContent.trim();
     }
   }
@@ -477,6 +623,10 @@
       select._autocompleteInput ||
       select.parentElement?.querySelector(".autocomplete-input");
     if (!input) {
+      return;
+    }
+    if (select.multiple) {
+      input.value = "";
       return;
     }
     const option = select.selectedOptions?.[0];

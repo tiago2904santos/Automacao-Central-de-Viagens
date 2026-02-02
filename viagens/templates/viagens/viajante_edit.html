@@ -1,0 +1,82 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Editar viajante{% endblock %}
+
+{% block breadcrumb %}
+  Viajantes <span class="breadcrumb-sep">/</span> Editar
+{% endblock %}
+
+{% block content %}
+  <h2 class="page-title">Editar viajante</h2>
+  <p class="page-subtitle">Atualize os dados do servidor cadastrado.</p>
+
+  <div class="page-grid">
+    <div class="card">
+      <form method="post">
+        {% csrf_token %}
+        {% if erros %}
+          <div class="error">Revise os campos destacados.</div>
+        {% endif %}
+        <section class="grid">
+          <label>
+            Nome
+            <input type="text" name="nome" value="{{ viajante.nome }}" required />
+            {% if erros.nome %}<span class="field-errors">{{ erros.nome }}</span>{% endif %}
+          </label>
+          <label>
+            RG
+            <input type="text" name="rg" value="{{ viajante.rg }}" required />
+            {% if erros.rg %}<span class="field-errors">{{ erros.rg }}</span>{% endif %}
+          </label>
+          <label>
+            CPF
+            <input type="text" name="cpf" value="{{ viajante.cpf }}" required />
+            {% if erros.cpf %}<span class="field-errors">{{ erros.cpf }}</span>{% endif %}
+          </label>
+          <label>
+            Telefone
+            <input type="text" name="telefone" value="{{ viajante.telefone }}" />
+          </label>
+          <label class="full">
+            Cargo
+            <select name="cargo" required>
+              <option value="">Selecione</option>
+              {% for cargo in cargo_choices %}
+                <option value="{{ cargo }}" {% if cargo == viajante.cargo %}selected{% endif %}>{{ cargo }}</option>
+              {% endfor %}
+            </select>
+            {% if erros.cargo %}<span class="field-errors">{{ erros.cargo }}</span>{% endif %}
+          </label>
+        </section>
+
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'viajantes_lista' %}">Voltar</a>
+          <button class="btn-primary" type="submit">Salvar alteracoes</button>
+          <button class="btn-danger" type="button" data-confirm-open="#confirmDeleteViajante">Excluir</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="illustration-card">
+      <div class="icon">CV</div>
+      <h3>Dados do viajante</h3>
+      <p>Evite duplicidades e mantenha o cadastro atualizado.</p>
+      <p class="muted">A exclusao e permanente.</p>
+    </div>
+  </div>
+
+  <div class="confirm-backdrop" id="confirmDeleteViajante" data-confirm-modal>
+    <div class="confirm-card">
+      <h3>Excluir viajante?</h3>
+      <p>Esta acao remove o cadastro permanentemente.</p>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete" />
+        <div class="modal-actions">
+          <button class="btn-clear" type="button" data-confirm-close>Cancelar</button>
+          <button class="btn-danger" type="submit">Excluir</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

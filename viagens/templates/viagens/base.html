@@ -117,7 +117,9 @@
     </footer>
 
     <script>
-      lucide.createIcons();
+      if (window.lucide) {
+        lucide.createIcons();
+      }
 
       document.querySelectorAll('.submenu-toggle').forEach(toggle => {
         toggle.addEventListener('click', function (e) {

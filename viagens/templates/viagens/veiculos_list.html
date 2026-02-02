@@ -43,6 +43,7 @@
             <th>Placa</th>
             <th>Modelo</th>
             <th>Combustivel</th>
+            <th>Acoes</th>
           </tr>
         </thead>
         <tbody>
@@ -51,12 +52,36 @@
               <td>{{ veiculo.placa }}</td>
               <td>{{ veiculo.modelo }}</td>
               <td>{{ veiculo.combustivel }}</td>
+              <td>
+                <a href="{% url 'veiculo_editar' veiculo.id %}" class="btn-edit">Editar</a>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+      {% if page_obj.paginator.num_pages > 1 %}
+        <div class="pagination">
+          {% if page_obj.has_previous %}
+            <a class="btn-clear btn-small" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>
+          {% else %}
+            <span class="btn-clear btn-small is-disabled">Anterior</span>
+          {% endif %}
+          <span class="pagination-info">Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a class="btn-clear btn-small" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.next_page_number }}">Proxima</a>
+          {% else %}
+            <span class="btn-clear btn-small is-disabled">Proxima</span>
+          {% endif %}
+        </div>
+      {% endif %}
     {% else %}
-      <div class="empty">Nenhum veiculo cadastrado.</div>
+      <div class="empty-state">
+        <div>
+          <strong>Nenhum veiculo encontrado</strong>
+          <p>Cadastre veiculos para agilizar os oficios.</p>
+        </div>
+        <a class="btn-primary" href="{% url 'veiculo_cadastro' %}">Novo veiculo</a>
+      </div>
     {% endif %}
   </div>
 

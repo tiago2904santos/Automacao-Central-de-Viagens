@@ -9,7 +9,7 @@
 
 {% block content %}
   <nav class="stepper" aria-label="Etapas">
-    <a class="stepper-step is-done" href="{% url 'formulario' %}" data-step="1" data-step-mode="link">
+    <a class="stepper-step is-done" href="{% url 'formulario' %}?resume=1" data-step="1" data-step-mode="link">
       <span class="stepper-index">1</span>
       Dados
     </a>
@@ -34,7 +34,7 @@
   </div>
 
   <div class="card">
-    <form method="post" id="roteiroForm" data-formset-prefix="trechos">
+    <form method="post" id="roteiroForm" data-formset-prefix="trechos" data-servidores-count="{{ quantidade_servidores|default:0 }}">
       {% csrf_token %}
       {% if erro %}
         <div class="error">{{ erro }}</div>
@@ -182,6 +182,124 @@
           </div>
         </div>
       </template>
+
+      <div class="trecho-card" data-retorno-card>
+        <div class="trecho-header">
+          <div>
+            <span class="badge">Retorno</span>
+            <div class="trecho-subtitle">Trecho unico de volta para a sede.</div>
+          </div>
+        </div>
+
+        <div class="trecho-body">
+          <div class="sub-card">
+            <div class="sub-card-title">Origem</div>
+            <div class="grid">
+              <label>
+                Cidade
+                <input type="text" name="retorno_saida_cidade" id="retornoSaidaCidade" value="{{ retorno_saida_cidade|default:'' }}" readonly />
+              </label>
+              <label>
+                Saida (data)
+                <input type="date" name="retorno_saida_data" id="retornoSaidaData" value="{{ retorno_saida_data|default:'' }}" />
+              </label>
+              <label>
+                Saida (hora)
+                <input type="time" name="retorno_saida_hora" id="retornoSaidaHora" value="{{ retorno_saida_hora|default:'' }}" />
+              </label>
+            </div>
+          </div>
+
+          <div class="sub-card">
+            <div class="sub-card-title">Destino (Sede)</div>
+            <div class="grid">
+              <label>
+                Cidade
+                <input type="text" name="retorno_chegada_cidade" id="retornoChegadaCidade" value="{{ retorno_chegada_cidade|default:'' }}" readonly />
+              </label>
+              <label>
+                Chegada (data)
+                <input type="date" name="retorno_chegada_data" id="retornoChegadaData" value="{{ retorno_chegada_data|default:'' }}" />
+              </label>
+              <label>
+                Chegada (hora)
+                <input type="time" name="retorno_chegada_hora" id="retornoChegadaHora" value="{{ retorno_chegada_hora|default:'' }}" />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="trecho-card" data-diarias-card>
+        <div class="trecho-header">
+          <div>
+            <span class="badge">Diarias</span>
+            <div class="trecho-subtitle">Calculo automatico conforme tipo de destino.</div>
+          </div>
+        </div>
+
+        <div class="trecho-body">
+          <div class="sub-card">
+            <div class="grid">
+              <label>
+                Tipo de destino
+                <select name="tipo_destino" id="tipoDestino" required>
+                  <option value="">Selecione</option>
+                  <option value="INTERIOR" {% if tipo_destino == 'INTERIOR' %}selected{% endif %}>Interior</option>
+                  <option value="CAPITAL" {% if tipo_destino == 'CAPITAL' %}selected{% endif %}>Capital</option>
+                  <option value="BRASILIA" {% if tipo_destino == 'BRASILIA' %}selected{% endif %}>Brasilia</option>
+                </select>
+              </label>
+              <label>
+                Quantidade de diarias
+                <input type="text" name="quantidade_diarias" id="quantidadeDiarias" readonly />
+                <span class="field-help">Gerado automaticamente.</span>
+              </label>
+              <label>
+                Valor total das diarias
+                <input type="text" name="valor_diarias" id="valorDiarias" readonly />
+                <span class="field-help">Considera a quantidade de servidores.</span>
+              </label>
+              <label class="full">
+                Valor por extenso (manual)
+                <input type="text" name="valor_diarias_extenso" id="valorDiariasExtenso" value="{{ valor_diarias_extenso|default:'' }}" />
+                <span class="field-help">Preencha manualmente ate termos conversor automatico.</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="trecho-card" data-diarias-preview>
+        <div class="trecho-header">
+          <div>
+            <span class="badge">Diarias (previa)</span>
+            <div class="trecho-subtitle">Atualiza automaticamente ao preencher os dados.</div>
+          </div>
+        </div>
+        <div class="trecho-body">
+          <div class="sub-card">
+            <div class="grid">
+              <label>
+                Resultado
+                <div class="preview" id="diariasPreviewText">Preencha saída/chegada para calcular</div>
+              </label>
+              <label>
+                Valor por servidor
+                <div class="preview" id="diariasPreviewPorServidor">-</div>
+              </label>
+              <label>
+                Valor total
+                <div class="preview" id="diariasPreviewTotal">-</div>
+              </label>
+              <label>
+                Total de horas
+                <div class="preview" id="diariasPreviewHoras">-</div>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <section class="grid">
         <label class="full">

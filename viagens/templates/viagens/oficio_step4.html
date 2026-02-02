@@ -1,0 +1,199 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Novo oficio - Etapa 4{% endblock %}
+
+{% block breadcrumb %}
+  Oficios <span class="breadcrumb-sep">/</span> Resumo
+{% endblock %}
+
+{% block content %}
+  <nav class="stepper" aria-label="Etapas">
+    <a class="stepper-step is-done" href="{% url 'formulario' %}?resume=1" data-step="1" data-step-mode="link">
+      <span class="stepper-index">1</span>
+      Dados
+    </a>
+    <a class="stepper-step is-done" href="{% url 'oficio_step2' %}" data-step="2" data-step-mode="link">
+      <span class="stepper-index">2</span>
+      Transporte
+    </a>
+    <a class="stepper-step is-done" href="{% url 'oficio_step3' %}" data-step="3" data-step-mode="link">
+      <span class="stepper-index">3</span>
+      Roteiro
+    </a>
+    <button class="stepper-step is-active" type="button" data-step="4" disabled>
+      <span class="stepper-index">4</span>
+      Resumo
+    </button>
+  </nav>
+
+    <div class="card">
+    <form method="post" id="oficioStep4Form" data-current-step="4">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="save" />
+      {% if erros %}
+        <div class="error">
+          {% for mensagem in erros.values %}
+            <p>{{ mensagem }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <section class="grid">
+        <div class="sub-card">
+          <div class="sub-card-title">Identificação</div>
+          <div class="preview-line">
+            <span class="preview-label">Ofício</span>
+            <span class="preview-value">{{ oficio|default:"-" }}</span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">Protocolo</span>
+            <span class="preview-value">{{ protocolo|default:"-" }}</span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">Assunto</span>
+            <span class="preview-value">{{ assunto|default:"-" }}</span>
+          </div>
+        </div>
+        <div class="sub-card">
+          <div class="sub-card-title">Servidores</div>
+          {% if preview_viajantes %}
+            {% for servidor in preview_viajantes %}
+              <div class="preview-line">
+                <span class="preview-label">{{ servidor.nome }}</span>
+                <span class="preview-value">
+                  {{ servidor.cargo|default:"-" }}
+                  <span class="preview-sub">RG: {{ servidor.rg|default:"-" }} | CPF: {{ servidor.cpf|default:"-" }}</span>
+                </span>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="preview-line">
+              <span class="preview-value">Nenhum servidor selecionado.</span>
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="sub-card">
+          <div class="sub-card-title">Veículo</div>
+          <div class="preview-line">
+            <span class="preview-label">Placa</span>
+            <span class="preview-value">{{ placa|default:"-" }}</span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">Modelo</span>
+            <span class="preview-value">{{ modelo|default:"-" }}</span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">Combustível</span>
+            <span class="preview-value">{{ combustivel|default:"-" }}</span>
+          </div>
+        </div>
+        <div class="sub-card">
+          <div class="sub-card-title">Motorista</div>
+          <div class="preview-line">
+            <span class="preview-label">Nome</span>
+            <span class="preview-value">
+              {{ motorista_preview.nome|default:motorista_nome|default:"-" }}
+              {% if motorista_carona %}(Carona){% endif %}
+            </span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">RG</span>
+            <span class="preview-value">{{ motorista_preview.rg|default:"-" }}</span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">CPF</span>
+            <span class="preview-value">{{ motorista_preview.cpf|default:"-" }}</span>
+          </div>
+          {% if motorista_oficio or motorista_protocolo %}
+            <div class="preview-line">
+              <span class="preview-label">Ofício motorista</span>
+              <span class="preview-value">{{ motorista_oficio|default:"-" }}</span>
+            </div>
+            <div class="preview-line">
+              <span class="preview-label">Protocolo motorista</span>
+              <span class="preview-value">{{ motorista_protocolo|default:"-" }}</span>
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Roteiro de ida</div>
+        {% if trechos_summary %}
+          {% for trecho in trechos_summary %}
+            <div class="preview-line">
+              <span class="preview-label">Trecho {{ forloop.counter }}</span>
+              <span class="preview-value">
+                {{ trecho.origem|default:"-" }} → {{ trecho.destino|default:"-" }}
+                <span class="preview-sub">
+                  Saída: {{ trecho.saida|default:"-" }} | Chegada: {{ trecho.chegada|default:"-" }}
+                </span>
+              </span>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="preview-line">
+            <span class="preview-value">Nenhum trecho cadastrado.</span>
+          </div>
+        {% endif %}
+      </section>
+
+      <section class="grid">
+        <div class="sub-card">
+          <div class="sub-card-title">Retorno</div>
+          <div class="preview-line">
+            <span class="preview-label">Origem</span>
+            <span class="preview-value">{{ retorno_saida_cidade|default:"-" }}</span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">Saída</span>
+            <span class="preview-value">
+              {{ retorno_saida_data|default:"-" }} {{ retorno_saida_hora|default:"" }}
+            </span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">Destino</span>
+            <span class="preview-value">{{ retorno_chegada_cidade|default:"-" }}</span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">Chegada</span>
+            <span class="preview-value">
+              {{ retorno_chegada_data|default:"-" }} {{ retorno_chegada_hora|default:"" }}
+            </span>
+          </div>
+        </div>
+        <div class="sub-card">
+          <div class="sub-card-title">Diárias</div>
+          <div class="preview-line">
+            <span class="preview-label">Resultado</span>
+            <span class="preview-value">{{ quantidade_diarias|default:"-" }}</span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">Valor total</span>
+            <span class="preview-value">{{ valor_diarias|default:"-" }}</span>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">Valor por extenso</span>
+            <span class="preview-value">{{ valor_diarias_extenso|default:"-" }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Motivo</div>
+        <p>{{ motivo|default:"-" }}</p>
+      </section>
+
+      <div class="wizard-actions">
+        <button class="btn-clear" type="submit" name="action" value="prev">Voltar</button>
+        <button class="btn-primary" type="submit" name="action" value="save">Salvar Ofício</button>
+        <!-- teste de botao -->
+
+      </div>
+    </form>
+  </div>
+{% endblock %}

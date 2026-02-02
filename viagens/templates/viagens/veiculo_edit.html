@@ -1,0 +1,73 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Editar veiculo{% endblock %}
+
+{% block breadcrumb %}
+  Veiculos <span class="breadcrumb-sep">/</span> Editar
+{% endblock %}
+
+{% block content %}
+  <h2 class="page-title">Editar veiculo</h2>
+  <p class="page-subtitle">Atualize placa, modelo e combustivel.</p>
+
+  <div class="page-grid">
+    <div class="card">
+      <form method="post">
+        {% csrf_token %}
+        {% if erros %}
+          <div class="error">Revise os campos destacados.</div>
+        {% endif %}
+        <section class="grid">
+          <label>
+            Placa
+            <input type="text" name="placa" value="{{ veiculo.placa }}" required />
+            {% if erros.placa %}<span class="field-errors">{{ erros.placa }}</span>{% endif %}
+          </label>
+          <label>
+            Modelo
+            <input type="text" name="modelo" value="{{ veiculo.modelo }}" required />
+            {% if erros.modelo %}<span class="field-errors">{{ erros.modelo }}</span>{% endif %}
+          </label>
+          <label>
+            Combustivel
+            <select name="combustivel" required>
+              <option value="">Selecione</option>
+              {% for item in combustivel_choices %}
+                <option value="{{ item }}" {% if item == veiculo.combustivel %}selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+            {% if erros.combustivel %}<span class="field-errors">{{ erros.combustivel }}</span>{% endif %}
+          </label>
+        </section>
+
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'veiculos_lista' %}">Voltar</a>
+          <button class="btn-primary" type="submit">Salvar alteracoes</button>
+          <button class="btn-danger" type="button" data-confirm-open="#confirmDeleteVeiculo">Excluir</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="illustration-card">
+      <div class="icon">CV</div>
+      <h3>Dados do veiculo</h3>
+      <p>Manter a base padronizada agiliza o preenchimento dos oficios.</p>
+      <p class="muted">A exclusao e permanente.</p>
+    </div>
+  </div>
+
+  <div class="confirm-backdrop" id="confirmDeleteVeiculo" data-confirm-modal>
+    <div class="confirm-card">
+      <h3>Excluir veiculo?</h3>
+      <p>Confirme para remover este veiculo do sistema.</p>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete" />
+        <div class="modal-actions">
+          <button class="btn-clear" type="button" data-confirm-close>Cancelar</button>
+          <button class="btn-danger" type="submit">Excluir</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

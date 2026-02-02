@@ -10,10 +10,19 @@ urlpatterns = [
     path("oficios/novo/", views.formulario, name="formulario"),
     path("oficios/etapa-2/", views.oficio_step2, name="oficio_step2"),
     path("oficios/etapa-3/", views.oficio_step3, name="oficio_step3"),
-    path("documento/<int:oficio_id>/", views.documento_oficio, name="documento_oficio"),
+    path("oficios/etapa-4/", views.oficio_step4, name="oficio_step4"),
+    path("oficios/<int:oficio_id>/editar/", views.oficio_editar, name="oficio_editar"),
+
+    path("oficios/<int:oficio_id>/download-docx/",views.oficio_download_docx,name="oficio_download_docx"),
+    path("oficios/<int:oficio_id>/download-pdf/", views.oficio_download_pdf, name="oficio_download_pdf"),
+    path("api/validacoes/resultado/", views.validacao_resultado, name="validacao_resultado"),
+
+
     path("viajantes/novo/", views.viajante_cadastro, name="viajante_cadastro"),
+    path("viajantes/<int:viajante_id>/editar/", views.viajante_editar, name="viajante_editar"),
     path("viajantes/", views.viajantes_lista, name="viajantes_lista"),
     path("veiculos/novo/", views.veiculo_cadastro, name="veiculo_cadastro"),
+    path("veiculos/<int:veiculo_id>/editar/", views.veiculo_editar, name="veiculo_editar"),
     path("veiculos/", views.veiculos_lista, name="veiculos_lista"),
     path("oficios/", views.oficios_lista, name="oficios_lista"),
     path("api/viajantes/", views.viajantes_api, name="viajantes_api"),
