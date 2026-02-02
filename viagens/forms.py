@@ -40,10 +40,10 @@ class TrechoForm(forms.ModelForm):
             "chegada_hora",
         ]
         widgets = {
-            "saida_data": forms.DateInput(attrs={"type": "date"}),
-            "saida_hora": forms.TimeInput(attrs={"type": "time"}),
-            "chegada_data": forms.DateInput(attrs={"type": "date"}),
-            "chegada_hora": forms.TimeInput(attrs={"type": "time"}),
+            "saida_data": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "saida_hora": forms.TimeInput(attrs={"type": "time"}, format="%H:%M"),
+            "chegada_data": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "chegada_hora": forms.TimeInput(attrs={"type": "time"}, format="%H:%M"),
         }
 
     def __init__(self, *args, **kwargs):
@@ -53,6 +53,10 @@ class TrechoForm(forms.ModelForm):
         self._apply_widget_attrs()
         self._set_city_queryset("origem_estado", "origem_cidade")
         self._set_city_queryset("destino_estado", "destino_cidade")
+        self._include_existing_city("origem_cidade")
+        self._include_existing_city("destino_cidade")
+        self._set_state_initial("origem_estado")
+        self._set_state_initial("destino_estado")
 
     def _apply_default_uf(self) -> None:
         if self.is_bound:
@@ -133,6 +137,38 @@ class TrechoForm(forms.ModelForm):
                 return str(instance_value.sigla)
             return str(instance_value)
         return ""
+
+    def _set_state_initial(self, field_name: str) -> None:
+        field = self.fields[field_name]
+        instance_state = getattr(self.instance, field_name, None)
+        state_id = getattr(self.instance, f"{field_name}_id", None)
+        if state_id and instance_state:
+            self.initial[field_name] = instance_state.sigla
+            return
+        initial_val = self.initial.get(field_name)
+        if isinstance(initial_val, Estado):
+            self.initial[field_name] = initial_val.sigla
+        elif isinstance(initial_val, str) and initial_val.isdigit():
+            estado = Estado.objects.filter(id=int(initial_val)).first()
+            if estado:
+                self.initial[field_name] = estado.sigla
+
+    def _include_existing_city(self, field_name: str) -> None:
+        field = self.fields[field_name]
+        city = getattr(self.instance, field_name, None)
+        if not city:
+            city_id = self.initial.get(field_name)
+            if city_id:
+                try:
+                    city = Cidade.objects.get(id=city_id)
+                except Cidade.DoesNotExist:
+                    city = None
+        if not city:
+            return
+
+        if not field.queryset.filter(id=city.id).exists():
+            city_qs = Cidade.objects.filter(id=city.id)
+            field.queryset = field.queryset | city_qs
 
     def clean(self):
         cleaned_data = super().clean()

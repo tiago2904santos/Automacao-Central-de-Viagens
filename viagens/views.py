@@ -11,6 +11,7 @@ from django.db import models, transaction
 from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
 from django.forms import inlineformset_factory
+from django.forms.models import BaseInlineFormSet
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -92,6 +93,11 @@ def _format_trecho_local(cidade: Cidade | None, estado: Estado | None) -> str:
         return estado.sigla
     return ""
 
+
+class OrderedTrechoInlineFormSet(BaseInlineFormSet):
+    def get_queryset(self):
+        return super().get_queryset().order_by("ordem", "id")
+
 DEFAULT_CARGO_CHOICES = [
     "Agente de Policia Judiciaria",
     "Delegado",
@@ -152,27 +158,43 @@ TRECHO_FIELDS = (
 
 def _serialize_trechos_from_post(post_data) -> list[dict[str, str | int]]:
     prefix = "trechos"
+
+    def _as_int_or_str(raw_value: str | None) -> str | int:
+        value = (raw_value or "").strip()
+        if not value:
+            return ""
+        if value.isdigit():
+            return int(value)
+        return value
+
+    total_raw = post_data.get(f"{prefix}-TOTAL_FORMS", 0) or 0
     try:
-        total = int(post_data.get(f"{prefix}-TOTAL_FORMS", 0))
+        total = int(total_raw)
     except (TypeError, ValueError):
         total = 0
-    trechos = []
+
+    trechos: list[dict[str, str | int]] = []
     for index in range(total):
-        trecho = {}
-        for field in TRECHO_FIELDS:
-            raw_value = (post_data.get(f"{prefix}-{index}-{field}", "") or "").strip()
-            if field in ("origem_cidade", "destino_cidade"):
-                try:
-                    trecho[field] = int(raw_value)
-                except (TypeError, ValueError):
-                    trecho[field] = raw_value
-            else:
-                trecho[field] = raw_value
+        oe_raw = post_data.get(f"{prefix}-{index}-origem_estado", "")
+        oc_raw = post_data.get(f"{prefix}-{index}-origem_cidade", "")
+        de_raw = post_data.get(f"{prefix}-{index}-destino_estado", "")
+        dc_raw = post_data.get(f"{prefix}-{index}-destino_cidade", "")
+
+        trecho = {
+            "origem_estado": _as_int_or_str(oe_raw),
+            "origem_cidade": _as_int_or_str(oc_raw),
+            "destino_estado": _as_int_or_str(de_raw),
+            "destino_cidade": _as_int_or_str(dc_raw),
+            "saida_data": (post_data.get(f"{prefix}-{index}-saida_data") or "").strip(),
+            "saida_hora": (post_data.get(f"{prefix}-{index}-saida_hora") or "").strip(),
+            "chegada_data": (post_data.get(f"{prefix}-{index}-chegada_data") or "").strip(),
+            "chegada_hora": (post_data.get(f"{prefix}-{index}-chegada_hora") or "").strip(),
+        }
+
         if any(str(value).strip() for value in trecho.values()):
             trechos.append(trecho)
-    if not trechos:
-        trechos = [{}]
-    return trechos
+
+    return trechos or [{}]
 
 
 def _normalize_trechos_initial(trechos_data) -> list[dict[str, str | int]]:
@@ -407,16 +429,16 @@ def _finalize_oficio_from_wizard(wizard_data: dict) -> tuple[Oficio, list[Viajan
         )
 
         trechos_instances = []
-        prev_estado = sede_estado
-        prev_cidade = sede_cidade
         for idx, trecho in enumerate(trechos_data):
+            origem_estado_obj = _resolve_estado(trecho.get("origem_estado"))
+            origem_cidade_obj = _resolve_cidade(trecho.get("origem_cidade"))
             destino_estado_obj = _resolve_estado(trecho.get("destino_estado"))
             destino_cidade_obj = _resolve_cidade(trecho.get("destino_cidade"))
             trecho_obj = Trecho(
                 oficio=oficio_obj,
                 ordem=idx + 1,
-                origem_estado=prev_estado,
-                origem_cidade=prev_cidade,
+                origem_estado=origem_estado_obj,
+                origem_cidade=origem_cidade_obj,
                 destino_estado=destino_estado_obj,
                 destino_cidade=destino_cidade_obj,
                 saida_data=parse_date(trecho.get("saida_data"))
@@ -433,8 +455,6 @@ def _finalize_oficio_from_wizard(wizard_data: dict) -> tuple[Oficio, list[Viajan
                 else None,
             )
             trechos_instances.append(trecho_obj)
-            prev_estado = destino_estado_obj
-            prev_cidade = destino_cidade_obj
 
         Trecho.objects.bulk_create(trechos_instances)
         if viajantes:
@@ -443,20 +463,47 @@ def _finalize_oficio_from_wizard(wizard_data: dict) -> tuple[Oficio, list[Viajan
     return oficio_obj, viajantes
 
 
-def _resolve_estado(sigla: str | None) -> Estado | None:
-    if not sigla:
+def _resolve_estado(value: str | int | None) -> Estado | None:
+    if value is None or value == "":
         return None
+    if isinstance(value, Estado):
+        return value
+    if isinstance(value, int) or (isinstance(value, str) and value.isdigit()):
+        try:
+            estado_id = int(value)
+        except (TypeError, ValueError):
+            estado_id = None
+        if estado_id is not None:
+            estado = Estado.objects.filter(id=estado_id).first()
+            if estado:
+                return estado
+    sigla = str(value).strip()
     return Estado.objects.filter(sigla__iexact=sigla).first()
 
 
-def _resolve_cidade(value: str | int | None) -> Cidade | None:
+def _resolve_cidade(value: str | int | None, estado: Estado | int | str | None = None) -> Cidade | None:
     if value is None or value == "":
         return None
-    try:
-        cidade_id = int(value)
-    except (TypeError, ValueError):
+    raw = str(value).strip()
+    if not raw:
         return None
-    return Cidade.objects.filter(id=cidade_id).first()
+    if raw.isdigit():
+        return Cidade.objects.filter(id=int(raw)).first()
+
+    qs = Cidade.objects.all()
+    if isinstance(estado, Estado):
+        qs = qs.filter(estado=estado)
+    elif isinstance(estado, int):
+        qs = qs.filter(estado_id=estado)
+    elif isinstance(estado, str):
+        resolved_estado = _resolve_estado(estado)
+        if resolved_estado:
+            qs = qs.filter(estado=resolved_estado)
+
+    cidade = qs.filter(nome__iexact=raw).first()
+    if cidade:
+        return cidade
+    return qs.filter(nome__icontains=raw).first()
 
 
 def _prune_trailing_trechos_post(data, prefix: str):
@@ -878,7 +925,17 @@ def oficio_step3(request):
     formset_extra = max(1, len(trechos_initial))
     TrechoFormSet = _build_trecho_formset(formset_extra)
 
+    dummy_oficio = Oficio()
     if request.method == "POST":
+        logger.warning(
+            "STEP3 trechos-0 origem_estado=%r origem_cidade=%r destino_estado=%r destino_cidade=%r total=%r initial=%r",
+            request.POST.get("trechos-0-origem_estado"),
+            request.POST.get("trechos-0-origem_cidade"),
+            request.POST.get("trechos-0-destino_estado"),
+            request.POST.get("trechos-0-destino_cidade"),
+            request.POST.get("trechos-TOTAL_FORMS"),
+            request.POST.get("trechos-INITIAL_FORMS"),
+        )
         motivo_val = request.POST.get("motivo", "").strip()
         tipo_destino = (request.POST.get("tipo_destino") or "").strip().upper()
         valor_diarias_extenso = request.POST.get("valor_diarias_extenso", "").strip()
@@ -899,8 +956,17 @@ def oficio_step3(request):
             parse_time(retorno_chegada_hora_raw) if retorno_chegada_hora_raw else None
         )
         post_data = _prune_trailing_trechos_post(request.POST, "trechos")
-        post_data = _sync_trechos_origens_post(post_data, "trechos")
-        formset = TrechoFormSet(post_data, instance=Oficio(), prefix="trechos")
+        # TEMP: desabilitado para evitar sobrescrever dados originais
+        # post_data = _sync_trechos_origens_post(post_data, "trechos")
+        if settings.DEBUG:
+            origin = post_data.get("trechos-0-origem_estado", "")
+            origin_city = post_data.get("trechos-0-origem_cidade", "")
+            logger.debug(
+                "trecho 0 origem_estado=%s origem_cidade=%s",
+                origin,
+                origin_city,
+            )
+        formset = TrechoFormSet(post_data, instance=dummy_oficio, prefix="trechos")
         trechos_serialized = _serialize_trechos_from_post(post_data)
         _update_wizard_data(
             request,
@@ -995,7 +1061,7 @@ def oficio_step3(request):
             erro = "Revise os campos obrigatorios do roteiro."
     else:
         formset = TrechoFormSet(
-            prefix="trechos", instance=Oficio(), initial=trechos_initial
+            prefix="trechos", instance=dummy_oficio, initial=trechos_initial
         )
 
     return render(
@@ -1305,7 +1371,10 @@ def veiculo_editar(request, veiculo_id: int):
 
 @require_http_methods(["GET", "POST"])
 def oficio_editar(request, oficio_id: int):
-    oficio = get_object_or_404(Oficio, id=oficio_id)
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos"),
+        id=oficio_id,
+    )
     erros = {}
     servidores_form = ServidoresSelectForm(
         initial={"servidores": oficio.viajantes.all()}
@@ -1323,7 +1392,8 @@ def oficio_editar(request, oficio_id: int):
         Oficio,
         Trecho,
         form=TrechoForm,
-        extra=1,
+        extra=0,
+        formset=OrderedTrechoInlineFormSet,
         can_delete=False,
     )
     formset = TrechoFormSet(instance=oficio, prefix="trechos")
@@ -1501,9 +1571,9 @@ def oficio_editar(request, oficio_id: int):
                     oficio.viajantes.set(servidores_form.cleaned_data["servidores"])
 
                 existentes = list(oficio.trechos.order_by("ordem"))
-                prev_estado = sede_estado
-                prev_cidade = sede_cidade
                 for idx, form in enumerate(forms_validas):
+                    origem_estado = form.cleaned_data.get("origem_estado")
+                    origem_cidade = form.cleaned_data.get("origem_cidade")
                     destino_estado = form.cleaned_data.get("destino_estado")
                     destino_cidade = form.cleaned_data.get("destino_cidade")
                     trecho_data = form.save(commit=False)
@@ -1512,8 +1582,8 @@ def oficio_editar(request, oficio_id: int):
                     else:
                         trecho = Trecho(oficio=oficio)
                     trecho.ordem = idx + 1
-                    trecho.origem_estado = prev_estado
-                    trecho.origem_cidade = prev_cidade
+                    trecho.origem_estado = origem_estado
+                    trecho.origem_cidade = origem_cidade
                     trecho.destino_estado = destino_estado
                     trecho.destino_cidade = destino_cidade
                     trecho.saida_data = trecho_data.saida_data
@@ -1521,8 +1591,6 @@ def oficio_editar(request, oficio_id: int):
                     trecho.chegada_data = trecho_data.chegada_data
                     trecho.chegada_hora = trecho_data.chegada_hora
                     trecho.save()
-                    prev_estado = destino_estado
-                    prev_cidade = destino_cidade
 
                 if len(existentes) > len(forms_validas):
                     extras = existentes[len(forms_validas) :]
