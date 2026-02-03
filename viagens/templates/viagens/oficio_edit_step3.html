@@ -9,22 +9,54 @@
 
 {% block content %}
   <nav class="stepper" aria-label="Etapas">
-    <a class="stepper-step" href="{% url 'oficio_edit_step1' oficio_id %}" data-step="1" data-step-mode="link">
+    <button
+      class="stepper-step"
+      type="submit"
+      form="roteiroForm"
+      name="goto"
+      value="step1"
+      data-step="1"
+      data-step-mode="link"
+    >
       <span class="stepper-index">1</span>
       Dados
-    </a>
-    <a class="stepper-step" href="{% url 'oficio_edit_step2' oficio_id %}" data-step="2" data-step-mode="link">
+    </button>
+    <button
+      class="stepper-step"
+      type="submit"
+      form="roteiroForm"
+      name="goto"
+      value="step2"
+      data-step="2"
+      data-step-mode="link"
+    >
       <span class="stepper-index">2</span>
       Transporte
-    </a>
-    <a class="stepper-step is-active" href="{% url 'oficio_edit_step3' oficio_id %}" data-step="3" data-step-mode="link">
+    </button>
+    <button
+      class="stepper-step is-active"
+      type="submit"
+      form="roteiroForm"
+      name="goto"
+      value="step3"
+      data-step="3"
+      data-step-mode="link"
+    >
       <span class="stepper-index">3</span>
       Roteiro
-    </a>
-    <a class="stepper-step" href="{% url 'oficio_edit_step4' oficio_id %}" data-step="4" data-step-mode="link">
+    </button>
+    <button
+      class="stepper-step"
+      type="submit"
+      form="roteiroForm"
+      name="goto"
+      value="step4"
+      data-step="4"
+      data-step-mode="link"
+    >
       <span class="stepper-index">4</span>
       Resumo
-    </a>
+    </button>
   </nav>
 
   <div class="page-header">
@@ -482,9 +514,9 @@
       </section>
 
       <div class="wizard-actions">
-        <a class="btn-clear" href="{% url 'oficio_edit_step2' oficio_id %}">Voltar</a>
-        <button class="btn-clear" type="submit" name="goto_step" value="4">Ir para resumo</button>
-        <button class="btn-primary" type="submit" name="goto_step" value="4">Avancar</button>
+        <button class="btn-clear" type="submit" name="goto" value="step2">Voltar</button>
+        <button class="btn-clear" type="submit" name="goto" value="step4">Ir para resumo</button>
+        <button class="btn-primary" type="submit" name="goto" value="step4">Avancar</button>
         <button class="btn-primary" type="submit" name="action" value="save">Salvar alteracoes</button>
       </div>
     </form>

@@ -26,8 +26,8 @@ FONT_NAME = "Times New Roman"
 FONT_SIZE_PT = 8
 
 # “largura” aproximada para estimar quebra em tabela
-NAME_MAX_VISUAL = 33.0
-CARGO_MAX_VISUAL = 33.0
+NAME_MAX_VISUAL = 35.0
+CARGO_MAX_VISUAL = 35.0
 
 NBSP = "\u00A0"  # não quebra e “segura” linha vazia no Word
 
@@ -299,8 +299,8 @@ def build_roteiro_ida(trechos: list[Trecho]) -> tuple[list[RichLine], list[RichL
         chegada_dt = _join([_fmt_date(t.chegada_data), _fmt_time(t.chegada_hora)], " ")
 
         # Linha inteira em negrito (como você pediu)
-        saida_lines.append([(f"Saída {origem} - {saida_dt}".strip() or NBSP, True)])
-        chegada_lines.append([(f"Chegada {destino} - {chegada_dt}".strip() or NBSP, True)])
+        saida_lines.append([(f"Saída {origem}: {saida_dt}".strip() or NBSP, True)])
+        chegada_lines.append([(f"Chegada {destino}: {chegada_dt}".strip() or NBSP, True)])
 
         if i < len(trechos) - 1:
             saida_lines.extend(_blank_lines(1))

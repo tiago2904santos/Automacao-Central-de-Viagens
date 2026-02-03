@@ -9,22 +9,38 @@
 
 {% block content %}
   <nav class="stepper" aria-label="Etapas">
-    <a class="stepper-step" href="{% url 'oficio_edit_step1' oficio_id %}" data-step="1" data-step-mode="link">
-      <span class="stepper-index">1</span>
-      Dados
-    </a>
-    <a class="stepper-step" href="{% url 'oficio_edit_step2' oficio_id %}" data-step="2" data-step-mode="link">
-      <span class="stepper-index">2</span>
-      Transporte
-    </a>
-    <a class="stepper-step" href="{% url 'oficio_edit_step3' oficio_id %}" data-step="3" data-step-mode="link">
-      <span class="stepper-index">3</span>
-      Roteiro
-    </a>
-    <a class="stepper-step is-active" href="{% url 'oficio_edit_step4' oficio_id %}" data-step="4" data-step-mode="link">
-      <span class="stepper-index">4</span>
-      Resumo
-    </a>
+    <form class="stepper-step-form" method="post" action="{% url 'oficio_edit_step4' oficio_id %}">
+      {% csrf_token %}
+      <input type="hidden" name="goto" value="step1" />
+      <button class="stepper-step" type="submit" data-step="1" data-step-mode="link">
+        <span class="stepper-index">1</span>
+        Dados
+      </button>
+    </form>
+    <form class="stepper-step-form" method="post" action="{% url 'oficio_edit_step4' oficio_id %}">
+      {% csrf_token %}
+      <input type="hidden" name="goto" value="step2" />
+      <button class="stepper-step" type="submit" data-step="2" data-step-mode="link">
+        <span class="stepper-index">2</span>
+        Transporte
+      </button>
+    </form>
+    <form class="stepper-step-form" method="post" action="{% url 'oficio_edit_step4' oficio_id %}">
+      {% csrf_token %}
+      <input type="hidden" name="goto" value="step3" />
+      <button class="stepper-step" type="submit" data-step="3" data-step-mode="link">
+        <span class="stepper-index">3</span>
+        Roteiro
+      </button>
+    </form>
+    <form class="stepper-step-form" method="post" action="{% url 'oficio_edit_step4' oficio_id %}">
+      {% csrf_token %}
+      <input type="hidden" name="goto" value="step4" />
+      <button class="stepper-step is-active" type="submit" data-step="4" data-step-mode="link" disabled>
+        <span class="stepper-index">4</span>
+        Resumo
+      </button>
+    </form>
   </nav>
 
   <div class="page-header">
@@ -196,13 +212,17 @@
       <p>{{ motivo|default:"-" }}</p>
     </section>
 
-    <div class="wizard-actions">
-      <a class="btn-clear" href="{% url 'oficio_edit_step3' oficio_id %}">Voltar</a>
-      <a class="btn-clear" href="{% url 'oficios_lista' %}">Voltar para lista</a>
-      <form method="post" action="{% url 'oficio_edit_save' oficio_id %}">
-        {% csrf_token %}
-        <button class="btn-primary" type="submit">Salvar alteracoes</button>
-      </form>
-    </div>
+      <div class="wizard-actions">
+        <form method="post" action="{% url 'oficio_edit_step4' oficio_id %}">
+          {% csrf_token %}
+          <input type="hidden" name="goto" value="step3" />
+          <button class="btn-clear" type="submit">Voltar</button>
+        </form>
+        <a class="btn-clear" href="{% url 'oficios_lista' %}">Voltar para lista</a>
+        <form method="post" action="{% url 'oficio_edit_save' oficio_id %}">
+          {% csrf_token %}
+          <button class="btn-primary" type="submit">Salvar alteracoes</button>
+        </form>
+      </div>
   </div>
 {% endblock %}

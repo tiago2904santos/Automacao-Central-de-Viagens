@@ -456,6 +456,12 @@ body {
   flex-wrap: wrap;
 }
 
+.stepper-step-form {
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+}
+
 .stepper-step {
   border: 1px solid var(--brand-border);
   background: #fff;
