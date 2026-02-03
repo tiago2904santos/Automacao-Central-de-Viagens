@@ -7,8 +7,13 @@ from io import BytesIO
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
-import pythoncom
-import win32com.client  # type: ignore
+try:
+    import pythoncom
+    import win32com.client as win32client  # type: ignore
+except ImportError:  # pragma: no cover - optional Windows dependency
+    pythoncom = None  # type: ignore[assignment]
+    win32client = None  # type: ignore[assignment]
+
 from django.conf import settings
 from docx import Document as DocxFactory
 from docx.document import Document as DocxDocument
@@ -413,11 +418,22 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
 # =========================
 # PDF (Word/Windows)
 # =========================
+
+
+def _ensure_pywin32_available() -> None:
+    if pythoncom is None or win32client is None:
+        raise RuntimeError(
+            "A conversão de DOCX para PDF exige pywin32 (pythoncom + win32com). "
+            "Instale a dependência no ambiente Windows para usar essa funcionalidade."
+        )
+
+
 def docx_bytes_to_pdf_bytes(docx_bytes: bytes) -> bytes:
     """
     Converte DOCX em PDF usando Microsoft Word (fidelidade alta).
     Requer Windows + Word instalado.
     """
+    _ensure_pywin32_available()
     pythoncom.CoInitialize()
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -425,7 +441,7 @@ def docx_bytes_to_pdf_bytes(docx_bytes: bytes) -> bytes:
         pdf_path = Path(tmpdir) / "oficio.pdf"
         docx_path.write_bytes(docx_bytes)
 
-        word = win32com.client.Dispatch("Word.Application")
+        word = win32client.Dispatch("Word.Application")
         word.Visible = False
         word.DisplayAlerts = 0
 

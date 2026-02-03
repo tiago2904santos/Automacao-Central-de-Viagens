@@ -7,6 +7,7 @@ from typing import Iterable
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.db import models, transaction
+from django.db.utils import OperationalError
 from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
 from django.forms import inlineformset_factory
@@ -2480,39 +2481,45 @@ def veiculos_lista(request):
 @require_http_methods(["GET"])
 def oficios_lista(request):
     q = request.GET.get("q", "").strip()
-
-    oficios = Oficio.objects.select_related(
-        "veiculo",
-        "motorista_viajante",
-        "cidade_destino",
-        "estado_destino",
-        "cidade_sede",
-        "estado_sede",
-    ).prefetch_related("viajantes")
-    if q:
-        oficios = oficios.filter(
-            models.Q(oficio__icontains=q)
-            | models.Q(protocolo__icontains=q)
-            | models.Q(destino__icontains=q)
-            | models.Q(assunto__icontains=q)
-            | models.Q(placa__icontains=q)
-            | models.Q(motorista__icontains=q)
-            | models.Q(motorista_viajante__nome__icontains=q)
-            | models.Q(veiculo__placa__icontains=q)
-            | models.Q(veiculo__modelo__icontains=q)
-            | models.Q(viajantes__nome__icontains=q)
-            | models.Q(cidade_destino__nome__icontains=q)
-            | models.Q(cidade_sede__nome__icontains=q)
-            | models.Q(estado_destino__sigla__icontains=q)
-            | models.Q(estado_sede__sigla__icontains=q)
-        ).distinct()
-
-    oficios = oficios.order_by("-created_at")
-    paginator = Paginator(oficios, 10)
-    page_obj = paginator.get_page(request.GET.get("page"))
     params = request.GET.copy()
     params.pop("page", None)
     querystring = params.urlencode()
+    dev_safety = False
+
+    try:
+        oficios = Oficio.objects.select_related(
+            "veiculo",
+            "motorista_viajante",
+            "cidade_destino",
+            "estado_destino",
+            "cidade_sede",
+            "estado_sede",
+        ).prefetch_related("viajantes")
+        if q:
+            oficios = oficios.filter(
+                models.Q(oficio__icontains=q)
+                | models.Q(protocolo__icontains=q)
+                | models.Q(destino__icontains=q)
+                | models.Q(assunto__icontains=q)
+                | models.Q(placa__icontains=q)
+                | models.Q(motorista__icontains=q)
+                | models.Q(motorista_viajante__nome__icontains=q)
+                | models.Q(veiculo__placa__icontains=q)
+                | models.Q(veiculo__modelo__icontains=q)
+                | models.Q(viajantes__nome__icontains=q)
+                | models.Q(cidade_destino__nome__icontains=q)
+                | models.Q(cidade_sede__nome__icontains=q)
+                | models.Q(estado_destino__sigla__icontains=q)
+                | models.Q(estado_sede__sigla__icontains=q)
+            ).distinct()
+        oficios = oficios.order_by("-created_at")
+        paginator = Paginator(oficios, 10)
+    except OperationalError:
+        # DEV SAFETY: evita crash quando o banco ainda não criou o campo `status`.
+        dev_safety = True
+        paginator = Paginator(Oficio.objects.none(), 10)
+
+    page_obj = paginator.get_page(request.GET.get("page"))
     return render(
         request,
         "viagens/oficios_list.html",
@@ -2521,6 +2528,7 @@ def oficios_lista(request):
             "page_obj": page_obj,
             "querystring": querystring,
             "q": q,
+            "dev_safety": dev_safety,
         },
     )
 

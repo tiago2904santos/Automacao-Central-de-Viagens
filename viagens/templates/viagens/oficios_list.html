@@ -30,6 +30,13 @@
       </form>
     </div>
 
+    {% if dev_safety %}
+      <div class="dev-safety-note">
+        <!-- DEV SAFETY: fallback para quem ainda não aplicou as migrations -->
+        <p>DEV SAFETY: Atualize o banco (`python manage.py migrate viagens`) para listar ofícios e carregar o status.</p>
+      </div>
+    {% endif %}
+
     {% if oficios %}
       <table class="table">
         <thead>
