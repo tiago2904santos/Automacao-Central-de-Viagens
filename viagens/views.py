@@ -1652,7 +1652,8 @@ def oficio_step3(request):
         base_trechos = _build_trechos_from_sede_destinos(
             sede_uf_post, sede_cidade_post, valid_destinos
         )
-        trechos_serialized = _merge_datas_horas(trechos_serialized, base_trechos)
+        if base_trechos:
+            trechos_serialized = _merge_datas_horas(trechos_serialized, base_trechos)
         if not trechos_serialized:
             trechos_serialized = [
                 {
@@ -1777,7 +1778,7 @@ def oficio_step4(request):
         if not erros:
             oficio_obj, _ = _finalize_oficio_draft(oficio_obj)
             _clear_wizard_data(request)
-            return redirect("oficio_editar", oficio_id=oficio_obj.id)
+            return redirect("oficios_lista")
 
     context = _build_step4_context(wizard_data)
     status_context = _wizard_status_context(oficio_obj)
@@ -2026,7 +2027,8 @@ def oficio_edit_step3(request, oficio_id: int):
         base_trechos = _build_trechos_from_sede_destinos(
             sede_uf_post, sede_cidade_post, valid_destinos
         )
-        trechos_serialized = _merge_datas_horas(trechos_serialized, base_trechos)
+        if base_trechos:
+            trechos_serialized = _merge_datas_horas(trechos_serialized, base_trechos)
         if not trechos_serialized:
             trechos_serialized = [
                 {

@@ -206,4 +206,4 @@ class OficioFlowTests(TestCase):
 
         self.assertEqual(Oficio.objects.count(), 1)
         self.assertIsNone(self.client.session.get("oficio_wizard"))
-        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse("oficios_lista"))
