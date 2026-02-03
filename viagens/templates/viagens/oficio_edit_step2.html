@@ -1,0 +1,233 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Editar oficio - Etapa 2{% endblock %}
+
+{% block breadcrumb %}
+  Oficios <span class="breadcrumb-sep">/</span> Editar <span class="breadcrumb-sep">/</span> Transporte
+{% endblock %}
+
+{% block content %}
+  <nav class="stepper" aria-label="Etapas">
+    <a class="stepper-step" href="{% url 'oficio_edit_step1' oficio_id %}" data-step="1" data-step-mode="link">
+      <span class="stepper-index">1</span>
+      Dados
+    </a>
+    <a class="stepper-step is-active" href="{% url 'oficio_edit_step2' oficio_id %}" data-step="2" data-step-mode="link">
+      <span class="stepper-index">2</span>
+      Transporte
+    </a>
+    <a class="stepper-step" href="{% url 'oficio_edit_step3' oficio_id %}" data-step="3" data-step-mode="link">
+      <span class="stepper-index">3</span>
+      Roteiro
+    </a>
+    <a class="stepper-step" href="{% url 'oficio_edit_step4' oficio_id %}" data-step="4" data-step-mode="link">
+      <span class="stepper-index">4</span>
+      Resumo
+    </a>
+  </nav>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa 2 - Transporte</h2>
+      <p class="page-subtitle">Informe veiculo e motorista. O motorista pode ser um viajante.</p>
+    </div>
+    <div class="page-actions">
+      <span class="badge">Editando Oficio #{{ oficio_id }}</span>
+    </div>
+  </div>
+
+  <div class="page-grid page-grid--preview">
+    <div class="card">
+      <form method="post" id="oficioEditStep2Form" data-mode="edit">
+        {% csrf_token %}
+        {% for vid in viajantes_ids %}
+          <input type="hidden" name="viajantes_ids" value="{{ vid }}" />
+        {% endfor %}
+
+        <section class="grid">
+          <label>
+            Placa
+            <div class="field-row">
+              <input type="text" name="placa" id="plateInput" value="{{ placa }}" data-preview-target="placa" autocomplete="off" />
+              <button
+                class="icon-btn"
+                type="button"
+                aria-label="Cadastrar veiculo"
+                data-modal-url="{% url 'modal_veiculo_form' %}"
+                data-modal-kind="veiculo"
+                data-target-plate="plateInput"
+                data-target-model="modelInput"
+                data-target-fuel="fuelInput"
+              >
+                +
+              </button>
+            </div>
+            <span class="field-help">Ao sair do campo, tentamos buscar o veiculo cadastrado.</span>
+          </label>
+          <label>
+            Modelo
+            <input type="text" name="modelo" id="modelInput" value="{{ modelo }}" data-preview-target="modelo" />
+            <span class="field-help">Modelo oficial do veiculo.</span>
+          </label>
+          <label>
+            Combustivel
+            <select name="combustivel" id="fuelInput" data-preview-target="combustivel">
+              <option value="">Selecione</option>
+              {% for item in combustivel_choices %}
+                <option value="{{ item }}" {% if combustivel == item %}selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+            <span class="field-help">Escolha o tipo de combustivel.</span>
+          </label>
+        </section>
+
+        <section class="grid">
+          <label class="full">
+            Motorista (viajantes)
+            <div class="field-row">
+              {{ motorista_form.motorista }}
+              <button
+                class="icon-btn"
+                type="button"
+                aria-label="Cadastrar motorista"
+                data-modal-url="{% url 'modal_viajante_form' %}"
+                data-modal-kind="viajante"
+                data-target-motorista="#motoristaSelect"
+              >
+                +
+              </button>
+            </div>
+            <div class="chip-list chip-list--single" id="motoristaChipList">
+              {% if motorista_preview %}
+                <span class="chip" data-id="{{ motorista_preview.id }}">
+                  {{ motorista_preview.nome }}
+                  <button type="button" class="chip-remove" data-remove-motorista="1" aria-label="Remover">
+                    &times;
+                  </button>
+                </span>
+              {% elif motorista_nome %}
+                <span class="chip" data-id="manual">
+                  {{ motorista_nome }}
+                  <button type="button" class="chip-remove" data-remove-motorista="1" aria-label="Remover">
+                    &times;
+                  </button>
+                </span>
+              {% endif %}
+            </div>
+            <span class="field-help">Selecione um viajante ou cadastre rapidamente pelo botao +.</span>
+          </label>
+          <label class="full">
+            Motorista (nome manual)
+            <input type="text" name="motorista_nome" id="motoristaNome" value="{{ motorista_nome }}" placeholder="Digite caso nao esteja na lista" data-preview-target="motorista_nome" />
+            <span class="field-help">Use este campo somente quando o motorista nao estiver cadastrado.</span>
+          </label>
+        </section>
+
+        <section class="grid carona-fields{% if motorista_carona %} is-visible{% endif %}" id="caronaFields" data-carona-fields>
+          <label>
+            Numero do oficio do motorista
+            <input type="text" name="motorista_oficio" id="motoristaOficio" value="{{ motorista_oficio }}" data-preview-target="motorista_oficio" />
+          </label>
+          <label>
+            Protocolo do motorista
+            <input type="text" name="motorista_protocolo" id="motoristaProtocolo" value="{{ motorista_protocolo }}" data-preview-target="motorista_protocolo" />
+          </label>
+        </section>
+
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'oficio_edit_step1' oficio_id %}">Voltar</a>
+          <button class="btn-clear" type="submit" name="goto_step" value="4">Ir para resumo</button>
+          <button class="btn-primary" type="submit" name="goto_step" value="3">Avancar</button>
+          <button class="btn-primary" type="submit" name="action" value="save">Salvar alteracoes</button>
+        </div>
+      </form>
+    </div>
+
+    <aside class="preview-card" aria-live="polite">
+      <h3>Relatorio rapido</h3>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Oficio</span>
+          <span class="preview-value" data-preview-field="oficio">{{ oficio|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Protocolo</span>
+          <span class="preview-value" data-preview-field="protocolo">{{ protocolo|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Data de criacao</span>
+          <span class="preview-value">Automatica apos salvar</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Assunto</span>
+          <span class="preview-value" data-preview-field="assunto">{{ assunto|default:"-" }}</span>
+        </div>
+      </div>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Placa</span>
+          <span class="preview-value" data-preview-field="placa">{{ placa|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Modelo</span>
+          <span class="preview-value" data-preview-field="modelo">{{ modelo|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Combustivel</span>
+          <span class="preview-value" data-preview-field="combustivel">{{ combustivel|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista</span>
+          <span class="preview-value" data-preview-field="motorista_nome">
+            {{ motorista_preview.nome|default:motorista_nome|default:"-" }}{% if motorista_carona %} (Carona){% endif %}
+          </span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista CPF</span>
+          <span class="preview-value" data-preview-field="motorista_cpf">{{ motorista_preview.cpf|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista RG</span>
+          <span class="preview-value" data-preview-field="motorista_rg">{{ motorista_preview.rg|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Motorista cargo</span>
+          <span class="preview-value" data-preview-field="motorista_cargo">{{ motorista_preview.cargo|default:"-" }}</span>
+        </div>
+        <div class="preview-line carona-preview{% if not motorista_carona %} is-hidden{% endif %}" data-carona-preview>
+          <span class="preview-label">Oficio motorista</span>
+          <span class="preview-value" data-preview-field="motorista_oficio">{{ motorista_oficio|default:"-" }}</span>
+        </div>
+        <div class="preview-line carona-preview{% if not motorista_carona %} is-hidden{% endif %}" data-carona-preview>
+          <span class="preview-label">Protocolo motorista</span>
+          <span class="preview-value" data-preview-field="motorista_protocolo">{{ motorista_protocolo|default:"-" }}</span>
+        </div>
+      </div>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Servidores</span>
+          <span class="preview-value">{{ preview_viajantes|length }}</span>
+        </div>
+        {% if preview_viajantes %}
+          {% for servidor in preview_viajantes %}
+            <div class="preview-line">
+              <span class="preview-label">{{ servidor.nome }}</span>
+              <span class="preview-value">
+                {{ servidor.cargo|default:"-" }}
+                <span class="preview-sub">RG: {{ servidor.rg|default:"-" }} | CPF: {{ servidor.cpf|default:"-" }}</span>
+              </span>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty">Nenhum servidor selecionado.</div>
+        {% endif %}
+      </div>
+    </aside>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/form.js' %}"></script>
+  <script src="{% static 'viagens/oficio_wizard.js' %}"></script>
+{% endblock %}

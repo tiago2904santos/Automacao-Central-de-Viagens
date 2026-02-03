@@ -12,6 +12,36 @@ urlpatterns = [
     path("oficios/etapa-3/", views.oficio_step3, name="oficio_step3"),
     path("oficios/etapa-4/", views.oficio_step4, name="oficio_step4"),
     path("oficios/<int:oficio_id>/editar/", views.oficio_editar, name="oficio_editar"),
+    path(
+        "oficios/<int:oficio_id>/editar/etapa-1/",
+        views.oficio_edit_step1,
+        name="oficio_edit_step1",
+    ),
+    path(
+        "oficios/<int:oficio_id>/editar/etapa-2/",
+        views.oficio_edit_step2,
+        name="oficio_edit_step2",
+    ),
+    path(
+        "oficios/<int:oficio_id>/editar/etapa-3/",
+        views.oficio_edit_step3,
+        name="oficio_edit_step3",
+    ),
+    path(
+        "oficios/<int:oficio_id>/editar/etapa-4/",
+        views.oficio_edit_step4,
+        name="oficio_edit_step4",
+    ),
+    path(
+        "oficios/<int:oficio_id>/editar/salvar/",
+        views.oficio_edit_save,
+        name="oficio_edit_save",
+    ),
+    path(
+        "oficios/<int:oficio_id>/editar/cancelar/",
+        views.oficio_edit_cancel,
+        name="oficio_edit_cancel",
+    ),
 
     path("oficios/<int:oficio_id>/download-docx/",views.oficio_download_docx,name="oficio_download_docx"),
     path("oficios/<int:oficio_id>/download-pdf/", views.oficio_download_pdf, name="oficio_download_pdf"),

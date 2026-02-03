@@ -146,6 +146,31 @@ def _clear_wizard_data(request) -> None:
     request.session.modified = True
 
 
+def _edit_key(oficio_id: int) -> str:
+    return f"oficio_edit_wizard:{oficio_id}"
+
+
+def _get_edit_data(request, oficio_id: int) -> dict:
+    return request.session.get(_edit_key(oficio_id), {})
+
+
+def _set_edit_data(request, oficio_id: int, data: dict) -> None:
+    request.session[_edit_key(oficio_id)] = data
+    request.session.modified = True
+
+
+def _update_edit_data(request, oficio_id: int, new_data: dict) -> dict:
+    data = _get_edit_data(request, oficio_id)
+    data.update(new_data)
+    _set_edit_data(request, oficio_id, data)
+    return data
+
+
+def _clear_edit_data(request, oficio_id: int) -> None:
+    request.session.pop(_edit_key(oficio_id), None)
+    request.session.modified = True
+
+
 TRECHO_FIELDS = (
     "origem_estado",
     "origem_cidade",
@@ -384,6 +409,119 @@ def _build_trechos_summary(trechos_data: list[dict]) -> list[dict[str, str]]:
     return summary
 
 
+def _hydrate_edit_session_from_db(oficio: Oficio) -> dict:
+    trechos = list(
+        oficio.trechos.select_related(
+            "origem_estado",
+            "origem_cidade",
+            "destino_estado",
+            "destino_cidade",
+        ).order_by("ordem", "id")
+    )
+    viajantes_ids = [str(viajante.id) for viajante in oficio.viajantes.all()]
+    trechos_payload: list[dict[str, str]] = []
+    for trecho in trechos:
+        trechos_payload.append(
+            {
+                "origem_estado": trecho.origem_estado.sigla if trecho.origem_estado else "",
+                "origem_cidade": str(trecho.origem_cidade_id or ""),
+                "destino_estado": trecho.destino_estado.sigla if trecho.destino_estado else "",
+                "destino_cidade": str(trecho.destino_cidade_id or ""),
+                "saida_data": trecho.saida_data.isoformat() if trecho.saida_data else "",
+                "saida_hora": trecho.saida_hora.strftime("%H:%M") if trecho.saida_hora else "",
+                "chegada_data": trecho.chegada_data.isoformat() if trecho.chegada_data else "",
+                "chegada_hora": trecho.chegada_hora.strftime("%H:%M") if trecho.chegada_hora else "",
+            }
+        )
+
+    sede_uf = ""
+    sede_cidade = ""
+    if trechos:
+        sede_uf = trechos[0].origem_estado.sigla if trechos[0].origem_estado else ""
+        sede_cidade = str(trechos[0].origem_cidade_id or "")
+
+    destinos: list[dict[str, str]] = []
+    prev_destino: tuple[str, str] | None = None
+    for trecho in trechos:
+        uf = trecho.destino_estado.sigla if trecho.destino_estado else ""
+        cidade = str(trecho.destino_cidade_id or "")
+        if not uf and not cidade:
+            continue
+        current = (uf, cidade)
+        if current == prev_destino:
+            continue
+        destinos.append({"uf": uf, "cidade": cidade})
+        prev_destino = current
+
+    motorista_nome = ""
+    if not oficio.motorista_viajante_id:
+        motorista_nome = oficio.motorista or ""
+
+    retorno = {
+        "retorno_saida_data": oficio.retorno_saida_data.isoformat()
+        if oficio.retorno_saida_data
+        else "",
+        "retorno_saida_hora": oficio.retorno_saida_hora.strftime("%H:%M")
+        if oficio.retorno_saida_hora
+        else "",
+        "retorno_chegada_data": oficio.retorno_chegada_data.isoformat()
+        if oficio.retorno_chegada_data
+        else "",
+        "retorno_chegada_hora": oficio.retorno_chegada_hora.strftime("%H:%M")
+        if oficio.retorno_chegada_hora
+        else "",
+    }
+
+    return {
+        "oficio": oficio.oficio,
+        "protocolo": oficio.protocolo,
+        "assunto": oficio.assunto,
+        "viajantes_ids": viajantes_ids,
+        "placa": oficio.placa,
+        "modelo": oficio.modelo,
+        "combustivel": oficio.combustivel,
+        "motorista_id": str(oficio.motorista_viajante_id or ""),
+        "motorista_nome": motorista_nome,
+        "motorista_oficio": oficio.motorista_oficio,
+        "motorista_protocolo": oficio.motorista_protocolo,
+        "motorista_carona": oficio.motorista_carona,
+        "sede_uf": sede_uf,
+        "sede_cidade": sede_cidade,
+        "destinos": destinos or [{}],
+        "trechos": trechos_payload or [{}],
+        "retorno": retorno,
+        "retorno_saida_cidade": oficio.retorno_saida_cidade,
+        "retorno_chegada_cidade": oficio.retorno_chegada_cidade,
+        "tipo_destino": oficio.tipo_destino,
+        "motivo": oficio.motivo,
+        "valor_diarias_extenso": oficio.valor_diarias_extenso,
+        "quantidade_diarias": oficio.quantidade_diarias,
+        "valor_diarias": oficio.valor_diarias,
+        "destino": oficio.destino,
+        "erros": {},
+    }
+
+
+def _ensure_edit_session(request, oficio_id: int) -> dict:
+    data = _get_edit_data(request, oficio_id)
+    if data:
+        return data
+    oficio = get_object_or_404(
+        Oficio.objects.select_related("motorista_viajante")
+        .prefetch_related("viajantes")
+        .prefetch_related(
+            "trechos__origem_estado",
+            "trechos__origem_cidade",
+            "trechos__destino_estado",
+            "trechos__destino_cidade",
+        ),
+        id=oficio_id,
+    )
+    data = _hydrate_edit_session_from_db(oficio)
+    _set_edit_data(request, oficio_id, data)
+    return data
+
+
 def _wizard_has_step4_data(wizard_data: dict) -> bool:
     if not wizard_data:
         return False
@@ -447,6 +585,98 @@ def _build_step4_context(wizard_data: dict) -> dict:
         "quantidade_servidores": len(viajantes),
         "voltar_url": reverse("oficio_step3"),
     }
+
+
+def _validate_edit_wizard_data(draft: dict) -> dict[str, str]:
+    erros: dict[str, str] = {}
+    oficio_val = (draft.get("oficio") or "").strip()
+    protocolo_val = (draft.get("protocolo") or "").strip()
+    viajantes_ids = [str(item) for item in draft.get("viajantes_ids", []) if str(item)]
+    placa_val = (draft.get("placa") or "").strip()
+    modelo_val = (draft.get("modelo") or "").strip()
+    combustivel_val = (draft.get("combustivel") or "").strip()
+
+    if not oficio_val:
+        erros["oficio"] = "Informe o numero do oficio."
+    if not protocolo_val:
+        erros["protocolo"] = "Informe o protocolo."
+    if not viajantes_ids:
+        erros["viajantes"] = "Selecione ao menos um viajante."
+    if not placa_val or not modelo_val or not combustivel_val:
+        erros["veiculo"] = "Preencha placa, modelo e combustivel."
+
+    motorista_carona = bool(draft.get("motorista_carona"))
+    if motorista_carona:
+        motorista_oficio = (draft.get("motorista_oficio") or "").strip()
+        motorista_protocolo = (draft.get("motorista_protocolo") or "").strip()
+        if not motorista_oficio or not motorista_protocolo:
+            erros["motorista_oficio"] = "Informe oficio e protocolo do motorista."
+
+    trechos_data = draft.get("trechos") or []
+    if not trechos_data:
+        erros["trechos"] = "Adicione ao menos um trecho para o roteiro."
+    else:
+        for trecho in trechos_data:
+            origem_estado = _resolve_estado(trecho.get("origem_estado"))
+            origem_cidade = _resolve_cidade(trecho.get("origem_cidade"), estado=origem_estado)
+            destino_estado = _resolve_estado(trecho.get("destino_estado"))
+            destino_cidade = _resolve_cidade(trecho.get("destino_cidade"), estado=destino_estado)
+            if not origem_estado or not origem_cidade or not destino_estado or not destino_cidade:
+                erros["trechos"] = "Preencha origem e destino de todos os trechos."
+                break
+            saida_data = parse_date(trecho.get("saida_data")) if trecho.get("saida_data") else None
+            chegada_data = (
+                parse_date(trecho.get("chegada_data")) if trecho.get("chegada_data") else None
+            )
+            saida_hora = parse_time(trecho.get("saida_hora")) if trecho.get("saida_hora") else None
+            chegada_hora = (
+                parse_time(trecho.get("chegada_hora")) if trecho.get("chegada_hora") else None
+            )
+            if saida_data and chegada_data:
+                saida_dt = _combine_date_time(saida_data, saida_hora)
+                chegada_dt = _combine_date_time(chegada_data, chegada_hora)
+                if saida_dt and chegada_dt and chegada_dt < saida_dt:
+                    erros["trechos"] = "A chegada deve ocorrer no mesmo momento ou apos a saida."
+                    break
+
+    tipo_destino = (draft.get("tipo_destino") or "").strip()
+    if not tipo_destino:
+        erros["tipo_destino"] = "Selecione o tipo de destino."
+
+    retorno = _get_retornodata(draft)
+    retorno_saida_data = (
+        parse_date(retorno.get("retorno_saida_data")) if retorno.get("retorno_saida_data") else None
+    )
+    retorno_chegada_data = (
+        parse_date(retorno.get("retorno_chegada_data"))
+        if retorno.get("retorno_chegada_data")
+        else None
+    )
+    retorno_saida_hora = (
+        parse_time(retorno.get("retorno_saida_hora")) if retorno.get("retorno_saida_hora") else None
+    )
+    retorno_chegada_hora = (
+        parse_time(retorno.get("retorno_chegada_hora"))
+        if retorno.get("retorno_chegada_hora")
+        else None
+    )
+    if not retorno_saida_data or not retorno_chegada_data:
+        erros["retorno"] = "Informe as datas de saida e chegada do retorno."
+    else:
+        retorno_saida_dt = _combine_date_time(retorno_saida_data, retorno_saida_hora)
+        retorno_chegada_dt = _combine_date_time(retorno_chegada_data, retorno_chegada_hora)
+        if retorno_saida_dt and retorno_chegada_dt and retorno_chegada_dt < retorno_saida_dt:
+            erros["retorno"] = "A chegada do retorno deve ocorrer apos a saida."
+        if trechos_data and not erros.get("retorno"):
+            primeiro = trechos_data[0]
+            saida_sede_dt = _combine_date_time(
+                parse_date(primeiro.get("saida_data")) if primeiro.get("saida_data") else None,
+                parse_time(primeiro.get("saida_hora")) if primeiro.get("saida_hora") else None,
+            )
+            if saida_sede_dt and retorno_chegada_dt and retorno_chegada_dt < saida_sede_dt:
+                erros["retorno"] = "A chegada na sede deve ocorrer apos a saida da sede."
+
+    return erros
 
 
 def _finalize_oficio_from_wizard(wizard_data: dict) -> tuple[Oficio, list[Viajante]]:
@@ -1301,6 +1531,566 @@ def oficio_step4(request):
 
     context = _build_step4_context(wizard_data)
     return render(request, "viagens/oficio_step4.html", context)
+
+
+@require_http_methods(["GET", "POST"])
+def oficio_edit_step1(request, oficio_id: int):
+    data = _ensure_edit_session(request, oficio_id)
+    oficio_obj = get_object_or_404(Oficio, id=oficio_id)
+
+    if request.method == "POST":
+        oficio_val = request.POST.get("oficio", "").strip()
+        protocolo_val = request.POST.get("protocolo", "").strip()
+        assunto_val = request.POST.get("assunto", "").strip()
+        servidores_form = ServidoresSelectForm(request.POST)
+        if servidores_form.is_valid():
+            viajantes_ids = [
+                str(item.id)
+                for item in servidores_form.cleaned_data.get("servidores", [])
+            ]
+        else:
+            viajantes_ids = []
+
+        data = _update_edit_data(
+            request,
+            oficio_id,
+            {
+                "oficio": oficio_val,
+                "protocolo": protocolo_val,
+                "assunto": assunto_val,
+                "viajantes_ids": viajantes_ids,
+                "erros": {},
+            },
+        )
+        if request.POST.get("action") == "save":
+            return redirect("oficio_edit_save", oficio_id=oficio_id)
+        goto_step = (request.POST.get("goto_step") or "2").strip()
+        if goto_step == "1":
+            return redirect("oficio_edit_step1", oficio_id=oficio_id)
+        if goto_step == "3":
+            return redirect("oficio_edit_step3", oficio_id=oficio_id)
+        if goto_step == "4":
+            return redirect("oficio_edit_step4", oficio_id=oficio_id)
+        return redirect("oficio_edit_step2", oficio_id=oficio_id)
+
+    servidores_form = ServidoresSelectForm(
+        initial={"servidores": data.get("viajantes_ids", [])}
+    )
+    selected_ids = [str(item) for item in data.get("viajantes_ids", [])]
+    selected_viajantes = list(
+        Viajante.objects.filter(id__in=selected_ids).order_by("nome")
+    )
+    data_criacao = ""
+    if oficio_obj.created_at:
+        data_criacao = timezone.localtime(oficio_obj.created_at).strftime("%d/%m/%Y")
+
+    return render(
+        request,
+        "viagens/oficio_edit_step1.html",
+        {
+            "oficio_id": oficio_id,
+            "oficio": data.get("oficio", ""),
+            "protocolo": data.get("protocolo", ""),
+            "assunto": data.get("assunto", ""),
+            "data_criacao": data_criacao,
+            "servidores_form": servidores_form,
+            "selected_viajantes": selected_viajantes,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def oficio_edit_step2(request, oficio_id: int):
+    data = _ensure_edit_session(request, oficio_id)
+
+    viajantes_ids = data.get("viajantes_ids", [])
+    viajantes_sel = list(Viajante.objects.filter(id__in=viajantes_ids).order_by("nome"))
+    preview_viajantes = _viajantes_payload(viajantes_sel)
+    motorista_form = MotoristaSelectForm(
+        initial={"motorista": data.get("motorista_id", "")}
+    )
+
+    if request.method == "POST":
+        placa_val = request.POST.get("placa", "").strip()
+        modelo_val = request.POST.get("modelo", "").strip()
+        combustivel_val = request.POST.get("combustivel", "").strip()
+        motorista_form = MotoristaSelectForm(request.POST)
+        motorista_id = ""
+        if motorista_form.is_valid():
+            motorista_obj = motorista_form.cleaned_data.get("motorista")
+            if motorista_obj:
+                motorista_id = str(motorista_obj.id)
+        motorista_nome = request.POST.get("motorista_nome", "").strip()
+        motorista_oficio = request.POST.get("motorista_oficio", "").strip()
+        motorista_protocolo = request.POST.get("motorista_protocolo", "").strip()
+
+        placa_norm = _normalizar_placa(placa_val) if placa_val else ""
+        if placa_norm and (not modelo_val or not combustivel_val):
+            veiculo = Veiculo.objects.filter(placa__iexact=placa_norm).first()
+            if veiculo:
+                modelo_val = modelo_val or veiculo.modelo
+                combustivel_val = combustivel_val or veiculo.combustivel
+
+        motorista_carona = False
+        if motorista_id:
+            motorista_carona = motorista_id not in [str(item) for item in viajantes_ids]
+        elif motorista_nome:
+            motorista_carona = True
+
+        data = _update_edit_data(
+            request,
+            oficio_id,
+            {
+                "placa": placa_norm or placa_val,
+                "modelo": modelo_val,
+                "combustivel": combustivel_val,
+                "motorista_id": motorista_id,
+                "motorista_nome": motorista_nome,
+                "motorista_oficio": motorista_oficio,
+                "motorista_protocolo": motorista_protocolo,
+                "motorista_carona": motorista_carona,
+                "erros": {},
+            },
+        )
+        if request.POST.get("action") == "save":
+            return redirect("oficio_edit_save", oficio_id=oficio_id)
+        goto_step = (request.POST.get("goto_step") or "3").strip()
+        if goto_step == "1":
+            return redirect("oficio_edit_step1", oficio_id=oficio_id)
+        if goto_step == "2":
+            return redirect("oficio_edit_step2", oficio_id=oficio_id)
+        if goto_step == "4":
+            return redirect("oficio_edit_step4", oficio_id=oficio_id)
+        return redirect("oficio_edit_step3", oficio_id=oficio_id)
+
+    motorista_preview = None
+    motorista_id_val = data.get("motorista_id") or ""
+    if motorista_id_val and str(motorista_id_val).isdigit():
+        motorista_obj = Viajante.objects.filter(id=motorista_id_val).first()
+        if motorista_obj:
+            motorista_preview = _servidor_payload(motorista_obj)
+    motorista_nome_val = data.get("motorista_nome", "")
+    motorista_carona = False
+    if motorista_id_val:
+        motorista_carona = str(motorista_id_val) not in [str(item) for item in viajantes_ids]
+    elif motorista_nome_val:
+        motorista_carona = True
+
+    return render(
+        request,
+        "viagens/oficio_edit_step2.html",
+        {
+            "oficio_id": oficio_id,
+            "placa": data.get("placa", ""),
+            "modelo": data.get("modelo", ""),
+            "combustivel": data.get("combustivel", ""),
+            "combustivel_choices": _get_combustivel_choices(),
+            "motorista_id": data.get("motorista_id", ""),
+            "motorista_nome": motorista_nome_val,
+            "motorista_oficio": data.get("motorista_oficio", ""),
+            "motorista_protocolo": data.get("motorista_protocolo", ""),
+            "motorista_carona": motorista_carona,
+            "oficio": data.get("oficio", ""),
+            "protocolo": data.get("protocolo", ""),
+            "assunto": data.get("assunto", ""),
+            "viajantes_ids": viajantes_ids,
+            "preview_viajantes": preview_viajantes,
+            "motorista_preview": motorista_preview,
+            "motorista_form": motorista_form,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def oficio_edit_step3(request, oficio_id: int):
+    data = _ensure_edit_session(request, oficio_id)
+
+    motivo_val = data.get("motivo", "")
+    tipo_destino = data.get("tipo_destino", "")
+    valor_diarias_extenso = data.get("valor_diarias_extenso", "")
+    retorno_payload = _get_retornodata(data)
+    retorno_saida_data_raw = retorno_payload["retorno_saida_data"]
+    retorno_saida_hora_raw = retorno_payload["retorno_saida_hora"]
+    retorno_chegada_data_raw = retorno_payload["retorno_chegada_data"]
+    retorno_chegada_hora_raw = retorno_payload["retorno_chegada_hora"]
+
+    estados = Estado.objects.order_by("nome")
+    sede_uf_raw = (data.get("sede_uf") or "").strip().upper()
+    sede_cidade_raw = (data.get("sede_cidade") or "").strip()
+    defaults = {}
+    if not sede_uf_raw:
+        defaults["sede_uf"] = "PR"
+    if not sede_cidade_raw:
+        curitiba = (
+            Cidade.objects.filter(nome__iexact="Curitiba", estado__sigla="PR").first()
+        )
+        if curitiba:
+            defaults["sede_cidade"] = str(curitiba.id)
+    if defaults:
+        data = _update_edit_data(request, oficio_id, defaults)
+    sede_uf = (data.get("sede_uf") or "").strip().upper() or "PR"
+    sede_cidade = (data.get("sede_cidade") or "").strip()
+    destinos_session = _normalize_destinos_for_wizard(data.get("destinos"))
+
+    trechos_session = data.get("trechos") or []
+    if not trechos_session:
+        valid_destinos = [
+            destino for destino in destinos_session if destino.get("uf") and destino.get("cidade")
+        ]
+        trechos_session = _build_trechos_from_sede_destinos(
+            sede_uf, sede_cidade, valid_destinos
+        )
+        _update_edit_data(request, oficio_id, {"trechos": trechos_session})
+    trechos_initial = _normalize_trechos_initial(trechos_session)
+    formset_extra = max(1, len(trechos_initial))
+    TrechoFormSet = _build_trecho_formset(formset_extra)
+
+    dummy_oficio = Oficio()
+    if request.method == "POST":
+        motivo_val = request.POST.get("motivo", "").strip()
+        tipo_destino = (request.POST.get("tipo_destino") or "").strip().upper()
+        valor_diarias_extenso = request.POST.get("valor_diarias_extenso", "").strip()
+        retorno_saida_data_raw = request.POST.get("retorno_saida_data", "").strip()
+        retorno_saida_hora_raw = request.POST.get("retorno_saida_hora", "").strip()
+        retorno_chegada_data_raw = request.POST.get("retorno_chegada_data", "").strip()
+        retorno_chegada_hora_raw = request.POST.get("retorno_chegada_hora", "").strip()
+        retorno_saida_data = (
+            parse_date(retorno_saida_data_raw) if retorno_saida_data_raw else None
+        )
+        retorno_saida_hora = (
+            parse_time(retorno_saida_hora_raw) if retorno_saida_hora_raw else None
+        )
+        retorno_chegada_data = (
+            parse_date(retorno_chegada_data_raw) if retorno_chegada_data_raw else None
+        )
+        retorno_chegada_hora = (
+            parse_time(retorno_chegada_hora_raw) if retorno_chegada_hora_raw else None
+        )
+        post_data = _prune_trailing_trechos_post(request.POST, "trechos")
+        formset = TrechoFormSet(post_data, instance=dummy_oficio, prefix="trechos")
+        trechos_serialized = _serialize_trechos_from_post(post_data)
+        sede_uf_post, sede_cidade_post, destinos_raw = _serialize_sede_destinos_from_post(
+            post_data
+        )
+        valid_destinos = [
+            destino for destino in destinos_raw if destino.get("uf") and destino.get("cidade")
+        ]
+        base_trechos = _build_trechos_from_sede_destinos(
+            sede_uf_post, sede_cidade_post, valid_destinos
+        )
+        trechos_serialized = _merge_datas_horas(trechos_serialized, base_trechos)
+        if not trechos_serialized:
+            trechos_serialized = [
+                {
+                    "origem_estado": sede_uf_post,
+                    "origem_cidade": sede_cidade_post,
+                    "destino_estado": "",
+                    "destino_cidade": "",
+                    "saida_data": "",
+                    "saida_hora": "",
+                    "chegada_data": "",
+                    "chegada_hora": "",
+                }
+            ]
+        data = _update_edit_data(
+            request,
+            oficio_id,
+            {
+                "sede_uf": sede_uf_post,
+                "sede_cidade": sede_cidade_post,
+                "destinos": destinos_raw,
+                "trechos": trechos_serialized,
+                "tipo_destino": tipo_destino,
+                "motivo": motivo_val,
+                "valor_diarias_extenso": valor_diarias_extenso,
+                "retorno": {
+                    "retorno_saida_data": retorno_saida_data_raw,
+                    "retorno_saida_hora": retorno_saida_hora_raw,
+                    "retorno_chegada_data": retorno_chegada_data_raw,
+                    "retorno_chegada_hora": retorno_chegada_hora_raw,
+                },
+                "erros": {},
+            },
+        )
+
+        if trechos_serialized:
+            primeiro = trechos_serialized[0]
+            ultimo = trechos_serialized[-1]
+            sede_estado = _resolve_estado(primeiro.get("origem_estado"))
+            sede_cidade_obj = _resolve_cidade(primeiro.get("origem_cidade"))
+            destino_estado = _resolve_estado(ultimo.get("destino_estado"))
+            destino_cidade = _resolve_cidade(ultimo.get("destino_cidade"))
+            retorno_saida_cidade = _format_trecho_local(destino_cidade, destino_estado)
+            retorno_chegada_cidade = _format_trecho_local(sede_cidade_obj, sede_estado)
+            _update_edit_data(
+                request,
+                oficio_id,
+                {
+                    "retorno_saida_cidade": retorno_saida_cidade,
+                    "retorno_chegada_cidade": retorno_chegada_cidade,
+                },
+            )
+            if tipo_destino and retorno_chegada_data and retorno_saida_data:
+                saida_sede_dt = _combine_date_time(
+                    parse_date(primeiro.get("saida_data"))
+                    if primeiro.get("saida_data")
+                    else None,
+                    parse_time(primeiro.get("saida_hora"))
+                    if primeiro.get("saida_hora")
+                    else None,
+                )
+                retorno_chegada_dt = _combine_date_time(
+                    retorno_chegada_data, retorno_chegada_hora
+                )
+                if saida_sede_dt and retorno_chegada_dt:
+                    resultado_diarias = calcular_diarias(
+                        tipo_destino=tipo_destino,
+                        saida_sede=saida_sede_dt,
+                        chegada_sede=retorno_chegada_dt,
+                        quantidade_servidores=len(data.get("viajantes_ids", [])),
+                    )
+                    _update_edit_data(
+                        request,
+                        oficio_id,
+                        {
+                            "quantidade_diarias": resultado_diarias.quantidade_diarias_str,
+                            "valor_diarias": formatar_valor_diarias(
+                                resultado_diarias.valor_total_oficio
+                            ),
+                        },
+                    )
+
+        if request.POST.get("action") == "save":
+            return redirect("oficio_edit_save", oficio_id=oficio_id)
+        goto_step = (request.POST.get("goto_step") or "4").strip()
+        if goto_step == "1":
+            return redirect("oficio_edit_step1", oficio_id=oficio_id)
+        if goto_step == "2":
+            return redirect("oficio_edit_step2", oficio_id=oficio_id)
+        if goto_step == "3":
+            return redirect("oficio_edit_step3", oficio_id=oficio_id)
+        return redirect("oficio_edit_step4", oficio_id=oficio_id)
+
+    formset = TrechoFormSet(prefix="trechos", instance=dummy_oficio, initial=trechos_initial)
+
+    sede_uf = (data.get("sede_uf") or "").strip().upper() or "PR"
+    sede_cidade = (data.get("sede_cidade") or "").strip()
+    if not sede_cidade:
+        curitiba = (
+            Cidade.objects.filter(nome__iexact="Curitiba", estado__sigla="PR").first()
+        )
+        if curitiba:
+            sede_cidade = str(curitiba.id)
+    sede_estado = _resolve_estado(sede_uf)
+    sede_cidade_obj = _resolve_cidade(sede_cidade, estado=sede_estado)
+    sede_label = _format_trecho_local(sede_cidade_obj, sede_estado)
+    sede_uf_label = _format_estado_label(sede_estado, fallback=sede_uf)
+
+    destinos_session = _normalize_destinos_for_wizard(data.get("destinos"))
+    destinos_display = _build_destinos_display(destinos_session)
+
+    trechos_session = data.get("trechos") or []
+    trechos_initial = _normalize_trechos_initial(trechos_session)
+    destinos_order = ",".join(str(idx) for idx in range(len(destinos_display)))
+
+    return render(
+        request,
+        "viagens/oficio_edit_step3.html",
+        {
+            "oficio_id": oficio_id,
+            "formset": formset,
+            "motivo": motivo_val,
+            "tipo_destino": tipo_destino,
+            "retorno_saida_data": retorno_saida_data_raw,
+            "retorno_saida_hora": retorno_saida_hora_raw,
+            "retorno_chegada_data": retorno_chegada_data_raw,
+            "retorno_chegada_hora": retorno_chegada_hora_raw,
+            "retorno_saida_cidade": data.get("retorno_saida_cidade", ""),
+            "retorno_chegada_cidade": data.get("retorno_chegada_cidade", ""),
+            "valor_diarias_extenso": valor_diarias_extenso,
+            "quantidade_servidores": len(data.get("viajantes_ids", [])),
+            "estados": estados,
+            "sede_uf": sede_uf,
+            "sede_uf_label": sede_uf_label,
+            "sede_cidade": sede_cidade,
+            "sede_label": sede_label,
+            "destinos": destinos_display,
+            "destinos_total_forms": len(destinos_display),
+            "destinos_order": destinos_order,
+        },
+    )
+
+
+@require_http_methods(["GET"])
+def oficio_edit_step4(request, oficio_id: int):
+    data = _ensure_edit_session(request, oficio_id)
+    context = _build_step4_context(data)
+    context.update(
+        {
+            "oficio_id": oficio_id,
+            "erros": data.get("erros", {}),
+            "salvo": bool(request.GET.get("salvo")),
+        }
+    )
+    return render(request, "viagens/oficio_edit_step4.html", context)
+
+
+@require_http_methods(["POST"])
+def oficio_edit_save(request, oficio_id: int):
+    draft = _ensure_edit_session(request, oficio_id)
+    erros = _validate_edit_wizard_data(draft)
+    if erros:
+        _update_edit_data(request, oficio_id, {"erros": erros})
+        return redirect("oficio_edit_step4", oficio_id=oficio_id)
+
+    trechos_data = draft.get("trechos") or []
+    primeiro = trechos_data[0]
+    ultimo = trechos_data[-1]
+    sede_estado = _resolve_estado(primeiro.get("origem_estado"))
+    sede_cidade = _resolve_cidade(primeiro.get("origem_cidade"), estado=sede_estado)
+    destino_estado = _resolve_estado(ultimo.get("destino_estado"))
+    destino_cidade = _resolve_cidade(ultimo.get("destino_cidade"), estado=destino_estado)
+
+    retorno_payload = _get_retornodata(draft)
+    retorno_saida_data = (
+        parse_date(retorno_payload["retorno_saida_data"])
+        if retorno_payload.get("retorno_saida_data")
+        else None
+    )
+    retorno_saida_hora = (
+        parse_time(retorno_payload["retorno_saida_hora"])
+        if retorno_payload.get("retorno_saida_hora")
+        else None
+    )
+    retorno_chegada_data = (
+        parse_date(retorno_payload["retorno_chegada_data"])
+        if retorno_payload.get("retorno_chegada_data")
+        else None
+    )
+    retorno_chegada_hora = (
+        parse_time(retorno_payload["retorno_chegada_hora"])
+        if retorno_payload.get("retorno_chegada_hora")
+        else None
+    )
+
+    saida_sede_dt = _combine_date_time(
+        parse_date(primeiro.get("saida_data")) if primeiro.get("saida_data") else None,
+        parse_time(primeiro.get("saida_hora")) if primeiro.get("saida_hora") else None,
+    )
+    retorno_chegada_dt = _combine_date_time(retorno_chegada_data, retorno_chegada_hora)
+    resultado_diarias = calcular_diarias(
+        tipo_destino=(draft.get("tipo_destino") or "").strip(),
+        saida_sede=saida_sede_dt,
+        chegada_sede=retorno_chegada_dt,
+        quantidade_servidores=len(draft.get("viajantes_ids", [])),
+    )
+
+    quantidade_diarias = resultado_diarias.quantidade_diarias_str
+    valor_diarias = formatar_valor_diarias(resultado_diarias.valor_total_oficio)
+
+    destino_texto = ""
+    if destino_cidade and destino_estado:
+        destino_texto = f"{destino_cidade.nome} / {destino_estado.sigla}"
+
+    retorno_saida_cidade = _format_trecho_local(destino_cidade, destino_estado)
+    retorno_chegada_cidade = _format_trecho_local(sede_cidade, sede_estado)
+
+    viajantes_ids = draft.get("viajantes_ids", [])
+    viajantes = list(Viajante.objects.filter(id__in=viajantes_ids).order_by("nome"))
+
+    placa = (draft.get("placa") or "").strip()
+    placa_norm = _normalizar_placa(placa) if placa else ""
+    veiculo = (
+        Veiculo.objects.filter(placa__iexact=placa_norm).first() if placa_norm else None
+    )
+    modelo = (draft.get("modelo") or "").strip()
+    combustivel = (draft.get("combustivel") or "").strip()
+
+    motorista_id = draft.get("motorista_id") or ""
+    motorista_obj = (
+        Viajante.objects.filter(id=motorista_id).first()
+        if motorista_id and str(motorista_id).isdigit()
+        else None
+    )
+    motorista_nome = motorista_obj.nome if motorista_obj else draft.get("motorista_nome", "")
+    motorista_carona = False
+    if motorista_obj:
+        motorista_carona = str(motorista_obj.id) not in [str(item) for item in viajantes_ids]
+    elif motorista_nome:
+        motorista_carona = True
+
+    with transaction.atomic():
+        oficio_obj = get_object_or_404(Oficio, id=oficio_id)
+        oficio_obj.oficio = draft.get("oficio", "")
+        oficio_obj.protocolo = draft.get("protocolo", "")
+        oficio_obj.assunto = draft.get("assunto", "")
+        oficio_obj.tipo_destino = draft.get("tipo_destino", "")
+        oficio_obj.destino = destino_texto or draft.get("destino", "")
+        oficio_obj.estado_sede = sede_estado
+        oficio_obj.cidade_sede = sede_cidade
+        oficio_obj.estado_destino = destino_estado
+        oficio_obj.cidade_destino = destino_cidade
+        oficio_obj.retorno_saida_cidade = retorno_saida_cidade
+        oficio_obj.retorno_saida_data = retorno_saida_data
+        oficio_obj.retorno_saida_hora = retorno_saida_hora
+        oficio_obj.retorno_chegada_cidade = retorno_chegada_cidade
+        oficio_obj.retorno_chegada_data = retorno_chegada_data
+        oficio_obj.retorno_chegada_hora = retorno_chegada_hora
+        oficio_obj.quantidade_diarias = quantidade_diarias
+        oficio_obj.valor_diarias = valor_diarias
+        oficio_obj.valor_diarias_extenso = draft.get("valor_diarias_extenso", "")
+        oficio_obj.placa = placa_norm or placa
+        oficio_obj.modelo = modelo
+        oficio_obj.combustivel = combustivel
+        oficio_obj.motorista = motorista_nome
+        oficio_obj.motorista_oficio = draft.get("motorista_oficio", "")
+        oficio_obj.motorista_protocolo = draft.get("motorista_protocolo", "")
+        oficio_obj.motorista_carona = motorista_carona
+        oficio_obj.motorista_viajante = motorista_obj
+        oficio_obj.motivo = draft.get("motivo", "")
+        oficio_obj.veiculo = veiculo
+        oficio_obj.save()
+
+        oficio_obj.viajantes.set(viajantes)
+        oficio_obj.trechos.all().delete()
+        trechos_instances = []
+        for idx, trecho in enumerate(trechos_data):
+            origem_estado_obj = _resolve_estado(trecho.get("origem_estado"))
+            origem_cidade_obj = _resolve_cidade(trecho.get("origem_cidade"))
+            destino_estado_obj = _resolve_estado(trecho.get("destino_estado"))
+            destino_cidade_obj = _resolve_cidade(trecho.get("destino_cidade"))
+            trechos_instances.append(
+                Trecho(
+                    oficio=oficio_obj,
+                    ordem=idx + 1,
+                    origem_estado=origem_estado_obj,
+                    origem_cidade=origem_cidade_obj,
+                    destino_estado=destino_estado_obj,
+                    destino_cidade=destino_cidade_obj,
+                    saida_data=parse_date(trecho.get("saida_data"))
+                    if trecho.get("saida_data")
+                    else None,
+                    saida_hora=parse_time(trecho.get("saida_hora"))
+                    if trecho.get("saida_hora")
+                    else None,
+                    chegada_data=parse_date(trecho.get("chegada_data"))
+                    if trecho.get("chegada_data")
+                    else None,
+                    chegada_hora=parse_time(trecho.get("chegada_hora"))
+                    if trecho.get("chegada_hora")
+                    else None,
+                )
+            )
+        Trecho.objects.bulk_create(trechos_instances)
+
+    _clear_edit_data(request, oficio_id)
+    return redirect(f"{reverse('oficio_edit_step4', args=[oficio_id])}?salvo=1")
+
+
+@require_http_methods(["GET"])
+def oficio_edit_cancel(request, oficio_id: int):
+    _clear_edit_data(request, oficio_id)
+    return redirect("oficios_lista")
 
 
 @require_http_methods(["GET", "POST"])

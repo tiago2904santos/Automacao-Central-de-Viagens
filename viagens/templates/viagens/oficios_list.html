@@ -73,6 +73,7 @@
               <td>
                 <div class="table-actions">
                   <a href="{% url 'oficio_editar' oficio.id %}" class="btn-edit">Editar</a>
+                  <a href="{% url 'oficio_edit_step1' oficio.id %}" class="btn-edit">Editar (modo wizard)</a>
                   <!-- Em qualquer template que tenha o objeto "oficio" (ex: oficio_edit.html ou lista) -->
                   <a class="btn btn-primary" href="{% url 'oficio_download_docx' oficio.id %}">Baixar DOCX</a>
                   <a class="btn btn-secondary" href="{% url 'oficio_download_pdf' oficio.id %}">

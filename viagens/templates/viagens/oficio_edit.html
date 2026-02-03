@@ -10,6 +10,9 @@
 {% block content %}
   <h2 class="page-title">Editar oficio</h2>
   <p class="page-subtitle">Mantenha os dados organizados como no cadastro.</p>
+  <div class="page-actions">
+    <a class="btn-primary" href="{% url 'oficio_edit_step1' oficio.id %}">Editar (modo wizard)</a>
+  </div>
 
   <div class="page-grid page-grid--preview">
     <div class="card">
