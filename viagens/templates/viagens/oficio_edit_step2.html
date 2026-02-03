@@ -99,17 +99,23 @@
           </label>
           <label>
             Modelo
-            <input type="text" name="modelo" id="modelInput" value="{{ modelo }}" data-preview-target="modelo" />
+            <input type="text" name="modelo" id="modelInput" value="{{ modelo }}" data-preview-target="modelo" readonly />
             <span class="field-help">Modelo oficial do veiculo.</span>
           </label>
           <label>
+            Tipo da viatura
+            <input type="text" name="tipo_viatura" id="tipoViaturaInput" value="{{ tipo_viatura }}" data-preview-target="tipo_viatura" readonly />
+            <span class="field-help">Caracterizada ou Descaracterizada.</span>
+          </label>
+          <label>
             Combustivel
-            <select name="combustivel" id="fuelInput" data-preview-target="combustivel">
+            <select name="combustivel" id="fuelInput" data-preview-target="combustivel" disabled>
               <option value="">Selecione</option>
               {% for item in combustivel_choices %}
                 <option value="{{ item }}" {% if combustivel == item %}selected{% endif %}>{{ item }}</option>
               {% endfor %}
             </select>
+            <input type="hidden" name="combustivel" value="{{ combustivel }}" data-hidden-combustivel />
             <span class="field-help">Escolha o tipo de combustivel.</span>
           </label>
         </section>
@@ -192,8 +198,8 @@
           <span class="preview-value">Automatica apos salvar</span>
         </div>
         <div class="preview-line">
-          <span class="preview-label">Assunto</span>
-          <span class="preview-value" data-preview-field="assunto">{{ assunto|default:"-" }}</span>
+          <span class="preview-label">Motivo</span>
+          <span class="preview-value" data-preview-field="motivo">{{ motivo|default:"-" }}</span>
         </div>
       </div>
       <div class="preview-doc">
@@ -208,6 +214,10 @@
         <div class="preview-line">
           <span class="preview-label">Combustivel</span>
           <span class="preview-value" data-preview-field="combustivel">{{ combustivel|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Tipo da viatura</span>
+          <span class="preview-value" data-preview-field="tipo_viatura">{{ tipo_viatura|default:"-" }}</span>
         </div>
         <div class="preview-line">
           <span class="preview-label">Motorista</span>

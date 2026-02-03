@@ -8,7 +8,7 @@
 
 {% block content %}
   <h2 class="page-title">Editar veiculo</h2>
-  <p class="page-subtitle">Atualize placa, modelo e combustivel.</p>
+  <p class="page-subtitle">Atualize placa, modelo, combustivel e tipo da viatura.</p>
 
   <div class="page-grid">
     <div class="card">
@@ -21,6 +21,7 @@
           <label>
             Placa
             <input type="text" name="placa" value="{{ veiculo.placa }}" required />
+            <span class="field-help">Formatos aceitos: AAA1234 ou AAA1A23.</span>
             {% if erros.placa %}<span class="field-errors">{{ erros.placa }}</span>{% endif %}
           </label>
           <label>
@@ -38,6 +39,15 @@
             </select>
             {% if erros.combustivel %}<span class="field-errors">{{ erros.combustivel }}</span>{% endif %}
           </label>
+          <label>
+            Tipo da viatura
+            <select name="tipo_viatura" required>
+              <option value="">Selecione</option>
+              <option value="CARACTERIZADA" {% if veiculo.tipo_viatura == "CARACTERIZADA" %}selected{% endif %}>Caracterizada</option>
+              <option value="DESCARACTERIZADA" {% if veiculo.tipo_viatura == "DESCARACTERIZADA" %}selected{% endif %}>Descaracterizada</option>
+            </select>
+            {% if erros.tipo_viatura %}<span class="field-errors">{{ erros.tipo_viatura }}</span>{% endif %}
+          </label>
         </section>
 
         <div class="wizard-actions">
@@ -49,7 +59,7 @@
     </div>
 
     <div class="illustration-card">
-      <div class="icon">CV</div>
+      <div class="icon">🚗</div>
       <h3>Dados do veiculo</h3>
       <p>Manter a base padronizada agiliza o preenchimento dos oficios.</p>
       <p class="muted">A exclusao e permanente.</p>

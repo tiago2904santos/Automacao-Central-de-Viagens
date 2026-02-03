@@ -16,6 +16,11 @@ class Veiculo(models.Model):
     placa = models.CharField(max_length=10, unique=True)
     modelo = models.CharField(max_length=120)
     combustivel = models.CharField(max_length=80)
+    tipo_viatura = models.CharField(
+        max_length=20,
+        blank=True,
+        choices=[("CARACTERIZADA", "Caracterizada"), ("DESCARACTERIZADA", "Descaracterizada")],
+    )
 
     def __str__(self) -> str:
         return f"{self.placa} - {self.modelo}"

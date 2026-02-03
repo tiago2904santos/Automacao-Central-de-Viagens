@@ -12,6 +12,7 @@
           Placa
           <input type="text" name="placa" value="{{ values.placa|default_if_none:'' }}" required />
           {% if erros.placa %}<span class="field-errors">{{ erros.placa }}</span>{% endif %}
+          <span class="field-help">Formatos aceitos: AAA1234 ou AAA1A23.</span>
         </label>
         <label>
           Modelo
@@ -27,6 +28,14 @@
             {% endfor %}
           </select>
           {% if erros.combustivel %}<span class="field-errors">{{ erros.combustivel }}</span>{% endif %}
+        </label>
+        <label>
+          Tipo da viatura
+          <select name="tipo_viatura" required>
+            <option value="">Selecione</option>
+            <option value="CARACTERIZADA" {% if values.tipo_viatura == "CARACTERIZADA" %}selected{% endif %}>Caracterizada</option>
+            <option value="DESCARACTERIZADA" {% if values.tipo_viatura == "DESCARACTERIZADA" %}selected{% endif %}>Descaracterizada</option>
+          </select>
         </label>
       </div>
 

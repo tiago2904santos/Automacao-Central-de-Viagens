@@ -8,7 +8,7 @@
 
 {% block content %}
   <h2 class="page-title">Cadastrar veiculo</h2>
-  <p class="page-subtitle">Informe placa, modelo e combustivel.</p>
+  <p class="page-subtitle">Informe placa, modelo, combustivel e tipo da viatura.</p>
 
   <div class="page-grid">
     <div class="card">
@@ -21,6 +21,7 @@
           <label>
             Placa
             <input type="text" name="placa" value="{{ values.placa|default_if_none:'' }}" required />
+            <span class="field-help">Formatos aceitos: AAA1234 ou AAA1A23.</span>
           </label>
           <label>
             Modelo
@@ -35,15 +36,23 @@
               {% endfor %}
             </select>
           </label>
+          <label>
+            Tipo da viatura
+            <select name="tipo_viatura" required>
+              <option value="">Selecione</option>
+              <option value="CARACTERIZADA" {% if values.tipo_viatura == "CARACTERIZADA" %}selected{% endif %}>Caracterizada</option>
+              <option value="DESCARACTERIZADA" {% if values.tipo_viatura == "DESCARACTERIZADA" %}selected{% endif %}>Descaracterizada</option>
+            </select>
+          </label>
         </section>
         <button class="btn-primary" type="submit">Salvar veiculo</button>
       </form>
     </div>
 
     <div class="illustration-card">
-      <div class="icon">CV</div>
+      <div class="icon">🚗</div>
       <h3>Cadastro de veiculos</h3>
-      <p>Padronize as informacoes para agilizar a criacao de oficios.</p>
+      <p>Cadastre veiculos e selecione o tipo da viatura para agilizar os oficios.</p>
       <p class="muted">A placa e usada para buscar automaticamente os dados.</p>
     </div>
   </div>
