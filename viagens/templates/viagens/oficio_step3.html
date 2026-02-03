@@ -34,6 +34,82 @@
   </div>
 
   <div class="card">
+    <style>
+      .destinos-list {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        margin: 14px 0 8px;
+      }
+      .destino-item {
+        border: 1px solid var(--brand-border);
+        border-radius: var(--radius-card);
+        padding: 20px;
+        background: #fff;
+        box-shadow: var(--shadow-soft);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      .destino-item.is-invalid {
+        border-color: var(--color-danger, #ef4444);
+        box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.4);
+      }
+      .destino-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .destino-info {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .destino-actions {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .drag-handle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 32px;
+        border-radius: 8px;
+        border: 1px solid rgba(15, 118, 110, 0.25);
+        background: rgba(15, 118, 110, 0.08);
+        font-size: 1.3rem;
+        cursor: grab;
+      }
+      .drag-handle:active {
+        cursor: grabbing;
+      }
+      .destino-remove {
+        padding: 6px 12px;
+        font-size: 0.85rem;
+      }
+      .destino-actions .destino-remove {
+        margin-left: auto;
+      }
+      .destino-error {
+        color: var(--color-danger, #ef4444);
+        font-size: 0.9rem;
+        margin-top: 8px;
+      }
+      .destino-error[hidden] {
+        display: none;
+      }
+      .destinos-intro {
+        margin-bottom: 16px;
+        margin-top: 8px;
+      }
+      .destinos-actions {
+        margin-bottom: 18px;
+        display: flex;
+        justify-content: flex-start;
+      }
+    </style>
     <form method="post" id="roteiroForm" data-formset-prefix="trechos" data-servidores-count="{{ quantidade_servidores|default:0 }}">
       {% csrf_token %}
       {% if erro %}
@@ -43,84 +119,151 @@
         <div class="error">{{ formset.non_form_errors }}</div>
       {% endif %}
 
-      {{ formset.management_form }}
+      <div class="sub-card">
+        <div class="sub-card-title">Entrada do roteiro</div>
+        <div class="grid">
+          <label>
+            UF (Sede)
+            <select name="sede_uf" id="sedeUf" class="input-field" data-role="sede-uf" data-autocomplete-url="/api/ufs/" data-autocomplete-type="uf">
+              <option value="">Selecione</option>
+              {% for estado in estados %}
+                <option value="{{ estado.sigla }}" {% if estado.sigla == sede_uf %}selected{% elif not sede_uf and estado.sigla == 'PR' %}selected{% endif %}>
+                  {{ estado.sigla }} - {{ estado.nome }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            Cidade (Sede)
+            <select name="sede_cidade" id="sedeCidade" class="input-field" data-role="sede-cidade" data-autocomplete-url="/api/cidades-busca/" data-autocomplete-type="cidade">
+              <option value="">Selecione</option>
+              {% if sede_cidade and sede_label %}
+                <option value="{{ sede_cidade }}" selected>{{ sede_label }}</option>
+              {% endif %}
+            </select>
+          </label>
+        </div>
+      </div>
 
-      <div class="trecho-list" id="trechosList" data-trechos-list>
-        {% for form in formset %}
-          <div class="trecho-card{% if forloop.first %} is-first{% endif %}" data-index="{{ forloop.counter0 }}">
-            <div class="trecho-header">
-              <div>
-                <span class="badge">Trecho {{ forloop.counter }}{% if forloop.first %} (Ida){% endif %}</span>
-                <div class="trecho-subtitle">Origem e destino do deslocamento.</div>
+      <div class="sub-card">
+        <div class="sub-card-title">Destinos</div>
+        <p class="field-help destinos-intro">Digite e selecione a cidade e arraste para definir a sequência.</p>
+        <div class="destinos-list" id="destinosList">
+          {% for destino in destinos %}
+            <div class="destino-item" data-index="{{ forloop.counter0 }}">
+              <div class="trecho-header destino-header">
+                <div class="destino-info">
+                  <span class="badge">Destino {{ forloop.counter }}</span>
+                  <div class="trecho-subtitle">UF + cidade</div>
+                </div>
+                <div class="destino-actions">
+                  <span class="drag-handle" draggable="true" title="Arraste para reordenar destino" aria-label="Arraste para reordenar destino">&#9776;</span>
+                  <button class="btn-danger destino-remove" type="button" data-action="remove-destino">Remover</button>
+                </div>
               </div>
-              <button class="btn-link trecho-remove" type="button" data-action="remove" {% if forloop.first %}disabled aria-disabled="true"{% endif %}>
-                Remover
-              </button>
+              <div class="grid">
+                <label>
+                  UF
+                  <select name="destinos-{{ forloop.counter0 }}-uf" class="input-field" data-role="destino-estado" data-autocomplete-url="/api/ufs/" data-autocomplete-type="uf">
+                    <option value="">Selecione</option>
+                    {% for estado in estados %}
+                      <option value="{{ estado.sigla }}" {% if estado.sigla == destino.uf %}selected{% elif not destino.uf and estado.sigla == 'PR' %}selected{% endif %}>
+                        {{ estado.sigla }} - {{ estado.nome }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>
+                  Cidade
+                  <select name="destinos-{{ forloop.counter0 }}-cidade" class="input-field" data-role="destino-cidade" data-autocomplete-url="/api/cidades-busca/" data-autocomplete-type="cidade">
+                    <option value="">Selecione</option>
+                    {% if destino.cidade %}
+                      <option value="{{ destino.cidade }}" selected>{{ destino.cidade_label|default:destino.cidade }}</option>
+                    {% endif %}
+                  </select>
+                </label>
+              </div>
+              <p class="field-errors destino-error" data-destino-error hidden>Informe a cidade para continuar.</p>
             </div>
+          {% endfor %}
+        </div>
+        <div class="destinos-actions">
+          <button class="btn-primary" type="button" id="addDestinoBtn">Adicionar destino</button>
+        </div>
+        <input type="hidden" name="destinos-TOTAL_FORMS" id="destinosTotalForms" value="{{ destinos_total_forms }}" />
+        <input type="hidden" name="destinos-INITIAL_FORMS" value="0" />
+        <input type="hidden" name="destinos-order" id="destinosOrder" value="{{ destinos_order }}" />
+      </div>
 
-            {% if form.non_field_errors %}
-              <div class="field-errors">{{ form.non_field_errors }}</div>
-            {% endif %}
-
-            {{ form.id }}
-
-            <div class="trecho-body">
-              <div class="sub-card">
-                <div class="sub-card-title">Origem{% if forloop.first %} (Sede){% endif %}</div>
-                <div class="grid">
-                  <label>
-                    UF
-                    {{ form.origem_estado }}
-                    {{ form.origem_estado.errors }}
-                    <span class="field-help" data-first-only>Selecione o estado-sede do roteiro.</span>
-                  </label>
-                  <label>
-                    Cidade
-                    {{ form.origem_cidade }}
-                    {{ form.origem_cidade.errors }}
-                    <span class="field-help" data-first-only>Defina a cidade sede.</span>
-                  </label>
-                  <label>
-                    Saida (data)
-                    {{ form.saida_data }}
-                    {{ form.saida_data.errors }}
-                  </label>
-                  <label>
-                    Saida (hora)
-                    {{ form.saida_hora }}
-                    {{ form.saida_hora.errors }}
-                  </label>
+      <div class="sub-card">
+        <div class="sub-card-title">Trechos gerados</div>
+        {{ formset.management_form }}
+        <div class="trecho-list" id="trechosList" data-trechos-list>
+          {% for form in formset %}
+            <div class="trecho-card{% if forloop.first %} is-first{% endif %}" data-index="{{ forloop.counter0 }}">
+              <div class="trecho-header">
+                <div>
+                  <span class="badge">Trecho {{ forloop.counter }}{% if forloop.first %} (Ida){% endif %}</span>
+                  <div class="trecho-subtitle">
+                    <span class="trecho-route-preview" data-trecho-route-preview>Origem &rarr; Destino</span>
+                  </div>
                 </div>
               </div>
 
-              <div class="sub-card">
-                <div class="sub-card-title">Destino</div>
-                <div class="grid">
-                  <label>
-                    UF
-                    {{ form.destino_estado }}
-                    {{ form.destino_estado.errors }}
-                  </label>
-                  <label>
-                    Cidade
-                    {{ form.destino_cidade }}
-                    {{ form.destino_cidade.errors }}
-                  </label>
-                  <label>
-                    Chegada (data)
-                    {{ form.chegada_data }}
-                    {{ form.chegada_data.errors }}
-                  </label>
-                  <label>
-                    Chegada (hora)
-                    {{ form.chegada_hora }}
-                    {{ form.chegada_hora.errors }}
-                  </label>
+              {% if form.non_field_errors %}
+                <div class="field-errors">{{ form.non_field_errors }}</div>
+              {% endif %}
+
+              {{ form.id }}
+              <input type="hidden" name="trechos-{{ forloop.counter0 }}-origem_estado" data-trecho-origem-estado value="{{ form.origem_estado.value|default:'' }}" />
+              <input type="hidden" name="trechos-{{ forloop.counter0 }}-origem_cidade" data-trecho-origem-cidade value="{{ form.origem_cidade.value|default:'' }}" />
+              <input type="hidden" name="trechos-{{ forloop.counter0 }}-destino_estado" data-trecho-destino-estado value="{{ form.destino_estado.value|default:'' }}" />
+              <input type="hidden" name="trechos-{{ forloop.counter0 }}-destino_cidade" data-trecho-destino-cidade value="{{ form.destino_cidade.value|default:'' }}" />
+
+              <div class="trecho-body">
+                <div class="sub-card">
+                  <div class="sub-card-title">Origem{% if forloop.first %} (Sede){% endif %}</div>
+                  <div class="grid">
+                    <label>
+                      Local
+                      <div class="preview" data-trecho-origem-preview>-</div>
+                    </label>
+                    <label>
+                      Saida (data)
+                      {{ form.saida_data }}
+                      {{ form.saida_data.errors }}
+                    </label>
+                    <label>
+                      Saida (hora)
+                      {{ form.saida_hora }}
+                      {{ form.saida_hora.errors }}
+                    </label>
+                  </div>
+                </div>
+
+                <div class="sub-card">
+                  <div class="sub-card-title">Destino</div>
+                  <div class="grid">
+                    <label>
+                      Local
+                      <div class="preview" data-trecho-destino-preview>-</div>
+                    </label>
+                    <label>
+                      Chegada (data)
+                      {{ form.chegada_data }}
+                      {{ form.chegada_data.errors }}
+                    </label>
+                    <label>
+                      Chegada (hora)
+                      {{ form.chegada_hora }}
+                      {{ form.chegada_hora.errors }}
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        {% endfor %}
+          {% endfor %}
+        </div>
       </div>
 
       <template id="trechoTemplate">
@@ -128,24 +271,23 @@
           <div class="trecho-header">
             <div>
               <span class="badge">Trecho</span>
-              <div class="trecho-subtitle">Origem e destino do deslocamento.</div>
+              <div class="trecho-subtitle">
+                <span class="trecho-route-preview" data-trecho-route-preview>Origem &rarr; Destino</span>
+              </div>
             </div>
-            <button class="btn-link trecho-remove" type="button" data-action="remove">Remover</button>
           </div>
-
+          <input type="hidden" name="trechos-__prefix__-origem_estado" data-trecho-origem-estado value="" />
+          <input type="hidden" name="trechos-__prefix__-origem_cidade" data-trecho-origem-cidade value="" />
+          <input type="hidden" name="trechos-__prefix__-destino_estado" data-trecho-destino-estado value="" />
+          <input type="hidden" name="trechos-__prefix__-destino_cidade" data-trecho-destino-cidade value="" />
           {{ formset.empty_form.id }}
-
           <div class="trecho-body">
             <div class="sub-card">
               <div class="sub-card-title">Origem</div>
               <div class="grid">
                 <label>
-                  UF
-                  {{ formset.empty_form.origem_estado }}
-                </label>
-                <label>
-                  Cidade
-                  {{ formset.empty_form.origem_cidade }}
+                  Local
+                  <div class="preview" data-trecho-origem-preview>-</div>
                 </label>
                 <label>
                   Saida (data)
@@ -162,12 +304,8 @@
               <div class="sub-card-title">Destino</div>
               <div class="grid">
                 <label>
-                  UF
-                  {{ formset.empty_form.destino_estado }}
-                </label>
-                <label>
-                  Cidade
-                  {{ formset.empty_form.destino_cidade }}
+                  Local
+                  <div class="preview" data-trecho-destino-preview>-</div>
                 </label>
                 <label>
                   Chegada (data)
@@ -180,6 +318,41 @@
               </div>
             </div>
           </div>
+        </div>
+      </template>
+
+      <template id="destinoTemplate">
+        <div class="destino-item" data-index="__prefix__">
+          <div class="trecho-header destino-header">
+            <div class="destino-info">
+              <span class="badge">Destino</span>
+              <div class="trecho-subtitle">UF + cidade</div>
+            </div>
+            <div class="destino-actions">
+              <span class="drag-handle" draggable="true" title="Arraste para reordenar destino" aria-label="Arraste para reordenar destino">&#9776;</span>
+              <button class="btn-danger destino-remove" type="button" data-action="remove-destino">Remover</button>
+            </div>
+          </div>
+          <div class="grid">
+            <label>
+              UF
+              <select name="destinos-__prefix__-uf" class="input-field" data-role="destino-estado" data-autocomplete-url="/api/ufs/" data-autocomplete-type="uf">
+                <option value="">Selecione</option>
+                {% for estado in estados %}
+                  <option value="{{ estado.sigla }}" {% if estado.sigla == 'PR' %}selected{% endif %}>
+                    {{ estado.sigla }} - {{ estado.nome }}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Cidade
+              <select name="destinos-__prefix__-cidade" class="input-field" data-role="destino-cidade" data-autocomplete-url="/api/cidades-busca/" data-autocomplete-type="cidade">
+                <option value="">Selecione</option>
+              </select>
+            </label>
+          </div>
+          <p class="field-errors destino-error" data-destino-error hidden>Informe a cidade para continuar.</p>
         </div>
       </template>
 

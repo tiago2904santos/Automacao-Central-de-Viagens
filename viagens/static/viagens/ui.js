@@ -394,14 +394,25 @@
         return "";
       }
       const role = select.getAttribute("data-role") || "";
+      if (role.includes("sede")) {
+        return document.querySelector("[data-role='sede-uf']")?.value || "";
+      }
+      const destinoItem = select.closest(".destino-item");
+      if (destinoItem) {
+        return destinoItem.querySelector("[data-role='destino-estado']")?.value || "";
+      }
       const card = select.closest(".trecho-card");
-      if (!card) {
-        return "";
+      if (card) {
+        if (role.includes("origem")) {
+          return card.querySelector("[data-role='origem-estado']")?.value || "";
+        }
+        return card.querySelector("[data-role='destino-estado']")?.value || "";
       }
-      if (role.includes("origem")) {
-        return card.querySelector("[data-role='origem-estado']")?.value || "";
+      const explicitUf = select.getAttribute("data-related-uf");
+      if (explicitUf) {
+        return document.getElementById(explicitUf)?.value || "";
       }
-      return card.querySelector("[data-role='destino-estado']")?.value || "";
+      return "";
     }
 
     function setExpanded(expanded) {

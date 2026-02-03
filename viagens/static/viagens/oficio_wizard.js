@@ -1,46 +1,5 @@
-async function carregarCidades(estadoSelect, cidadeSelect) {
-  const estado = estadoSelect?.value || "";
-  cidadeSelect.innerHTML = '<option value="">Selecione</option>';
-  cidadeSelect.value = "";
-  window.syncAutocompleteDisplay?.(cidadeSelect);
-  if (!estado) {
-    return;
-  }
-
-  const response = await fetch(`/api/cidades/?estado=${encodeURIComponent(estado)}`);
-  const data = await response.json();
-  const selectedId = cidadeSelect.dataset.selected || "";
-
-  data.cidades.forEach((cidade) => {
-    const option = document.createElement("option");
-    option.value = String(cidade.id);
-    option.textContent = cidade.nome;
-    if (selectedId && String(cidade.id) === String(selectedId)) {
-      option.selected = true;
-    }
-    cidadeSelect.appendChild(option);
-  });
-
-  window.syncAutocompleteDisplay?.(cidadeSelect);
-}
-
-function setupCidadeSelect(estadoSelect, cidadeSelect) {
-  if (!estadoSelect || !cidadeSelect) {
-    return;
-  }
-
-  estadoSelect.addEventListener("change", () => {
-    cidadeSelect.dataset.selected = "";
-    carregarCidades(estadoSelect, cidadeSelect);
-  });
-
-  if (estadoSelect.value) {
-    carregarCidades(estadoSelect, cidadeSelect);
-  }
-}
-
 function updateElementIndex(element, index, prefix) {
-  const regex = new RegExp(`${prefix}-(\\d+|__prefix__)-`, "g");
+  const regex = new RegExp(`${prefix}-(\d+|__prefix__)-`, "g");
   element.querySelectorAll("[name], [id], [for]").forEach((item) => {
     if (item.name) {
       item.name = item.name.replace(regex, `${prefix}-${index}-`);
@@ -55,24 +14,14 @@ function updateElementIndex(element, index, prefix) {
   element.dataset.index = String(index);
 }
 
-function toggleLock(field, locked) {
-  if (!field) {
-    return;
-  }
-  field.classList.toggle("is-locked", locked);
-  field.setAttribute("aria-readonly", locked ? "true" : "false");
-  if (locked) {
-    field.tabIndex = -1;
-  } else {
-    field.removeAttribute("tabindex");
-  }
-}
-
 function initRoteiroFormset() {
   const trechosList = document.querySelector("[data-trechos-list]");
-  const template = document.getElementById("trechoTemplate");
   const totalFormsInput = document.getElementById("id_trechos-TOTAL_FORMS");
-  const addTrechoBtn = document.getElementById("addTrechoBtn");
+  const destinoList = document.getElementById("destinosList");
+  const destinoTemplate = document.getElementById("destinoTemplate");
+  const addDestinoBtn = document.getElementById("addDestinoBtn");
+  const destinosOrderInput = document.getElementById("destinosOrder");
+  const destinosTotalInput = document.getElementById("destinosTotalForms");
   const roteiroForm = document.getElementById("roteiroForm");
   const retornoSaidaCidadeInput = document.getElementById("retornoSaidaCidade");
   const retornoChegadaCidadeInput = document.getElementById("retornoChegadaCidade");
@@ -85,27 +34,30 @@ function initRoteiroFormset() {
   const valorDiariasInput = document.getElementById("valorDiarias");
   const servidoresSelect = document.getElementById("servidoresSelect");
   const diariasPreviewText = document.getElementById("diariasPreviewText");
-  const diariasPreviewPorServidor = document.getElementById(
-    "diariasPreviewPorServidor"
-  );
+  const diariasPreviewPorServidor = document.getElementById("diariasPreviewPorServidor");
   const diariasPreviewTotal = document.getElementById("diariasPreviewTotal");
   const diariasPreviewHoras = document.getElementById("diariasPreviewHoras");
+  const sedeUfSelect = document.getElementById("sedeUf");
+  const sedeCidadeSelect = document.getElementById("sedeCidade");
 
-  if (!trechosList || !template || !totalFormsInput) {
+  if (!trechosList || !totalFormsInput || !destinoList || !destinoTemplate) {
     return;
   }
 
-  const prefix = "trechos";
+  const trechoTemplate = document.getElementById("trechoTemplate");
+  const sampleTrechoCard = trechosList.querySelector(
+    ".trecho-card[data-index]:not([data-retorno-card]):not([data-diarias-card]):not([data-diarias-preview])"
+  );
 
+  const prefix = "trechos";
   const getCards = () => Array.from(trechosList.querySelectorAll(".trecho-card"));
+  const getDestinosItems = () => Array.from(destinoList.querySelectorAll(".destino-item"));
 
   const getSelectLabel = (select) => {
     if (!select) {
       return "";
     }
-    const input =
-      select._autocompleteInput ||
-      select.parentElement?.querySelector(".autocomplete-input");
+    const input = select._autocompleteInput || select.parentElement?.querySelector(".autocomplete-input");
     if (input && input.value) {
       return input.value.trim();
     }
@@ -113,57 +65,40 @@ function initRoteiroFormset() {
     return option ? option.textContent.trim() : "";
   };
 
-  const formatLocal = (cidadeSelect, estadoSelect) => {
-    const cidade = getSelectLabel(cidadeSelect);
-    const estado = estadoSelect?.value || "";
-    if (cidade && cidade.includes("/")) {
-      return cidade;
+  const formatLabel = (cidade, estado) => {
+    const cidadeTrim = (cidade || "").trim();
+    const estadoTrim = (estado || "").trim();
+    if (cidadeTrim && cidadeTrim.includes("/")) {
+      return cidadeTrim;
     }
-    if (cidade && estado) {
-      return `${cidade}/${estado}`;
+    if (cidadeTrim && estadoTrim) {
+      return `${cidadeTrim}/${estadoTrim}`;
     }
-    return cidade || estado || "";
+    return cidadeTrim || estadoTrim || "";
   };
 
-  const getLastDestinoCard = () => {
-    const cards = getCards();
-    for (let i = cards.length - 1; i >= 0; i -= 1) {
-      const destinoEstado =
-        cards[i].querySelector("[data-role='destino-estado']")?.value || "";
-      const destinoCidade =
-        cards[i].querySelector("[data-role='destino-cidade']")?.value || "";
-      if (destinoEstado && destinoCidade) {
-        return cards[i];
-      }
+  const getSedeLabel = () => {
+    if (!sedeCidadeSelect) {
+      return formatLabel("", sedeUfSelect?.value || "");
     }
-    return cards[0] || null;
+    const cidadeLabel = getSelectLabel(sedeCidadeSelect);
+    const estadoSigla = sedeUfSelect?.value || "";
+    return formatLabel(cidadeLabel, estadoSigla);
   };
 
-  const updateRetornoFields = () => {
-    if (!retornoSaidaCidadeInput && !retornoChegadaCidadeInput) {
-      return;
-    }
-    const cards = getCards();
-    const first = cards[0];
-    const last = getLastDestinoCard();
-    if (!first || !last) {
-      return;
-    }
-    const sedeCidade = formatLocal(
-      first.querySelector("[data-role='origem-cidade']"),
-      first.querySelector("[data-role='origem-estado']")
-    );
-    const destinoCidade = formatLocal(
-      last.querySelector("[data-role='destino-cidade']"),
-      last.querySelector("[data-role='destino-estado']")
-    );
-    if (retornoSaidaCidadeInput) {
-      retornoSaidaCidadeInput.value = destinoCidade;
-    }
-    if (retornoChegadaCidadeInput) {
-      retornoChegadaCidadeInput.value = sedeCidade;
-    }
-  };
+  const collectDestinosData = () =>
+    getDestinosItems().map((item) => {
+      const estado = item.querySelector("[data-role='destino-estado']");
+      const cidade = item.querySelector("[data-role='destino-cidade']");
+      const cidadeLabel = getSelectLabel(cidade);
+      const estadoSigla = estado?.value || "";
+      return {
+        uf: estadoSigla,
+        cidade: cidade?.value || "",
+        label: formatLabel(cidadeLabel, estadoSigla),
+        element: item,
+      };
+    });
 
   const parseDateTime = (dateValue, timeValue) => {
     if (!dateValue) {
@@ -228,6 +163,10 @@ function initRoteiroFormset() {
     };
   };
 
+  const formatCurrency = (value) => {
+    return value.toFixed(2);
+  };
+
   const updateDiarias = () => {
     if (!tipoDestinoSelect || !quantidadeDiariasInput || !valorDiariasInput) {
       return;
@@ -250,10 +189,6 @@ function initRoteiroFormset() {
     );
     quantidadeDiariasInput.value = resultado.quantidade || "";
     valorDiariasInput.value = resultado.valorTotal || "";
-  };
-
-  const formatCurrency = (value) => {
-    return value.toFixed(2);
   };
 
   const updateDiariasPreview = () => {
@@ -341,285 +276,374 @@ function initRoteiroFormset() {
     diariasPreviewHoras.textContent = `${totalHoras.toFixed(2)}h`;
   };
 
-  const reindexCards = () => {
-    getCards().forEach((card, index) => updateElementIndex(card, index, prefix));
-  };
-
-  const updateTotals = () => {
+  const syncTrechosTotal = () => {
     totalFormsInput.value = String(getCards().length);
   };
 
-  const getSede = () => {
-    const first = getCards()[0];
-    if (!first) {
-      return { estado: "", cidade: "" };
-    }
-    return {
-      estado: first.querySelector("[data-role='origem-estado']")?.value || "",
-      cidade: first.querySelector("[data-role='origem-cidade']")?.value || "",
-    };
-  };
-
-  const setOrigin = (card, estado, cidade) => {
-    const origemEstado = card.querySelector("[data-role='origem-estado']");
-    const origemCidade = card.querySelector("[data-role='origem-cidade']");
-    if (origemEstado) {
-      origemEstado.value = estado || "";
-      window.syncAutocompleteDisplay?.(origemEstado);
-    }
-    if (origemCidade) {
-      origemCidade.dataset.selected = cidade || "";
-      if (cidade) {
-        const existing = Array.from(origemCidade.options).find(
-          (opt) => String(opt.value) === String(cidade)
-        );
-        if (!existing) {
-          const option = document.createElement("option");
-          option.value = String(cidade);
-          option.textContent = "Carregando...";
-          option.selected = true;
-          origemCidade.appendChild(option);
-        } else {
-          origemCidade.value = String(cidade);
-        }
-      }
-      if (origemEstado && origemEstado.value) {
-        carregarCidades(origemEstado, origemCidade).then(() => {
-          window.syncAutocompleteDisplay?.(origemCidade);
-        });
-      } else {
-        origemCidade.innerHTML = '<option value="">Selecione</option>';
-        origemCidade.value = "";
-        window.syncAutocompleteDisplay?.(origemCidade);
-      }
-    }
-  };
-
-  const applyCardLabels = () => {
-    getCards().forEach((card, index) => {
-      card.classList.toggle("is-first", index === 0);
-      const badge = card.querySelector(".badge");
-      if (badge) {
-        badge.textContent = `Trecho ${index + 1}${index === 0 ? " (Ida)" : ""}`;
-      }
-      const titles = card.querySelectorAll(".sub-card-title");
-      if (titles.length) {
-        titles[0].textContent = index === 0 ? "Origem (Sede)" : "Origem";
-      }
-      const removeBtn = card.querySelector("[data-action='remove']");
-      if (removeBtn) {
-        const disabled = index === 0;
-        removeBtn.disabled = disabled;
-        removeBtn.setAttribute("aria-disabled", disabled ? "true" : "false");
-      }
-    });
-  };
-
-  const lockOrigins = () => {
-    getCards().forEach((card, index) => {
-      const origemEstado = card.querySelector("[data-role='origem-estado']");
-      const origemCidade = card.querySelector("[data-role='origem-cidade']");
-      const shouldLock = index !== 0;
-      toggleLock(origemEstado, shouldLock);
-      toggleLock(origemCidade, shouldLock);
-    });
-  };
-
-  const syncOrigins = () => {
-    const cards = getCards();
-    cards.forEach((card, index) => {
-      if (index === 0) {
-        return;
-      }
-      const prevCard = cards[index - 1];
-      const prevEstado =
-        prevCard.querySelector("[data-role='destino-estado']")?.value || "";
-      const prevCidade =
-        prevCard.querySelector("[data-role='destino-cidade']")?.value || "";
-      setOrigin(card, prevEstado, prevCidade);
-    });
-    updateRetornoFields();
-  };
-
-  const removeCardsAfter = (index) => {
-    getCards().forEach((card, idx) => {
-      if (idx > index) {
-        card.remove();
-      }
-    });
-    reindexCards();
-    updateTotals();
-    updateRetornoFields();
-  };
-
-  const addCard = (origemEstado, origemCidade) => {
-    const fragment = template.content.cloneNode(true);
-    const newCard = fragment.querySelector(".trecho-card");
-    const index = getCards().length;
-    updateElementIndex(newCard, index, prefix);
-    trechosList.appendChild(fragment);
-    window.initializeAutocompleteSelects?.(newCard);
-    setupCard(newCard);
-    setOrigin(newCard, origemEstado, origemCidade);
-    reindexCards();
-    updateTotals();
-    applyCardLabels();
-    lockOrigins();
-    updateRetornoFields();
-    return newCard;
-  };
-
-  const isCardComplete = (card) => {
-    const destinoEstado =
-      card.querySelector("[data-role='destino-estado']")?.value || "";
-    const destinoCidade =
-      card.querySelector("[data-role='destino-cidade']")?.value || "";
-    return Boolean(destinoEstado && destinoCidade);
-  };
-
-  const isAutoPlaceholder = (card) => {
-    if (isCardComplete(card)) {
-      return false;
-    }
-    const destinoEstado =
-      card.querySelector("[data-role='destino-estado']")?.value || "";
-    const destinoCidade =
-      card.querySelector("[data-role='destino-cidade']")?.value || "";
-    if (destinoEstado || destinoCidade) {
-      return false;
-    }
-    const saidaData = card.querySelector("[data-role='saida-data']")?.value || "";
-    const saidaHora = card.querySelector("[data-role='saida-hora']")?.value || "";
-    const chegadaData =
-      card.querySelector("[data-role='chegada-data']")?.value || "";
-    const chegadaHora =
-      card.querySelector("[data-role='chegada-hora']")?.value || "";
-    return !saidaData && !saidaHora && !chegadaData && !chegadaHora;
-  };
-
-
-  const handleDestinoChange = (card) => {
-    const cards = getCards();
-    const index = cards.indexOf(card);
-    if (index < 0) {
+  const clearCitySelect = (select) => {
+    if (!select) {
       return;
     }
-    removeCardsAfter(index);
-    syncOrigins();
-    applyCardLabels();
-    lockOrigins();
-    updateRetornoFields();
-    updateDiarias();
-    updateDiariasPreview();
+    select.value = "";
+    select.dataset.selected = "";
+    window.syncAutocompleteDisplay?.(select);
   };
 
-  const handleSedeChange = () => {
-    removeCardsAfter(0);
-    syncOrigins();
-    applyCardLabels();
-    lockOrigins();
-    const first = getCards()[0];
-    if (first) {
-      handleDestinoChange(first);
+  const setRouteData = (card, route) => {
+    const origemEstado = card.querySelector("[data-trecho-origem-estado]");
+    const origemCidade = card.querySelector("[data-trecho-origem-cidade]");
+    const destinoEstado = card.querySelector("[data-trecho-destino-estado]");
+    const destinoCidade = card.querySelector("[data-trecho-destino-cidade]");
+    if (origemEstado) {
+      origemEstado.value = route?.origem_estado || "";
     }
+    if (origemCidade) {
+      origemCidade.value = route?.origem_cidade || "";
+    }
+    if (destinoEstado) {
+      destinoEstado.value = route?.destino_estado || "";
+    }
+    if (destinoCidade) {
+      destinoCidade.value = route?.destino_cidade || "";
+    }
+  };
+
+  const resetClonedTrechoCard = (card) => {
+    card.querySelectorAll("input, select, textarea").forEach((field) => {
+      if (field.type === "checkbox" || field.type === "radio") {
+        field.checked = false;
+      } else {
+        field.value = "";
+      }
+    });
+    card.querySelectorAll("[data-trecho-route-preview]").forEach((preview) => {
+      preview.textContent = "Origem → Destino";
+    });
+    card.querySelectorAll("[data-trecho-origem-preview], [data-trecho-destino-preview]").forEach((preview) => {
+      preview.textContent = "-";
+    });
+  };
+
+  const updateRoutePreview = (card, origemLabel, destinoLabel) => {
+    const preview = card.querySelector("[data-trecho-route-preview]");
+    if (preview) {
+      if (origemLabel || destinoLabel) {
+        preview.textContent = `${origemLabel || "-"} → ${destinoLabel || "-"}`;
+      } else {
+        preview.textContent = "Origem → Destino";
+      }
+    }
+    const origemPreview = card.querySelector("[data-trecho-origem-preview]");
+    const destinoPreview = card.querySelector("[data-trecho-destino-preview]");
+    if (origemPreview) {
+      origemPreview.textContent = origemLabel || "-";
+    }
+    if (destinoPreview) {
+      destinoPreview.textContent = destinoLabel || "-";
+    }
+  };
+
+  const regenerateTrechos = () => {
+    const destinos = collectDestinosData();
+    const validDestinos = destinos.filter((dest) => dest.uf && dest.cidade);
+    const origemBase = {
+      uf: sedeUfSelect?.value || "",
+      cidade: sedeCidadeSelect?.value || "",
+    };
+    const preservedDates = getCards().map((card) => ({
+      saida_data: card.querySelector("[data-role='saida-data']")?.value || "",
+      saida_hora: card.querySelector("[data-role='saida-hora']")?.value || "",
+      chegada_data: card.querySelector("[data-role='chegada-data']")?.value || "",
+      chegada_hora: card.querySelector("[data-role='chegada-hora']")?.value || "",
+    }));
+    const targetCount = Math.max(1, validDestinos.length);
+    while (getCards().length < targetCount) {
+      if (trechoTemplate) {
+        const fragment = trechoTemplate.content.cloneNode(true);
+        const newCard = fragment.querySelector(".trecho-card");
+        if (!newCard) {
+          break;
+        }
+        updateElementIndex(newCard, getCards().length, prefix);
+        trechosList.appendChild(fragment);
+      } else if (sampleTrechoCard) {
+        const cloned = sampleTrechoCard.cloneNode(true);
+        resetClonedTrechoCard(cloned);
+        updateElementIndex(cloned, getCards().length, prefix);
+        trechosList.appendChild(cloned);
+      } else {
+        break;
+      }
+    }
+    while (getCards().length > targetCount) {
+      const cards = getCards();
+      cards[cards.length - 1].remove();
+    }
+    getCards().forEach((card, index) => {
+      updateElementIndex(card, index, prefix);
+      setupCardListeners(card);
+    });
+    const cards = getCards();
+    cards.forEach((card, index) => {
+      const destino = validDestinos[index];
+      const origemLabel =
+        index === 0 ? getSedeLabel() : validDestinos[index - 1]?.label || "";
+      const destinoLabel = destino?.label || "";
+      const route = destino
+        ? {
+            origem_estado: index === 0 ? origemBase.uf : validDestinos[index - 1]?.uf || "",
+            origem_cidade: index === 0 ? origemBase.cidade : validDestinos[index - 1]?.cidade || "",
+            destino_estado: destino.uf,
+            destino_cidade: destino.cidade,
+          }
+        : {
+            origem_estado: "",
+            origem_cidade: "",
+            destino_estado: "",
+            destino_cidade: "",
+          };
+      setRouteData(card, route);
+      updateRoutePreview(card, origemLabel, destinoLabel);
+      const preserved = preservedDates[index] || {};
+      const saidaData = card.querySelector("[data-role='saida-data']");
+      const saidaHora = card.querySelector("[data-role='saida-hora']");
+      const chegadaData = card.querySelector("[data-role='chegada-data']");
+      const chegadaHora = card.querySelector("[data-role='chegada-hora']");
+      if (saidaData) {
+        saidaData.value = preserved.saida_data || "";
+      }
+      if (saidaHora) {
+        saidaHora.value = preserved.saida_hora || "";
+      }
+      if (chegadaData) {
+        chegadaData.value = preserved.chegada_data || "";
+      }
+      if (chegadaHora) {
+        chegadaHora.value = preserved.chegada_hora || "";
+      }
+    });
+    syncTrechosTotal();
     updateRetornoFields();
     updateDiarias();
     updateDiariasPreview();
   };
 
-  const setupCard = (card) => {
+  const updateRetornoFields = () => {
+    if (!retornoSaidaCidadeInput && !retornoChegadaCidadeInput) {
+      return;
+    }
+    const validDestinos = collectDestinosData().filter((dest) => dest.uf && dest.cidade);
+    const lastDestino = validDestinos[validDestinos.length - 1];
+    const sedeLabel = getSedeLabel();
+    if (retornoSaidaCidadeInput) {
+      retornoSaidaCidadeInput.value = lastDestino?.label || "";
+    }
+    if (retornoChegadaCidadeInput) {
+      retornoChegadaCidadeInput.value = sedeLabel;
+    }
+  };
+
+  const updateDestinosTotal = () => {
+    if (destinosTotalInput) {
+      destinosTotalInput.value = String(getDestinosItems().length);
+    }
+  };
+
+  const updateDestinosOrder = () => {
+    if (!destinosOrderInput) {
+      return;
+    }
+    const order = getDestinosItems()
+      .map((item) => item.getAttribute("data-index") || "")
+      .filter(Boolean);
+    destinosOrderInput.value = order.join(",");
+  };
+
+  const syncDestinos = () => {
+    updateDestinosTotal();
+    updateDestinosOrder();
+    validateAllDestinos();
+  };
+
+  const updateDestinoValidation = (item) => {
+    const cidade = item.querySelector("[data-role='destino-cidade']");
+    const error = item.querySelector("[data-destino-error]");
+    const isInvalid = !cidade?.value;
+    item.classList.toggle("is-invalid", isInvalid);
+    if (error) {
+      error.hidden = !isInvalid;
+    }
+    return !isInvalid;
+  };
+
+  const validateAllDestinos = () => {
+    getDestinosItems().forEach(updateDestinoValidation);
+  };
+
+  const isDestinoEmpty = (item) => {
+    const estado = item.querySelector("[data-role='destino-estado']");
+    const cidade = item.querySelector("[data-role='destino-cidade']");
+    return !(estado?.value || cidade?.value);
+  };
+
+  const trimTrailingEmptyDestinos = () => {
+    let items = getDestinosItems();
+    while (items.length > 1 && isDestinoEmpty(items[items.length - 1])) {
+      items[items.length - 1].remove();
+      items = getDestinosItems();
+    }
+    syncDestinos();
+  };
+
+  const setupCardListeners = (card) => {
     window.initializeAutocompleteSelects?.(card);
-    const origemEstado = card.querySelector("[data-role='origem-estado']");
-    const origemCidade = card.querySelector("[data-role='origem-cidade']");
-    const destinoEstado = card.querySelector("[data-role='destino-estado']");
-    const destinoCidade = card.querySelector("[data-role='destino-cidade']");
     const saidaData = card.querySelector("[data-role='saida-data']");
     const saidaHora = card.querySelector("[data-role='saida-hora']");
-
-    if (origemEstado && origemCidade) {
-      setupCidadeSelect(origemEstado, origemCidade);
-      origemEstado.addEventListener("change", handleSedeChange);
-      origemCidade.addEventListener("change", handleSedeChange);
-    }
-    if (destinoEstado && destinoCidade) {
-      setupCidadeSelect(destinoEstado, destinoCidade);
-      destinoEstado.addEventListener("change", () => {
-        destinoCidade.dataset.selected = "";
-        handleDestinoChange(card);
-      });
-      destinoCidade.addEventListener("change", () => handleDestinoChange(card));
-    }
+    const chegadaData = card.querySelector("[data-role='chegada-data']");
+    const chegadaHora = card.querySelector("[data-role='chegada-hora']");
     if (saidaData) {
       saidaData.addEventListener("change", updateDiarias);
-    }
-    if (saidaHora) {
-      saidaHora.addEventListener("change", updateDiarias);
-    }
-    if (saidaData) {
       saidaData.addEventListener("change", updateDiariasPreview);
     }
     if (saidaHora) {
+      saidaHora.addEventListener("change", updateDiarias);
       saidaHora.addEventListener("change", updateDiariasPreview);
     }
+    if (chegadaData) {
+      chegadaData.addEventListener("change", updateDiarias);
+      chegadaData.addEventListener("change", updateDiariasPreview);
+    }
+    if (chegadaHora) {
+      chegadaHora.addEventListener("change", updateDiarias);
+      chegadaHora.addEventListener("change", updateDiariasPreview);
+    }
+  };
 
-    const removeBtn = card.querySelector("[data-action='remove']");
-    if (removeBtn) {
-      removeBtn.addEventListener("click", () => {
-        const cards = getCards();
-        const index = cards.indexOf(card);
-        if (index <= 0) {
-          return;
-        }
-        if (
-          !window.confirm(
-            "Remover este trecho? Os trechos seguintes serao ajustados."
-          )
-        ) {
-          return;
-        }
-        card.remove();
-        reindexCards();
-        updateTotals();
-        syncOrigins();
-        applyCardLabels();
-        lockOrigins();
-        updateRetornoFields();
-        updateDiarias();
-        updateDiariasPreview();
+  const setupDestinoItem = (item) => {
+    window.initializeAutocompleteSelects?.(item);
+    const estado = item.querySelector("[data-role='destino-estado']");
+    const cidade = item.querySelector("[data-role='destino-cidade']");
+    if (estado && cidade) {
+      estado.addEventListener("change", () => {
+        clearCitySelect(cidade);
+        updateDestinoValidation(item);
+        regenerateTrechos();
+      });
+      cidade.addEventListener("change", () => {
+        updateDestinoValidation(item);
+        regenerateTrechos();
       });
     }
-  };
-
-  const trimTrailingEmptyCards = () => {
-    let cards = getCards();
-    while (cards.length > 1 && isAutoPlaceholder(cards[cards.length - 1])) {
-      cards[cards.length - 1].remove();
-      cards = getCards();
+    const removeBtn = item.querySelector("[data-action='remove-destino']");
+    if (removeBtn) {
+      removeBtn.addEventListener("click", () => {
+        const items = getDestinosItems();
+        if (items.length <= 1) {
+          if (estado) {
+            estado.value = "";
+          }
+          if (cidade) {
+            cidade.value = "";
+            cidade.dispatchEvent(new Event("change"));
+          }
+          return;
+        }
+        item.remove();
+        syncDestinos();
+        regenerateTrechos();
+      });
     }
-    reindexCards();
-    updateTotals();
-    syncOrigins();
-    applyCardLabels();
-    lockOrigins();
-    updateRetornoFields();
-    updateDiarias();
-    updateDiariasPreview();
+    updateDestinoValidation(item);
   };
 
-  getCards().forEach((card) => {
-    window.initializeAutocompleteSelects?.(card);
-    setupCard(card);
-  });
-  syncOrigins();
-  applyCardLabels();
-  lockOrigins();
-  updateTotals();
-  updateRetornoFields();
-  updateDiarias();
-  updateDiariasPreview();
+  const addDestinoItem = () => {
+    const fragment = destinoTemplate.content.cloneNode(true);
+    const newItem = fragment.querySelector(".destino-item");
+    const index = getDestinosItems().length;
+    updateElementIndex(newItem, index, "destinos");
+    destinoList.appendChild(fragment);
+    setupDestinoItem(newItem);
+    syncDestinos();
+    regenerateTrechos();
+  };
 
-  if (!totalFormsInput.value || Number(totalFormsInput.value) < 1) {
-    totalFormsInput.value = "1";
+  const initDestinos = () => {
+    const items = getDestinosItems();
+    if (!items.length) {
+      addDestinoItem();
+      return;
+    }
+    items.forEach((item, index) => {
+      updateElementIndex(item, index, "destinos");
+      setupDestinoItem(item);
+    });
+    syncDestinos();
+  };
+
+  const initDestinosSorting = () => {
+    let dragItem = null;
+
+    const handleDragStart = (event) => {
+      const handle = event.target.closest(".drag-handle");
+      if (!handle) {
+        return;
+      }
+      const item = handle.closest(".destino-item");
+      if (!item) {
+        return;
+      }
+      dragItem = item;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", item.getAttribute("data-index") || "");
+      item.classList.add("is-dragging");
+    };
+
+    const handleDragOver = (event) => {
+      event.preventDefault();
+      const overItem = event.target.closest(".destino-item");
+      if (!overItem || !dragItem || overItem === dragItem) {
+        return;
+      }
+      const rect = overItem.getBoundingClientRect();
+      const after = event.clientY - rect.top > rect.height / 2;
+      if (after) {
+        overItem.after(dragItem);
+      } else {
+        overItem.before(dragItem);
+      }
+    };
+
+    const handleDragEnd = () => {
+      if (dragItem) {
+        dragItem.classList.remove("is-dragging");
+      }
+      dragItem = null;
+      getDestinosItems().forEach((item, index) => updateElementIndex(item, index, "destinos"));
+      syncDestinos();
+      regenerateTrechos();
+    };
+
+    destinoList.addEventListener("dragstart", handleDragStart);
+    destinoList.addEventListener("dragover", handleDragOver);
+    destinoList.addEventListener("dragend", handleDragEnd);
+  };
+
+  initDestinos();
+  regenerateTrechos();
+  initDestinosSorting();
+
+  if (addDestinoBtn) {
+    addDestinoBtn.addEventListener("click", addDestinoItem);
+  }
+
+  if (sedeUfSelect) {
+    sedeUfSelect.addEventListener("change", () => {
+      clearCitySelect(sedeCidadeSelect);
+      regenerateTrechos();
+    });
+  }
+  if (sedeCidadeSelect) {
+    sedeCidadeSelect.addEventListener("change", regenerateTrechos);
   }
 
   if (tipoDestinoSelect) {
@@ -649,37 +673,8 @@ function initRoteiroFormset() {
 
   if (roteiroForm) {
     roteiroForm.addEventListener("submit", () => {
-      trimTrailingEmptyCards();
-    });
-  }
-
-  if (addTrechoBtn) {
-    addTrechoBtn.addEventListener("click", () => {
-      const cards = getCards();
-      const last = cards[cards.length - 1];
-      if (!last) {
-        return;
-      }
-      const destinoEstado =
-        last.querySelector("[data-role='destino-estado']")?.value || "";
-      const destinoCidade =
-        last.querySelector("[data-role='destino-cidade']")?.value || "";
-      if (!destinoEstado || !destinoCidade) {
-        window.alert(
-          "Selecione o destino do trecho atual antes de adicionar um novo."
-        );
-        return;
-      }
-      const sede = getSede();
-      const destinoEhSede =
-        destinoEstado === sede.estado && destinoCidade === sede.cidade;
-      if (destinoEhSede) {
-        window.alert(
-          "O roteiro ja retornou a sede. Nao e necessario adicionar novos trechos."
-        );
-        return;
-      }
-      addCard(destinoEstado, destinoCidade);
+      trimTrailingEmptyDestinos();
+      regenerateTrechos();
     });
   }
 }

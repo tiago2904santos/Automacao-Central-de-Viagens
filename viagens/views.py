@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import re
 from datetime import date, datetime, time, timedelta
 from typing import Iterable
@@ -26,9 +25,6 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_GET
 from .documents.document import build_oficio_docx_bytes
 from .documents.document import build_oficio_docx_and_pdf
-
-
-logger = logging.getLogger(__name__)
 
 
 def _normalizar_placa(placa: str) -> str:
@@ -92,6 +88,12 @@ def _format_trecho_local(cidade: Cidade | None, estado: Estado | None) -> str:
     if estado:
         return estado.sigla
     return ""
+
+
+def _format_estado_label(estado: Estado | None, fallback: str | None = "") -> str:
+    if estado:
+        return f"{estado.nome} ({estado.sigla})"
+    return (fallback or "").strip()
 
 
 class OrderedTrechoInlineFormSet(BaseInlineFormSet):
@@ -215,6 +217,139 @@ def _build_trecho_formset(extra: int):
         extra=extra,
         can_delete=False,
     )
+
+
+def _serialize_sede_destinos_from_post(post_data) -> tuple[str, str, list[dict[str, str]]]:
+    sede_uf = (post_data.get("sede_uf") or "").strip().upper()
+    sede_cidade = (post_data.get("sede_cidade") or "").strip()
+
+    total_raw = post_data.get("destinos-TOTAL_FORMS")
+    try:
+        total_forms = int(total_raw or 0)
+    except (TypeError, ValueError):
+        total_forms = 0
+
+    order_raw = (post_data.get("destinos-order") or "").strip()
+    order_indexes: list[int] = []
+    if order_raw:
+        for part in order_raw.split(","):
+            part = part.strip()
+            if not part.isdigit():
+                continue
+            idx = int(part)
+            if idx < 0 or idx >= total_forms:
+                continue
+            if idx in order_indexes:
+                continue
+            order_indexes.append(idx)
+    if not order_indexes:
+        order_indexes = list(range(total_forms))
+
+    destinos: list[dict[str, str]] = []
+    for index in order_indexes:
+        uf = (post_data.get(f"destinos-{index}-uf") or "").strip().upper()
+        cidade = (post_data.get(f"destinos-{index}-cidade") or "").strip()
+        destinos.append({"uf": uf, "cidade": cidade})
+
+    return sede_uf, sede_cidade, destinos
+
+
+def _normalize_destinos_for_wizard(destinos_data) -> list[dict[str, str]]:
+    if not destinos_data:
+        destinos_data = [{}]
+    normalized = []
+    for destino in destinos_data:
+        normalized.append(
+            {
+                "uf": (destino.get("uf") or "PR").strip().upper(),
+                "cidade": (destino.get("cidade") or "").strip(),
+            }
+        )
+    return normalized
+
+
+def _build_destinos_display(destinos_data) -> list[dict[str, str]]:
+    display = []
+    for destino in destinos_data:
+        uf = destino.get("uf", "").strip().upper()
+        cidade = destino.get("cidade", "").strip()
+        estado_obj = _resolve_estado(uf)
+        cidade_obj = _resolve_cidade(cidade, estado=estado_obj)
+        display.append(
+            {
+                "uf": uf,
+                "cidade": cidade,
+                "uf_label": _format_estado_label(estado_obj, fallback=uf),
+                "cidade_label": _format_trecho_local(cidade_obj, estado_obj),
+            }
+        )
+    return display
+
+
+def _build_trechos_from_sede_destinos(
+    sede_uf: str, sede_cidade: str, destinos_list: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    trechos: list[dict[str, str]] = []
+    origem_estado = (sede_uf or "").strip()
+    origem_cidade = (sede_cidade or "").strip()
+    if not origem_estado and not origem_cidade:
+        return trechos
+
+    current = {"uf": origem_estado, "cidade": origem_cidade}
+    for destino in destinos_list:
+        destino_estado = (destino.get("uf") or "").strip()
+        destino_cidade = (destino.get("cidade") or "").strip()
+        if not destino_estado and not destino_cidade:
+            continue
+        if not current["uf"] and not current["cidade"]:
+            break
+        trechos.append(
+            {
+                "origem_estado": current["uf"],
+                "origem_cidade": current["cidade"],
+                "destino_estado": destino_estado,
+                "destino_cidade": destino_cidade,
+                "saida_data": "",
+                "saida_hora": "",
+                "chegada_data": "",
+                "chegada_hora": "",
+            }
+        )
+        current = {"uf": destino_estado, "cidade": destino_cidade}
+
+    return trechos
+
+
+def _merge_datas_horas(
+    old_trechos: list[dict[str, str | int]], new_trechos: list[dict[str, str]]
+) -> list[dict[str, str | int]]:
+    if not new_trechos:
+        return []
+    def _trecho_key(candidate: dict[str, str | int]) -> tuple[str, str, str, str]:
+        return tuple(
+            str(candidate.get(field, "") or "").strip()
+            for field in ("origem_estado", "origem_cidade", "destino_estado", "destino_cidade")
+        )
+
+    merged: list[dict[str, str | int]] = []
+    preserved_map: dict[tuple[str, str, str, str], dict[str, str | int]] = {}
+    for trecho in old_trechos:
+        key = _trecho_key(trecho)
+        if any(key):
+            preserved_map.setdefault(key, trecho)
+
+    # Preserve dates/horas by matching origem/destino, falling back to positional matching if keys are missing.
+    for index, trecho in enumerate(new_trechos):
+        entry = {**trecho}
+        key = _trecho_key(entry)
+        previous = preserved_map.get(key)
+        if not previous and index < len(old_trechos):
+            previous = old_trechos[index]
+        if previous:
+            for key_field in ("saida_data", "saida_hora", "chegada_data", "chegada_hora"):
+                entry[key_field] = previous.get(key_field, entry.get(key_field, ""))
+        merged.append(entry)
+    return merged
 
 
 def _get_retornodata(wizard_data: dict) -> dict[str, str]:
@@ -921,21 +1056,39 @@ def oficio_step3(request):
     retorno_chegada_data_raw = retorno_payload["retorno_chegada_data"]
     retorno_chegada_hora_raw = retorno_payload["retorno_chegada_hora"]
 
-    trechos_initial = _normalize_trechos_initial(data.get("trechos"))
+    estados = Estado.objects.order_by("nome")
+    sede_uf_raw = (data.get("sede_uf") or "").strip().upper()
+    sede_cidade_raw = (data.get("sede_cidade") or "").strip()
+    defaults = {}
+    if not sede_uf_raw:
+        defaults["sede_uf"] = "PR"
+    if not sede_cidade_raw:
+        curitiba = (
+            Cidade.objects.filter(nome__iexact="Curitiba", estado__sigla="PR").first()
+        )
+        if curitiba:
+            defaults["sede_cidade"] = str(curitiba.id)
+    if defaults:
+        data = _update_wizard_data(request, defaults)
+    sede_uf = (data.get("sede_uf") or "").strip().upper() or "PR"
+    sede_cidade = (data.get("sede_cidade") or "").strip()
+    destinos_session = _normalize_destinos_for_wizard(data.get("destinos"))
+
+    trechos_session = data.get("trechos") or []
+    if not trechos_session:
+        valid_destinos = [
+            destino for destino in destinos_session if destino.get("uf") and destino.get("cidade")
+        ]
+        trechos_session = _build_trechos_from_sede_destinos(
+            sede_uf, sede_cidade, valid_destinos
+        )
+        _update_wizard_data(request, {"trechos": trechos_session})
+    trechos_initial = _normalize_trechos_initial(trechos_session)
     formset_extra = max(1, len(trechos_initial))
     TrechoFormSet = _build_trecho_formset(formset_extra)
 
     dummy_oficio = Oficio()
     if request.method == "POST":
-        logger.warning(
-            "STEP3 trechos-0 origem_estado=%r origem_cidade=%r destino_estado=%r destino_cidade=%r total=%r initial=%r",
-            request.POST.get("trechos-0-origem_estado"),
-            request.POST.get("trechos-0-origem_cidade"),
-            request.POST.get("trechos-0-destino_estado"),
-            request.POST.get("trechos-0-destino_cidade"),
-            request.POST.get("trechos-TOTAL_FORMS"),
-            request.POST.get("trechos-INITIAL_FORMS"),
-        )
         motivo_val = request.POST.get("motivo", "").strip()
         tipo_destino = (request.POST.get("tipo_destino") or "").strip().upper()
         valor_diarias_extenso = request.POST.get("valor_diarias_extenso", "").strip()
@@ -956,21 +1109,39 @@ def oficio_step3(request):
             parse_time(retorno_chegada_hora_raw) if retorno_chegada_hora_raw else None
         )
         post_data = _prune_trailing_trechos_post(request.POST, "trechos")
-        # TEMP: desabilitado para evitar sobrescrever dados originais
-        # post_data = _sync_trechos_origens_post(post_data, "trechos")
-        if settings.DEBUG:
-            origin = post_data.get("trechos-0-origem_estado", "")
-            origin_city = post_data.get("trechos-0-origem_cidade", "")
-            logger.debug(
-                "trecho 0 origem_estado=%s origem_cidade=%s",
-                origin,
-                origin_city,
-            )
         formset = TrechoFormSet(post_data, instance=dummy_oficio, prefix="trechos")
         trechos_serialized = _serialize_trechos_from_post(post_data)
-        _update_wizard_data(
+        (
+            sede_uf_post,
+            sede_cidade_post,
+            destinos_raw,
+        ) = _serialize_sede_destinos_from_post(post_data)
+        valid_destinos = [
+            destino for destino in destinos_raw if destino.get("uf") and destino.get("cidade")
+        ]
+        base_trechos = _build_trechos_from_sede_destinos(
+            sede_uf_post, sede_cidade_post, valid_destinos
+        )
+        trechos_serialized = _merge_datas_horas(trechos_serialized, base_trechos)
+        if not trechos_serialized:
+            trechos_serialized = [
+                {
+                    "origem_estado": sede_uf_post,
+                    "origem_cidade": sede_cidade_post,
+                    "destino_estado": "",
+                    "destino_cidade": "",
+                    "saida_data": "",
+                    "saida_hora": "",
+                    "chegada_data": "",
+                    "chegada_hora": "",
+                }
+            ]
+        data = _update_wizard_data(
             request,
             {
+                "sede_uf": sede_uf_post,
+                "sede_cidade": sede_cidade_post,
+                "destinos": destinos_raw,
                 "trechos": trechos_serialized,
                 "tipo_destino": tipo_destino,
                 "motivo": motivo_val,
@@ -984,7 +1155,14 @@ def oficio_step3(request):
             },
         )
 
-        if formset.is_valid():
+        has_sede = bool(sede_uf_post and sede_cidade_post)
+        has_destinos = bool(valid_destinos)
+
+        if not has_sede:
+            erro = "Informe UF e cidade da sede."
+        elif not has_destinos:
+            erro = "Adicione ao menos um destino com UF e cidade."
+        elif formset.is_valid():
             forms_validas = [form.cleaned_data for form in formset.forms if form.cleaned_data]
             if not forms_validas:
                 erro = "Adicione ao menos um trecho para o roteiro."
@@ -996,7 +1174,7 @@ def oficio_step3(request):
                 primeiro = forms_validas[0]
                 ultimo = forms_validas[-1]
                 sede_estado = primeiro.get("origem_estado")
-                sede_cidade = primeiro.get("origem_cidade")
+                sede_cidade_form = primeiro.get("origem_cidade")
                 destino_estado = ultimo.get("destino_estado")
                 destino_cidade = ultimo.get("destino_cidade")
                 saida_sede_dt = _combine_date_time(
@@ -1044,7 +1222,7 @@ def oficio_step3(request):
                         destino_cidade, destino_estado
                     )
                     retorno_chegada_cidade = _format_trecho_local(
-                        sede_cidade, sede_estado
+                        sede_cidade_form, sede_estado
                     )
                     _update_wizard_data(
                         request,
@@ -1064,6 +1242,26 @@ def oficio_step3(request):
             prefix="trechos", instance=dummy_oficio, initial=trechos_initial
         )
 
+    sede_uf = (data.get("sede_uf") or "").strip().upper() or "PR"
+    sede_cidade = (data.get("sede_cidade") or "").strip()
+    if not sede_cidade:
+        curitiba = (
+            Cidade.objects.filter(nome__iexact="Curitiba", estado__sigla="PR").first()
+        )
+        if curitiba:
+            sede_cidade = str(curitiba.id)
+    sede_estado = _resolve_estado(sede_uf)
+    sede_cidade_obj = _resolve_cidade(sede_cidade, estado=sede_estado)
+    sede_label = _format_trecho_local(sede_cidade_obj, sede_estado)
+    sede_uf_label = _format_estado_label(sede_estado, fallback=sede_uf)
+
+    destinos_session = _normalize_destinos_for_wizard(data.get("destinos"))
+    destinos_display = _build_destinos_display(destinos_session)
+
+    trechos_session = data.get("trechos") or []
+    trechos_initial = _normalize_trechos_initial(trechos_session)
+    destinos_order = ",".join(str(idx) for idx in range(len(destinos_display)))
+
     return render(
         request,
         "viagens/oficio_step3.html",
@@ -1078,6 +1276,14 @@ def oficio_step3(request):
             "retorno_chegada_hora": retorno_chegada_hora_raw,
             "valor_diarias_extenso": valor_diarias_extenso,
             "quantidade_servidores": len(data.get("viajantes_ids", [])),
+            "estados": estados,
+            "sede_uf": sede_uf,
+            "sede_uf_label": sede_uf_label,
+            "sede_cidade": sede_cidade,
+            "sede_label": sede_label,
+            "destinos": destinos_display,
+            "destinos_total_forms": len(destinos_display),
+            "destinos_order": destinos_order,
         },
     )
 
