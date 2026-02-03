@@ -17,14 +17,25 @@
       <span class="stepper-index">2</span>
       Transporte
     </button>
-    <button class="stepper-step is-disabled" type="button" data-step="3" disabled>
+    <button class="stepper-step" type="button" data-step="3">
       <span class="stepper-index">3</span>
       Roteiro
     </button>
+    <button class="stepper-step" type="button" data-step="4">
+      <span class="stepper-index">4</span>
+      Resumo
+    </button>
   </nav>
 
-  <h2 class="page-title">Etapa 1 - Dados do oficio</h2>
-  <p class="page-subtitle">Preencha numero do oficio, protocolo e selecione os viajantes.</p>
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa 1 - Dados do oficio</h2>
+      <p class="page-subtitle">Preencha numero do oficio, protocolo e selecione os viajantes.</p>
+    </div>
+    <div class="page-actions">
+      <span class="{{ status_class }}">Status: {{ status_label }}</span>
+    </div>
+  </div>
 
   <div class="page-grid page-grid--preview">
     <div class="card">
@@ -37,12 +48,12 @@
         <section class="grid">
           <label>
             Oficio
-            <input type="text" name="oficio" value="{{ oficio }}" required data-preview-target="oficio" />
+            <input type="text" name="oficio" value="{{ oficio }}" data-preview-target="oficio" />
             <span class="field-help">Use o numero oficial do documento.</span>
           </label>
           <label>
             Protocolo
-            <input type="text" name="protocolo" value="{{ protocolo }}" required data-preview-target="protocolo" />
+            <input type="text" name="protocolo" value="{{ protocolo }}" data-preview-target="protocolo" />
             <span class="field-help">Informe o protocolo interno.</span>
           </label>
           <label>

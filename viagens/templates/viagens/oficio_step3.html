@@ -8,18 +8,22 @@
 {% endblock %}
 
 {% block content %}
-  <nav class="stepper" aria-label="Etapas">
-    <a class="stepper-step is-done" href="{% url 'formulario' %}?resume=1" data-step="1" data-step-mode="link">
+  <nav class="stepper" aria-label="Etapas" data-stepper-form="roteiroForm">
+    <button class="stepper-step is-done" type="button" data-step="1">
       <span class="stepper-index">1</span>
       Dados
-    </a>
-    <a class="stepper-step is-done" href="{% url 'oficio_step2' %}" data-step="2" data-step-mode="link">
+    </button>
+    <button class="stepper-step is-done" type="button" data-step="2">
       <span class="stepper-index">2</span>
       Transporte
-    </a>
+    </button>
     <button class="stepper-step is-active" type="button" data-step="3" disabled>
       <span class="stepper-index">3</span>
       Roteiro
+    </button>
+    <button class="stepper-step" type="button" data-step="4">
+      <span class="stepper-index">4</span>
+      Resumo
     </button>
   </nav>
 
@@ -29,6 +33,7 @@
       <p class="page-subtitle">Defina sede, destinos e datas/horas por trecho.</p>
     </div>
     <div class="page-actions">
+      <span class="{{ status_class }}">Status: {{ status_label }}</span>
       <button class="btn-clear btn-small" type="button" id="addTrechoBtn">Adicionar trecho</button>
     </div>
   </div>
@@ -112,9 +117,6 @@
     </style>
     <form method="post" id="roteiroForm" data-formset-prefix="trechos" data-servidores-count="{{ quantidade_servidores|default:0 }}">
       {% csrf_token %}
-      {% if erro %}
-        <div class="error">{{ erro }}</div>
-      {% endif %}
       {% if formset.non_form_errors %}
         <div class="error">{{ formset.non_form_errors }}</div>
       {% endif %}

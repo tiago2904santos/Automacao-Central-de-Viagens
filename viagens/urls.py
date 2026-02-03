@@ -11,6 +11,11 @@ urlpatterns = [
     path("oficios/etapa-2/", views.oficio_step2, name="oficio_step2"),
     path("oficios/etapa-3/", views.oficio_step3, name="oficio_step3"),
     path("oficios/etapa-4/", views.oficio_step4, name="oficio_step4"),
+    path(
+        "oficios/<int:oficio_id>/rascunho/",
+        views.oficio_draft_resume,
+        name="oficio_draft_resume",
+    ),
     path("oficios/<int:oficio_id>/editar/", views.oficio_editar, name="oficio_editar"),
     path(
         "oficios/<int:oficio_id>/editar/etapa-1/",

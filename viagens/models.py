@@ -38,9 +38,19 @@ class Cidade(models.Model):
 
 
 class Oficio(models.Model):
-    oficio = models.CharField(max_length=50)
-    protocolo = models.CharField(max_length=80)
-    destino = models.CharField(max_length=200)
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Rascunho"
+        FINAL = "FINAL", "Finalizado"
+
+    oficio = models.CharField(max_length=50, blank=True, default="")
+    protocolo = models.CharField(max_length=80, blank=True, default="")
+    destino = models.CharField(max_length=200, blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+    )
     assunto = models.CharField(max_length=200, blank=True)
     tipo_destino = models.CharField(
         max_length=20,
@@ -138,6 +148,11 @@ class Oficio(models.Model):
     )
     viajantes = models.ManyToManyField(Viajante, related_name="oficios", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def is_draft(self) -> bool:
+        return self.status == self.Status.DRAFT
 
     def __str__(self) -> str:
         destino = self.cidade_destino or self.destino

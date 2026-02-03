@@ -69,15 +69,24 @@
                   {{ oficio.placa|default:"-" }}{% if oficio.modelo %} - {{ oficio.modelo }}{% endif %}
                 {% endif %}
               </td>
-              <td><span class="badge">Salvo</span></td>
+              <td>
+                {% if oficio.status == "DRAFT" %}
+                  <span class="badge badge--danger">RASCUNHO</span>
+                {% else %}
+                  <span class="badge">FINALIZADO</span>
+                {% endif %}
+              </td>
               <td>
                 <div class="table-actions">
-                  <a href="{% url 'oficio_edit_step1' oficio.id %}" class="btn-edit">Editar</a>
-                  <!-- Em qualquer template que tenha o objeto "oficio" (ex: oficio_edit.html ou lista) -->
-                  <a class="btn btn-primary" href="{% url 'oficio_download_docx' oficio.id %}">Baixar DOCX</a>
-                  <a class="btn btn-secondary" href="{% url 'oficio_download_pdf' oficio.id %}">
-                    Baixar PDF
-                  </a>
+                  {% if oficio.status == "DRAFT" %}
+                    <a href="{% url 'oficio_draft_resume' oficio.id %}" class="btn-edit">Continuar rascunho</a>
+                  {% else %}
+                    <a href="{% url 'oficio_edit_step1' oficio.id %}" class="btn-edit">Editar</a>
+                    <a class="btn btn-primary" href="{% url 'oficio_download_docx' oficio.id %}">Baixar DOCX</a>
+                    <a class="btn btn-secondary" href="{% url 'oficio_download_pdf' oficio.id %}">
+                      Baixar PDF
+                    </a>
+                  {% endif %}
                 </div>
               </td>
             </tr>

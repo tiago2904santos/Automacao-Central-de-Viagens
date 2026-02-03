@@ -11,20 +11,20 @@ class TrechoForm(forms.ModelForm):
     origem_estado = forms.ModelChoiceField(
         queryset=Estado.objects.order_by("nome"),
         to_field_name="sigla",
-        required=True,
+        required=False,
     )
     destino_estado = forms.ModelChoiceField(
         queryset=Estado.objects.order_by("nome"),
         to_field_name="sigla",
-        required=True,
+        required=False,
     )
     origem_cidade = forms.ModelChoiceField(
         queryset=Cidade.objects.none(),
-        required=True,
+        required=False,
     )
     destino_cidade = forms.ModelChoiceField(
         queryset=Cidade.objects.none(),
-        required=True,
+        required=False,
     )
 
     class Meta:
