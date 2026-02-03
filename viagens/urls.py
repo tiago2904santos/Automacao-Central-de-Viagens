@@ -16,7 +16,6 @@ urlpatterns = [
         views.oficio_draft_resume,
         name="oficio_draft_resume",
     ),
-    path("oficios/<int:oficio_id>/editar/", views.oficio_editar, name="oficio_editar"),
     path(
         "oficios/<int:oficio_id>/editar/etapa-1/",
         views.oficio_edit_step1,

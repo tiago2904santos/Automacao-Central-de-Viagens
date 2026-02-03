@@ -128,42 +128,85 @@ class OficioFlowTests(TestCase):
             modelo="Uno",
             combustivel="Gasolina",
             motorista="Teste",
+            tipo_destino="INTERIOR",
+            retorno_saida_data="2024-01-04",
+            retorno_saida_hora="07:00",
+            retorno_chegada_data="2024-01-05",
+            retorno_chegada_hora="18:00",
+            motivo="Original",
         )
         oficio.viajantes.add(self.viajante)
+        Trecho.objects.create(
+            oficio=oficio,
+            ordem=1,
+            origem_estado=self.estado_pr,
+            origem_cidade=self.cidade_sede,
+            destino_estado=self.estado_pr,
+            destino_cidade=self.cidade_intermediaria,
+            saida_data="2024-01-01",
+            saida_hora="08:00",
+        )
 
-        payload = {
-            "oficio": "999/2024",
-            "protocolo": "999",
-            "assunto": "Atualizado",
-            "placa": "ABC1234",
-            "modelo": "Uno",
-            "combustivel": "Diesel",
-            "motorista": str(self.viajante.id),
-            "motorista_nome": "",
-            "motorista_oficio": "",
-            "motorista_protocolo": "",
-            "motivo": "Teste",
-            "tipo_destino": "INTERIOR",
-            "retorno_saida_data": "2024-01-05",
-            "retorno_saida_hora": "08:00",
-            "retorno_chegada_data": "2024-01-05",
-            "retorno_chegada_hora": "18:00",
-            "trechos-TOTAL_FORMS": "2",
-            "trechos-INITIAL_FORMS": "0",
-            "trechos-MIN_NUM_FORMS": "0",
-            "trechos-MAX_NUM_FORMS": "1000",
-            "trechos-0-origem_estado": self.estado_pr.sigla,
-            "trechos-0-origem_cidade": str(self.cidade_sede.id),
-            "trechos-0-destino_estado": self.estado_pr.sigla,
-            "trechos-0-destino_cidade": str(self.cidade_intermediaria.id),
-            "trechos-0-saida_data": "2024-01-04",
-            "trechos-0-saida_hora": "07:00",
-            "trechos-1-origem_estado": self.estado_pr.sigla,
-            "trechos-1-origem_cidade": str(self.cidade_intermediaria.id),
-            "servidores": [str(self.viajante.id)],
-        }
-        response = self.client.post(reverse("oficio_editar", args=[oficio.id]), payload)
-        self.assertEqual(response.status_code, 302)
+        response = self.client.get(reverse("oficio_edit_step1", args=[oficio.id]))
+        self.assertEqual(response.status_code, 200)
+        session = self.client.session
+        session_key = f"oficio_edit_wizard:{oficio.id}"
+        draft = session[session_key]
+        trechos_serialized = []
+        for trecho in Trecho.objects.filter(oficio=oficio).order_by("ordem"):
+            trechos_serialized.append(
+                {
+                    "origem_estado": trecho.origem_estado.sigla if trecho.origem_estado else "",
+                    "origem_cidade": str(trecho.origem_cidade_id or ""),
+                    "destino_estado": trecho.destino_estado.sigla if trecho.destino_estado else "",
+                    "destino_cidade": str(trecho.destino_cidade_id or ""),
+                    "saida_data": trecho.saida_data.isoformat() if trecho.saida_data else "",
+                    "saida_hora": trecho.saida_hora.strftime("%H:%M")
+                    if trecho.saida_hora
+                    else "",
+                    "chegada_data": trecho.chegada_data.isoformat() if trecho.chegada_data else "",
+                    "chegada_hora": trecho.chegada_hora.strftime("%H:%M")
+                    if trecho.chegada_hora
+                    else "",
+                }
+            )
+        destinos = [
+            {
+                "uf": self.estado_pr.sigla,
+                "cidade": str(self.cidade_intermediaria.id),
+            }
+        ]
+        draft.update(
+            {
+                "oficio": "999/2024",
+                "protocolo": "999",
+                "assunto": "Atualizado",
+                "placa": "ABC1234",
+                "modelo": "Uno",
+                "combustivel": "Diesel",
+                "motorista_id": str(self.viajante.id),
+                "motorista_oficio": "",
+                "motorista_protocolo": "",
+                "motivo": "Teste",
+                "tipo_destino": "INTERIOR",
+                "valor_diarias_extenso": "",
+                "destinos": destinos,
+                "trechos": trechos_serialized,
+                "retorno": {
+                    "retorno_saida_data": "2024-01-05",
+                    "retorno_saida_hora": "08:00",
+                    "retorno_chegada_data": "2024-01-05",
+                    "retorno_chegada_hora": "18:00",
+                },
+            }
+        )
+        session[session_key] = draft
+        session.save()
+
+        response = self.client.post(reverse("oficio_edit_save", args=[oficio.id]))
+        self.assertRedirects(
+            response, f"{reverse('oficio_edit_step4', args=[oficio.id])}?salvo=1"
+        )
 
         oficio.refresh_from_db()
         self.assertEqual(oficio.oficio, "999/2024")
@@ -179,7 +222,7 @@ class OficioFlowTests(TestCase):
             assunto="Teste",
         )
 
-        response = self.client.get(reverse("oficio_editar", args=[oficio.id]))
+        response = self.client.get(reverse("oficio_edit_step1", args=[oficio.id]))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Data de criacao")
