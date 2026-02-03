@@ -170,6 +170,23 @@ def _clear_edit_data(request, oficio_id: int) -> None:
     request.session.pop(_edit_key(oficio_id), None)
     request.session.modified = True
 
+STEP_VIEW_MAP = {
+    "step1": "oficio_edit_step1",
+    "step2": "oficio_edit_step2",
+    "step3": "oficio_edit_step3",
+    "step4": "oficio_edit_step4",
+}
+
+
+def _redirect_to_edit_step(request, oficio_id: int, default_view: str):
+    goto_raw = (
+        (request.POST.get("goto") or request.POST.get("goto_step") or "")
+        .strip()
+        .lower()
+    )
+    target_view = STEP_VIEW_MAP.get(goto_raw) or default_view
+    return redirect(target_view, oficio_id=oficio_id)
+
 
 TRECHO_FIELDS = (
     "origem_estado",
@@ -224,6 +241,26 @@ def _serialize_trechos_from_post(post_data) -> list[dict[str, str | int]]:
     return trechos or [{}]
 
 
+def _reorder_list_by_csv(items: list[dict], order_csv: str | None) -> list[dict]:
+    if not items or not order_csv:
+        return items
+    parts = [part.strip() for part in order_csv.split(",") if part.strip().isdigit()]
+    if len(parts) != len(items):
+        return items
+    try:
+        order = [int(part) for part in parts]
+    except ValueError:
+        return items
+    if len(set(order)) != len(order):
+        return items
+    if any(idx < 0 or idx >= len(items) for idx in order):
+        return items
+    try:
+        return [items[idx] for idx in order]
+    except Exception:
+        return items
+
+
 def _normalize_trechos_initial(trechos_data) -> list[dict[str, str | int]]:
     if not trechos_data:
         return [{}]
@@ -255,26 +292,12 @@ def _serialize_sede_destinos_from_post(post_data) -> tuple[str, str, list[dict[s
         total_forms = 0
 
     order_raw = (post_data.get("destinos-order") or "").strip()
-    order_indexes: list[int] = []
-    if order_raw:
-        for part in order_raw.split(","):
-            part = part.strip()
-            if not part.isdigit():
-                continue
-            idx = int(part)
-            if idx < 0 or idx >= total_forms:
-                continue
-            if idx in order_indexes:
-                continue
-            order_indexes.append(idx)
-    if not order_indexes:
-        order_indexes = list(range(total_forms))
-
     destinos: list[dict[str, str]] = []
-    for index in order_indexes:
+    for index in range(total_forms):
         uf = (post_data.get(f"destinos-{index}-uf") or "").strip().upper()
         cidade = (post_data.get(f"destinos-{index}-cidade") or "").strip()
         destinos.append({"uf": uf, "cidade": cidade})
+    destinos = _reorder_list_by_csv(destinos, order_raw)
 
     return sede_uf, sede_cidade, destinos
 
@@ -1563,15 +1586,10 @@ def oficio_edit_step1(request, oficio_id: int):
             },
         )
         if request.POST.get("action") == "save":
-            return redirect("oficio_edit_save", oficio_id=oficio_id)
-        goto_step = (request.POST.get("goto_step") or "2").strip()
-        if goto_step == "1":
-            return redirect("oficio_edit_step1", oficio_id=oficio_id)
-        if goto_step == "3":
-            return redirect("oficio_edit_step3", oficio_id=oficio_id)
-        if goto_step == "4":
-            return redirect("oficio_edit_step4", oficio_id=oficio_id)
-        return redirect("oficio_edit_step2", oficio_id=oficio_id)
+            return oficio_edit_save(request, oficio_id=oficio_id)
+        return _redirect_to_edit_step(
+            request, oficio_id=oficio_id, default_view="oficio_edit_step2"
+        )
 
     servidores_form = ServidoresSelectForm(
         initial={"servidores": data.get("viajantes_ids", [])}
@@ -1653,15 +1671,10 @@ def oficio_edit_step2(request, oficio_id: int):
             },
         )
         if request.POST.get("action") == "save":
-            return redirect("oficio_edit_save", oficio_id=oficio_id)
-        goto_step = (request.POST.get("goto_step") or "3").strip()
-        if goto_step == "1":
-            return redirect("oficio_edit_step1", oficio_id=oficio_id)
-        if goto_step == "2":
-            return redirect("oficio_edit_step2", oficio_id=oficio_id)
-        if goto_step == "4":
-            return redirect("oficio_edit_step4", oficio_id=oficio_id)
-        return redirect("oficio_edit_step3", oficio_id=oficio_id)
+            return oficio_edit_save(request, oficio_id=oficio_id)
+        return _redirect_to_edit_step(
+            request, oficio_id=oficio_id, default_view="oficio_edit_step3"
+        )
 
     motorista_preview = None
     motorista_id_val = data.get("motorista_id") or ""
@@ -1861,15 +1874,10 @@ def oficio_edit_step3(request, oficio_id: int):
                     )
 
         if request.POST.get("action") == "save":
-            return redirect("oficio_edit_save", oficio_id=oficio_id)
-        goto_step = (request.POST.get("goto_step") or "4").strip()
-        if goto_step == "1":
-            return redirect("oficio_edit_step1", oficio_id=oficio_id)
-        if goto_step == "2":
-            return redirect("oficio_edit_step2", oficio_id=oficio_id)
-        if goto_step == "3":
-            return redirect("oficio_edit_step3", oficio_id=oficio_id)
-        return redirect("oficio_edit_step4", oficio_id=oficio_id)
+            return oficio_edit_save(request, oficio_id=oficio_id)
+        return _redirect_to_edit_step(
+            request, oficio_id=oficio_id, default_view="oficio_edit_step4"
+        )
 
     formset = TrechoFormSet(prefix="trechos", instance=dummy_oficio, initial=trechos_initial)
 
@@ -1921,9 +1929,13 @@ def oficio_edit_step3(request, oficio_id: int):
     )
 
 
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def oficio_edit_step4(request, oficio_id: int):
     data = _ensure_edit_session(request, oficio_id)
+    if request.method == "POST":
+        return _redirect_to_edit_step(
+            request, oficio_id=oficio_id, default_view="oficio_edit_step4"
+        )
     context = _build_step4_context(data)
     context.update(
         {

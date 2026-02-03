@@ -449,7 +449,7 @@ function initRoteiroFormset() {
     }
   };
 
-  const updateDestinosOrder = () => {
+  const syncDestinosOrder = () => {
     if (!destinosOrderInput) {
       return;
     }
@@ -461,7 +461,7 @@ function initRoteiroFormset() {
 
   const syncDestinos = () => {
     updateDestinosTotal();
-    updateDestinosOrder();
+    syncDestinosOrder();
     validateAllDestinos();
   };
 
@@ -549,6 +549,10 @@ function initRoteiroFormset() {
           return;
         }
         item.remove();
+        // After removal, reindex to keep destinos-0..N-1 contiguous for POST parsing.
+        getDestinosItems().forEach((destinoItem, index) =>
+          updateElementIndex(destinoItem, index, "destinos")
+        );
         syncDestinos();
         regenerateTrechos();
       });
@@ -618,7 +622,8 @@ function initRoteiroFormset() {
         dragItem.classList.remove("is-dragging");
       }
       dragItem = null;
-      getDestinosItems().forEach((item, index) => updateElementIndex(item, index, "destinos"));
+      // Keep destino indices stable during reorder; the backend uses `destinos-order`
+      // to apply the user-defined order without renaming all form fields on drag.
       syncDestinos();
       regenerateTrechos();
     };
@@ -675,6 +680,7 @@ function initRoteiroFormset() {
     roteiroForm.addEventListener("submit", () => {
       trimTrailingEmptyDestinos();
       regenerateTrechos();
+      syncDestinosOrder();
     });
   }
 }
