@@ -10,32 +10,34 @@
       <div class="grid">
         <label>
           Nome
-          <input type="text" name="nome" value="{{ values.nome|default_if_none:'' }}" required />
+          <input type="text" name="nome" value="{{ values.nome|default_if_none:'' }}" required data-uppercase="true" />
           {% if erros.nome %}<span class="field-errors">{{ erros.nome }}</span>{% endif %}
         </label>
         <label>
           RG
-          <input type="text" name="rg" value="{{ values.rg|default_if_none:'' }}" required />
+          <input type="text" name="rg" value="{{ values.rg|default_if_none:'' }}" required data-mask="rg" inputmode="numeric" />
           {% if erros.rg %}<span class="field-errors">{{ erros.rg }}</span>{% endif %}
         </label>
         <label>
           CPF
-          <input type="text" name="cpf" value="{{ values.cpf|default_if_none:'' }}" required />
+          <input type="text" name="cpf" value="{{ values.cpf|default_if_none:'' }}" required data-mask="cpf" inputmode="numeric" />
           {% if erros.cpf %}<span class="field-errors">{{ erros.cpf }}</span>{% endif %}
         </label>
         <label>
           Telefone
-          <input type="text" name="telefone" value="{{ values.telefone|default_if_none:'' }}" />
+          <input type="text" name="telefone" value="{{ values.telefone|default_if_none:'' }}" data-mask="telefone" inputmode="numeric" />
         </label>
         <label class="full">
           Cargo
-          <select name="cargo" required>
+          <select name="cargo" required data-cargo-select>
             <option value="">Selecione</option>
             {% for cargo in cargo_choices %}
               <option value="{{ cargo }}" {% if values.cargo == cargo %}selected{% endif %}>{{ cargo }}</option>
             {% endfor %}
           </select>
           {% if erros.cargo %}<span class="field-errors">{{ erros.cargo }}</span>{% endif %}
+          <button class="btn-clear btn-small" type="button" data-add-cargo>Adicionar cargo</button>
+          <input type="text" name="cargo_novo" value="{{ values.cargo_novo|default_if_none:'' }}" data-cargo-novo hidden />
         </label>
       </div>
 

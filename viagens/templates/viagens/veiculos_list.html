@@ -43,7 +43,8 @@
             <th>Placa</th>
             <th>Modelo</th>
             <th>Combustivel</th>
-            <th>Acoes</th>
+            <th>Tipo</th>
+            <th class="table-actions-header">Acoes</th>
           </tr>
         </thead>
         <tbody>
@@ -52,7 +53,8 @@
               <td>{{ veiculo.placa }}</td>
               <td>{{ veiculo.modelo }}</td>
               <td>{{ veiculo.combustivel }}</td>
-              <td>
+              <td>{{ veiculo.get_tipo_viatura_display|default:"-" }}</td>
+              <td class="table-actions-cell">
                 <a href="{% url 'veiculo_editar' veiculo.id %}" class="btn-edit">Editar</a>
               </td>
             </tr>

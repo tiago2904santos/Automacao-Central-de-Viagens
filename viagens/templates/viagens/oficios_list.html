@@ -1,4 +1,5 @@
 {% extends "viagens/base.html" %}
+{% load viagens_extras %}
 
 {% block title %}Lista de oficios{% endblock %}
 
@@ -41,13 +42,14 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Nº Oficio</th>
+            <th>Oficio</th>
             <th>Data</th>
+            <th>Nº Protocolo</th>
             <th>Destino</th>
-            <th>Motorista</th>
+            <th>Servidores</th>
             <th>Veiculo</th>
             <th>Status</th>
-            <th>Acoes</th>
+            <th class="table-actions-header">Acoes</th>
           </tr>
         </thead>
         <tbody>
@@ -55,6 +57,7 @@
             <tr>
               <td>{{ oficio.oficio }}</td>
               <td>{{ oficio.created_at|date:"d/m/Y" }}</td>
+              <td>{{ oficio.protocolo|default:"-" }}</td>
               <td>
                 {% if oficio.cidade_destino %}
                   {{ oficio.cidade_destino.nome }}/{{ oficio.cidade_destino.estado.sigla }}
@@ -63,11 +66,11 @@
                 {% endif %}
               </td>
               <td>
-                {% if oficio.motorista_viajante %}
-                  {{ oficio.motorista_viajante.nome }}
-                {% else %}
-                  {{ oficio.motorista|default:"-" }}
-                {% endif %}
+                {% for servidor in oficio.viajantes.all %}
+                  {{ servidor.nome|first_name }}{% if not forloop.last %} - {% endif %}
+                {% empty %}
+                  -
+                {% endfor %}
               </td>
               <td>
                 {% if oficio.veiculo %}
@@ -83,16 +86,14 @@
                   <span class="badge">FINALIZADO</span>
                 {% endif %}
               </td>
-              <td>
-                <div class="table-actions">
+              <td class="table-actions-cell">
+                <div class="table-actions table-actions--right">
                   {% if oficio.status == "DRAFT" %}
                     <a href="{% url 'oficio_draft_resume' oficio.id %}" class="btn-edit">Continuar rascunho</a>
                   {% else %}
                     <a href="{% url 'oficio_edit_step1' oficio.id %}" class="btn-edit">Editar</a>
-                    <a class="btn btn-primary" href="{% url 'oficio_download_docx' oficio.id %}">Baixar DOCX</a>
-                    <a class="btn btn-secondary" href="{% url 'oficio_download_pdf' oficio.id %}">
-                      Baixar PDF
-                    </a>
+                    <a class="btn-icon btn-icon--docx" href="{% url 'oficio_download_docx' oficio.id %}" aria-label="Baixar DOCX">W</a>
+                    <a class="btn-icon btn-icon--pdf" href="{% url 'oficio_download_pdf' oficio.id %}" aria-label="Baixar PDF">PDF</a>
                   {% endif %}
                 </div>
               </td>

@@ -1,4 +1,5 @@
 {% extends "viagens/base.html" %}
+{% load static %}
 
 {% block title %}Editar viajante{% endblock %}
 
@@ -20,32 +21,34 @@
         <section class="grid">
           <label>
             Nome
-            <input type="text" name="nome" value="{{ viajante.nome }}" required />
+            <input type="text" name="nome" value="{{ viajante.nome }}" required data-uppercase="true" />
             {% if erros.nome %}<span class="field-errors">{{ erros.nome }}</span>{% endif %}
           </label>
           <label>
             RG
-            <input type="text" name="rg" value="{{ viajante.rg }}" required />
+            <input type="text" name="rg" value="{{ viajante.rg }}" required data-mask="rg" inputmode="numeric" />
             {% if erros.rg %}<span class="field-errors">{{ erros.rg }}</span>{% endif %}
           </label>
           <label>
             CPF
-            <input type="text" name="cpf" value="{{ viajante.cpf }}" required />
+            <input type="text" name="cpf" value="{{ viajante.cpf }}" required data-mask="cpf" inputmode="numeric" />
             {% if erros.cpf %}<span class="field-errors">{{ erros.cpf }}</span>{% endif %}
           </label>
           <label>
             Telefone
-            <input type="text" name="telefone" value="{{ viajante.telefone }}" />
+            <input type="text" name="telefone" value="{{ viajante.telefone }}" data-mask="telefone" inputmode="numeric" />
           </label>
           <label class="full">
             Cargo
-            <select name="cargo" required>
+            <select name="cargo" required data-cargo-select>
               <option value="">Selecione</option>
               {% for cargo in cargo_choices %}
                 <option value="{{ cargo }}" {% if cargo == viajante.cargo %}selected{% endif %}>{{ cargo }}</option>
               {% endfor %}
             </select>
             {% if erros.cargo %}<span class="field-errors">{{ erros.cargo }}</span>{% endif %}
+            <button class="btn-clear btn-small" type="button" data-add-cargo>Adicionar cargo</button>
+            <input type="text" name="cargo_novo" value="" data-cargo-novo hidden />
           </label>
         </section>
 
@@ -58,7 +61,7 @@
     </div>
 
     <div class="illustration-card">
-      <div class="icon">CV</div>
+      <div class="icon">👮‍♂️</div>
       <h3>Dados do viajante</h3>
       <p>Evite duplicidades e mantenha o cadastro atualizado.</p>
       <p class="muted">A exclusao e permanente.</p>
@@ -79,4 +82,8 @@
       </form>
     </div>
   </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/viajante_form.js' %}"></script>
 {% endblock %}

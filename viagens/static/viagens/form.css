@@ -215,7 +215,7 @@ body {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
 }
 
@@ -239,7 +239,7 @@ body {
   inset: auto -40% -70% auto;
   width: 140px;
   height: 140px;
-  background: radial-gradient(circle, rgba(43, 43, 178, 0.12), transparent 70%);
+  background: radial-gradient(circle, rgba(15, 118, 110, 0.12), transparent 70%);
   pointer-events: none;
 }
 
@@ -337,7 +337,7 @@ body {
   min-height: 200px;
   border-radius: 8px;
   background: var(--surface-soft);
-  border: 1px dashed rgba(43, 43, 178, 0.22);
+  border: 1px dashed rgba(15, 118, 110, 0.28);
   padding: 8px;
   display: flex;
   align-items: stretch;
@@ -349,12 +349,12 @@ body {
 }
 
 .chart-grid {
-  stroke: rgba(43, 43, 178, 0.12);
+  stroke: rgba(15, 118, 110, 0.12);
   stroke-width: 1;
 }
 
 .chart-bar {
-  fill: rgba(43, 43, 178, 0.82);
+  fill: rgba(15, 118, 110, 0.82);
   transition: fill 0.18s ease, opacity 0.18s ease;
 }
 
@@ -873,6 +873,39 @@ textarea {
   gap: 8px;
   align-items: center;
   white-space: nowrap;
+}
+
+.table-actions--right {
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.table-actions-header,
+.table-actions-cell {
+  text-align: right;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  text-decoration: none;
+  border: 1px solid transparent;
+  background: #f8fafc;
+}
+
+.btn-icon--docx {
+  color: #2b579a;
+  border-color: rgba(43, 87, 154, 0.3);
+}
+
+.btn-icon--pdf {
+  color: #d00000;
+  border-color: rgba(208, 0, 0, 0.3);
 }
 
 .filter-bar {
