@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import tempfile
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable, List, Tuple
@@ -19,8 +20,9 @@ from docx import Document as DocxFactory
 from docx.document import Document as DocxDocument
 from docx.oxml.ns import qn
 from docx.shared import Pt
+from num2words import num2words
 
-from viagens.models import Cidade, Estado, Oficio, Trecho, Viajante
+from viagens.models import Cidade, ConfiguracaoOficio, Estado, Oficio, Trecho, Viajante
 
 PLACEHOLDER_RE = re.compile(r"{{\s*([^}]+?)\s*}}")
 
@@ -74,6 +76,185 @@ def _join(parts: Iterable[str], sep=" - ") -> str:
 
 def _title_case(text: str) -> str:
     return " ".join(w.capitalize() for w in (text or "").split())
+
+
+def _parse_decimal_string(value: str | Decimal | None) -> Decimal | None:
+    if isinstance(value, Decimal):
+        return value
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    text = text.replace("R$", "").replace(" ", "")
+    text = text.replace(".", "").replace(",", ".")
+    if not text:
+        return None
+    try:
+        return Decimal(text)
+    except InvalidOperation:
+        return None
+
+
+def _format_num(value: int, singular: str, plural: str) -> str:
+    words = num2words(value, lang="pt_BR")
+    unit = singular if value == 1 else plural
+    return f"{words} {unit}"
+
+
+def valor_por_extenso_ptbr(value: str | Decimal | None) -> str | None:
+    parsed = _parse_decimal_string(value)
+    if parsed is None:
+        return None
+    parsed = parsed.quantize(Decimal("0.01"))
+    reais = int(parsed)
+    centavos = int((parsed - reais) * 100)
+    parts: list[str] = []
+    if reais:
+        parts.append(_format_num(reais, "real", "reais"))
+    if centavos:
+        parts.append(_format_num(centavos, "centavo", "centavos"))
+    if not parts:
+        parts.append("zero reais")
+    return " e ".join(parts)
+
+
+def is_viagem_fora_pr(trechos: list[Trecho]) -> bool:
+    for trecho in trechos:
+        sigla = (trecho.destino_estado.sigla if trecho.destino_estado else "") or ""
+        if sigla.upper() != "PR":
+            return True
+    return False
+
+
+def get_assunto(oficio: Oficio, trechos: list[Trecho]) -> tuple[str, str]:
+    data_oficio = oficio.created_at.date() if oficio.created_at else None
+    datas = [t.saida_data for t in trechos if t.saida_data]
+    data_saida = min(datas) if datas else None
+    if data_oficio and data_saida and data_oficio >= data_saida:
+        return (
+            "Solicitação de convalidação e concessão de diárias.",
+            "(convalidação)",
+        )
+    return ("Solicitação de autorização e concessão de diárias.", "")
+
+
+def build_destinos_e_roteiros(oficio: Oficio, trechos: list[Trecho]) -> tuple[str, str, str]:
+    sede = _fmt_local(oficio.cidade_sede, oficio.estado_sede)
+    if not sede and trechos:
+        sede = _fmt_local(trechos[0].origem_cidade, trechos[0].origem_estado)
+
+    seen: set[str] = set()
+    destinos: list[str] = []
+    for trecho in trechos:
+        destino = _fmt_local(trecho.destino_cidade, trecho.destino_estado)
+        if not destino or destino == sede:
+            continue
+        if destino in seen:
+            continue
+        seen.add(destino)
+        destinos.append(destino)
+
+    destinos_str = ", ".join(destinos)
+    if not destinos or not sede:
+        return destinos_str, "", ""
+    ida = " > ".join([sede] + destinos)
+    volta = f"{destinos[-1]} > {sede}"
+    return destinos_str, ida, volta
+
+
+def format_tipo_viatura(tipo: str | None) -> str:
+    if not tipo:
+        return "-"
+    normalized = tipo.strip().upper()
+    if normalized == "CARACTERIZADA":
+        return "Caracterizada"
+    if normalized == "DESCARACTERIZADA":
+        return "Descaracterizada"
+    return tipo.capitalize()
+
+
+def format_armamento(value: str | bool | None) -> str:
+    if isinstance(value, bool):
+        return "Sim" if value else "Não"
+    if value is None:
+        return "-"
+    text = str(value).strip()
+    if not text:
+        return "-"
+    normalized = text.upper()
+    truthy = {"SIM", "S", "TRUE", "1"}
+    falsy = {"NAO", "NÃO", "N", "FALSE", "0"}
+    if normalized in truthy:
+        return "Sim"
+    if normalized in falsy:
+        return "Não"
+    return "Sim"
+
+
+def format_motorista(oficio: Oficio) -> str:
+    motorista_obj = oficio.motorista_viajante
+    if motorista_obj and motorista_obj.nome:
+        return _title_case(motorista_obj.nome)
+    name = (oficio.motorista or "").strip()
+    if not name:
+        return "-"
+    oficio_ref = oficio.motorista_oficio or "-"
+    protocolo = oficio.motorista_protocolo or "-"
+    return f"{_title_case(name)} (carona) – Ofício {oficio_ref} – Protocolo {protocolo}"
+
+
+def build_col_solicitacao(viajantes: list[Viajante], assunto_text: str) -> list[RichLine]:
+    lines: list[RichLine] = []
+    texto = assunto_text or "-"
+    for idx in range(len(viajantes)):
+        lines.append([(texto, False)])
+        if idx < len(viajantes) - 1:
+            lines.extend(_blank_lines(1))
+    return lines or [[(NBSP, False)]]
+
+
+def build_col_retorno(oficio: Oficio, trechos: list[Trecho]) -> tuple[list[RichLine], list[RichLine]]:
+    saida_cidade = oficio.retorno_saida_cidade or ""
+    if not saida_cidade and trechos:
+        saida_cidade = _fmt_local(trechos[-1].destino_cidade, trechos[-1].destino_estado)
+    chegada_cidade = oficio.retorno_chegada_cidade or ""
+    if not chegada_cidade and trechos:
+        chegada_cidade = _fmt_local(trechos[0].origem_cidade, trechos[0].origem_estado)
+
+    saida_text = _join(
+        [
+            f"Saída {saida_cidade}:".strip(),
+            _join([_fmt_date(oficio.retorno_saida_data), _fmt_time(oficio.retorno_saida_hora)], " "),
+        ],
+        " ",
+    ).strip()
+    chegada_text = _join(
+        [
+            f"Chegada {chegada_cidade}:".strip(),
+            _join([_fmt_date(oficio.retorno_chegada_data), _fmt_time(oficio.retorno_chegada_hora)], " "),
+        ],
+        " ",
+    ).strip()
+
+    saida_line = saida_text or NBSP
+    chegada_line = chegada_text or NBSP
+    return ([[(saida_line, True)]], [[(chegada_line, True)]])
+
+
+def get_config_oficio() -> dict[str, str]:
+    defaults = ConfiguracaoOficio._default_values()
+    try:
+        config = ConfiguracaoOficio.get_solo()
+    except Exception:
+        return defaults
+    return {
+        "nome_chefia": config.nome_chefia or defaults["nome_chefia"],
+        "cargo_chefia": config.cargo_chefia or defaults["cargo_chefia"],
+        "orgao_origem": config.orgao_origem or defaults["orgao_origem"],
+        "orgao_destino_padrao": config.orgao_destino_padrao
+        or defaults["orgao_destino_padrao"],
+    }
 
 
 # =========================
@@ -255,8 +436,9 @@ def build_col_nomes(viajantes: list[Viajante]) -> list[RichLine]:
 def build_col_rgcpf(viajantes: list[Viajante]) -> list[RichLine]:
     lines: list[RichLine] = []
     for i, v in enumerate(viajantes):
-        lines.append([("RG: ", True), ((v.rg or "").strip(), False)])
-        lines.append([("CPF: ", True), ((v.cpf or "").strip(), False)])
+        rg = (v.rg or "").strip() or "-"
+        cpf = (v.cpf or "").strip() or "-"
+        lines.append([(f"RG: {rg} / CPF: {cpf}", False)])
 
         if i < len(viajantes) - 1:
             lines.extend(_blank_lines(1))
@@ -346,14 +528,27 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     viajantes = list(oficio.viajantes.all().order_by("nome"))
     trechos = list(oficio.trechos.order_by("ordem"))  # type: ignore
 
+    config = get_config_oficio()
+    destinos_text, roteiro_ida_text, roteiro_retorno_text = build_destinos_e_roteiros(oficio, trechos)
+    assunto_text, assunto_oficio_text = get_assunto(oficio, trechos)
+    motorista_formatado = format_motorista(oficio)
+    tipo_viatura_text = format_tipo_viatura(oficio.tipo_viatura)
+    armamento_text = format_armamento(getattr(oficio, "armamento", None))
+    orgao_destino_value = "SESP" if is_viagem_fora_pr(trechos) else config["orgao_destino_padrao"]
+    solicitacao_lines = build_col_solicitacao(viajantes, assunto_text)
+    retorno_saida_lines, retorno_chegada_lines = build_col_retorno(oficio, trechos)
+
     # colunas “ricas”
     replace_placeholder_rich(doc, "col_servidor", build_col_nomes(viajantes))
     replace_placeholder_rich(doc, "col_rgcpf", build_col_rgcpf(viajantes))
     replace_placeholder_rich(doc, "col_cargo", build_col_cargo(viajantes))
+    replace_placeholder_rich(doc, "col_solicitacao", solicitacao_lines)
 
     saida_lines, chegada_lines = build_roteiro_ida(trechos)
     replace_placeholder_rich(doc, "col_ida_saida", saida_lines)
     replace_placeholder_rich(doc, "col_ida_chegada", chegada_lines)
+    replace_placeholder_rich(doc, "col_volta_saida", retorno_saida_lines)
+    replace_placeholder_rich(doc, "col_volta_chegada", retorno_chegada_lines)
 
     # sede (p/ retorno) - pega da origem do 1º trecho se existir
     sede = ""
@@ -374,19 +569,33 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         "data_do_oficio": _fmt_date(oficio.created_at.date()) if oficio.created_at else "",
         "protocolo": oficio.protocolo or "",
         "destino": destino_principal,
-        "destinos_bloco": build_destinos_bloco(trechos),
+        "destinos_bloco": destinos_text,
+        "assunto": assunto_text,
+        "assunto_oficio": assunto_oficio_text,
+        "orgao_destino": orgao_destino_value,
+        "orgao_origem": config["orgao_origem"],
+        "nome_chefia": config["nome_chefia"],
+        "cargo_chefia": config["cargo_chefia"],
+        "roteiro_ida": roteiro_ida_text,
+        "roteiro_retorno": roteiro_retorno_text,
 
         "diarias_x": (oficio.quantidade_diarias or "").strip(),
         "diaria": (oficio.valor_diarias or "").strip(),
-        "valor_extenso": (oficio.valor_diarias_extenso or "").strip(),
+        "valor_extenso": (
+            (oficio.valor_diarias_extenso or "").strip()
+            or valor_por_extenso_ptbr(oficio.valor_diarias)
+            or "(preencher manualmente)"
+        ),
 
         "viatura": (oficio.modelo or "").strip(),
+        "tipo_viatura": tipo_viatura_text,
         "combustivel": (oficio.combustivel or "").strip(),
         "placa": (oficio.placa or "").strip(),
         "motorista": _title_case((oficio.motorista or "").strip()),
+        "motorista_formatado": motorista_formatado,
 
         "caracterizada": "Sim" if oficio.motorista_carona else "Não",
-        "armamento": "",  # se você tiver no modelo, pluga aqui
+        "armamento": armamento_text,
 
         "sede": sede,
 

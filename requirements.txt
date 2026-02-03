@@ -2,3 +2,4 @@ Django>=4.2
 google-api-python-client>=2.120
 google-auth>=2.27
 google-auth-httplib2>=0.2
+num2words>=0.5

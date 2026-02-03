@@ -37,6 +37,60 @@ class Cidade(models.Model):
         return f"{self.nome}/{self.estado.sigla}"
 
 
+class ConfiguracaoOficio(models.Model):
+    nome_chefia = models.CharField(
+        max_length=120,
+        default="Delegado Geral Adjunto",
+    )
+    cargo_chefia = models.CharField(
+        max_length=120,
+        default="Gabinete do Delegado Geral Adjunto",
+    )
+    orgao_origem = models.CharField(
+        max_length=200,
+        default="Assessoria de Comunicação Social",
+    )
+    orgao_destino_padrao = models.CharField(
+        max_length=200,
+        default="Gabinete do Delegado Geral Adjunto",
+    )
+    rodape = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuração do Ofício"
+        verbose_name_plural = "Configurações do Ofício"
+
+    def __str__(self) -> str:
+        return "Configuração do Ofício"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def _default_values(cls) -> dict[str, str]:
+        return {
+            "nome_chefia": "Delegado Geral Adjunto",
+            "cargo_chefia": "Gabinete do Delegado Geral Adjunto",
+            "orgao_origem": "Assessoria de Comunicação Social",
+            "orgao_destino_padrao": "Gabinete do Delegado Geral Adjunto",
+        }
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1, defaults=cls._default_values())
+        updated = False
+        for field, value in cls._default_values().items():
+            if not getattr(obj, field):
+                setattr(obj, field, value)
+                updated = True
+        if updated:
+            obj.save()
+        return obj
+
+
 class Oficio(models.Model):
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Rascunho"
