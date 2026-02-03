@@ -30,9 +30,10 @@ function renderBarChart(container, series) {
     const barHeight = (total / max) * chartHeight;
     const y = padding.top + (chartHeight - barHeight);
     const labelY = height - 6;
-    bars += `\n      <rect class="chart-bar" x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" ry="4">\n        <title>${item.dia}: ${total}</title>\n      </rect>`;
-    if (data.length <= 31 || index % Math.ceil(data.length / 8) === 0) {
-      labels += `\n        <text class="chart-label" x="${x + barWidth / 2}" y="${labelY}" text-anchor="middle">${item.dia}</text>`;
+    const label = item.label || item.dia || "";
+    bars += `\n      <rect class="chart-bar" x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" ry="4">\n        <title>${label}: ${total}</title>\n      </rect>`;
+    if (data.length <= 12 || index % Math.ceil(data.length / 8) === 0) {
+      labels += `\n        <text class="chart-label" x="${x + barWidth / 2}" y="${labelY}" text-anchor="middle">${label}</text>`;
     }
   });
 
@@ -52,9 +53,9 @@ function renderBarChart(container, series) {
   `;
 }
 
-async function fetchDashboardData(endpoint, periodo) {
+async function fetchDashboardData(endpoint, year) {
   const url = new URL(endpoint, window.location.origin);
-  url.searchParams.set("periodo", String(periodo));
+  url.searchParams.set("ano", String(year));
   const response = await fetch(url.toString(), {
     headers: { "X-Requested-With": "XMLHttpRequest" },
     signal: fetchDashboardData._controller?.signal,
@@ -84,45 +85,7 @@ function updateKpis(root, payload) {
 function updateCharts(root, payload) {
   const series = payload.series || {};
   renderBarChart(root.querySelector('[data-chart="oficios"]'), series.oficios);
-  renderBarChart(root.querySelector('[data-chart="trechos"]'), series.trechos);
-  root.querySelectorAll("[data-chart-note]").forEach((el) => {
-    el.textContent = `ultimos ${payload.periodo} dias`;
-  });
-}
-
-function updateRecentes(root, payload) {
-  const recentes = payload.recentes || [];
-  const container = root.querySelector("[data-recentes]");
-  if (!container) {
-    return;
-  }
-  if (!recentes.length) {
-    container.innerHTML = '<div class="empty">Nenhum oficio recente.</div>';
-    return;
-  }
-  container.innerHTML = recentes
-    .map(
-      (item) => `
-        <div class="recent-item">
-          <div class="recent-main">
-            <strong>Oficio ${item.oficio || "-"}</strong>
-            <span class="recent-meta">Protocolo ${item.protocolo || "-"}</span>
-          </div>
-          <div class="recent-side">
-            <span class="recent-destino">${item.destino || "-"}</span>
-            <span class="recent-data">${item.created_at || ""}</span>
-          </div>
-        </div>
-      `
-    )
-    .join("");
-}
-
-function setActivePeriod(root, periodo) {
-  root.querySelectorAll(".period-btn").forEach((btn) => {
-    const isActive = String(periodo) === btn.getAttribute("data-period");
-    btn.classList.toggle("is-active", isActive);
-  });
+  renderBarChart(root.querySelector('[data-chart="ranking"]'), series.ranking);
 }
 
 function initDashboard() {
@@ -131,35 +94,31 @@ function initDashboard() {
     return;
   }
   const endpoint = root.getAttribute("data-endpoint");
-  const initialPeriod = Number(root.getAttribute("data-period") || 30);
+  const initialYear = Number(root.getAttribute("data-year") || new Date().getFullYear());
   if (!endpoint) {
     return;
   }
 
   const initialEl = document.getElementById("dashboard-initial");
   const initialPayload = initialEl ? JSON.parse(initialEl.textContent || "{}") : null;
-  let currentPeriod = initialPayload?.periodo || initialPeriod;
-  setActivePeriod(root, currentPeriod);
+  let currentYear = initialPayload?.year || initialYear;
   if (initialPayload) {
     updateKpis(root, initialPayload);
     updateCharts(root, initialPayload);
-    updateRecentes(root, initialPayload);
   }
 
   const updateAll = (payload) => {
     updateKpis(root, payload);
     updateCharts(root, payload);
-    updateRecentes(root, payload);
   };
 
-  const loadPeriod = async (periodo) => {
+  const loadYear = async (year) => {
     fetchDashboardData._controller?.abort?.();
     fetchDashboardData._controller = new AbortController();
-    currentPeriod = periodo;
+    currentYear = year;
     root.classList.add("is-loading");
-    setActivePeriod(root, periodo);
     try {
-      const payload = await fetchDashboardData(endpoint, periodo);
+      const payload = await fetchDashboardData(endpoint, year);
       updateAll(payload);
     } catch (err) {
       if (window.showToast) {
@@ -171,15 +130,9 @@ function initDashboard() {
     }
   };
 
-  root.querySelectorAll(".period-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const periodo = Number(btn.getAttribute("data-period") || currentPeriod);
-      if (periodo === currentPeriod) {
-        return;
-      }
-      loadPeriod(periodo);
-    });
-  });
+  if (root.hasAttribute("data-refresh")) {
+    loadYear(currentYear);
+  }
 }
 
 if (document.readyState === "loading") {

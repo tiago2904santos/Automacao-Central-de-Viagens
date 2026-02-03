@@ -1,4 +1,5 @@
 {% extends "viagens/base.html" %}
+{% load static %}
 
 {% block title %}Cadastrar viajante{% endblock %}
 
@@ -20,28 +21,31 @@
         <section class="grid">
           <label>
             Nome
-            <input type="text" name="nome" value="{{ values.nome|default_if_none:'' }}" required />
+            <input type="text" name="nome" value="{{ values.nome|default_if_none:'' }}" required data-uppercase="true" />
+            <span class="field-help">Informe nome e sobrenome.</span>
           </label>
           <label>
             RG
-            <input type="text" name="rg" value="{{ values.rg|default_if_none:'' }}" required />
+            <input type="text" name="rg" value="{{ values.rg|default_if_none:'' }}" required data-mask="rg" inputmode="numeric" />
           </label>
           <label>
             CPF
-            <input type="text" name="cpf" value="{{ values.cpf|default_if_none:'' }}" required />
+            <input type="text" name="cpf" value="{{ values.cpf|default_if_none:'' }}" required data-mask="cpf" inputmode="numeric" />
           </label>
           <label>
             Telefone
-            <input type="text" name="telefone" value="{{ values.telefone|default_if_none:'' }}" />
+            <input type="text" name="telefone" value="{{ values.telefone|default_if_none:'' }}" data-mask="telefone" inputmode="numeric" />
           </label>
           <label>
             Cargo
-            <select name="cargo" required>
+            <select name="cargo" required data-cargo-select>
               <option value="">Selecione</option>
               {% for cargo in cargo_choices %}
                 <option value="{{ cargo }}" {% if values.cargo == cargo %}selected{% endif %}>{{ cargo }}</option>
               {% endfor %}
             </select>
+            <button class="btn-clear btn-small" type="button" data-add-cargo>Adicionar cargo</button>
+            <input type="text" name="cargo_novo" value="{{ values.cargo_novo|default_if_none:'' }}" data-cargo-novo hidden />
           </label>
         </section>
         <button class="btn-primary" type="submit">Salvar viajante</button>
@@ -49,10 +53,14 @@
     </div>
 
     <div class="illustration-card">
-      <div class="icon">CV</div>
+      <div class="icon">👮‍♂️</div>
       <h3>Cadastro de viajantes</h3>
       <p>Registre os servidores para usar nos oficios de viagem.</p>
       <p class="muted">Todos os campos sao obrigatorios.</p>
     </div>
   </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/viajante_form.js' %}"></script>
 {% endblock %}

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 
@@ -49,8 +50,12 @@ WSGI_APPLICATION = "central_viagens.wsgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("POSTGRES_DB", "central_viagens"),
+        "USER": os.getenv("POSTGRES_USER", "central_viagens"),
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "central_viagens"),
+        "HOST": os.getenv("POSTGRES_HOST", "localhost"),
+        "PORT": os.getenv("POSTGRES_PORT", "5432"),
     }
 }
 
@@ -77,3 +82,9 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+OFICIO_ORGAO_DESTINO_PADRAO = os.getenv("OFICIO_ORGAO_DESTINO_PADRAO", "DGA")
+OFICIO_CHEFIA = {
+    "nome_chefia": os.getenv("OFICIO_CHEFIA_NOME", ""),
+    "cargo_chefia": os.getenv("OFICIO_CHEFIA_CARGO", ""),
+}

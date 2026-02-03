@@ -90,10 +90,10 @@
             <input type="text" value="{{ data_criacao|default:'-' }}" readonly />
             <span class="field-help">Definida automaticamente na criacao.</span>
           </label>
-          <label>
-            Assunto
-            <input type="text" name="assunto" value="{{ assunto }}" placeholder="Solicitacao de autorizacao" data-preview-target="assunto" />
-            <span class="field-help">Resumo institucional do pedido.</span>
+          <label class="full">
+            Motivo da viagem
+            <textarea name="motivo" rows="3" data-preview-target="motivo">{{ motivo }}</textarea>
+            <span class="field-help">Descreva o motivo da viagem.</span>
           </label>
         </section>
 
@@ -156,8 +156,8 @@
           <span class="preview-value">{{ data_criacao|default:"-" }}</span>
         </div>
         <div class="preview-line">
-          <span class="preview-label">Assunto</span>
-          <span class="preview-value" data-preview-field="assunto">{{ assunto|default:"-" }}</span>
+          <span class="preview-label">Motivo</span>
+          <span class="preview-value" data-preview-field="motivo">{{ motivo|default:"-" }}</span>
         </div>
       </div>
       <div class="preview-doc">

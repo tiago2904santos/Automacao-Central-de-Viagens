@@ -21,6 +21,14 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 
 from viagens.models import Cidade, Estado, Oficio, Trecho, Viajante
+from viagens.services.oficio_helpers import (
+    build_assunto,
+    format_armamento,
+    format_motorista,
+    get_config_oficio,
+    is_viagem_fora_pr,
+    valor_por_extenso_ptbr,
+)
 
 PLACEHOLDER_RE = re.compile(r"{{\s*([^}]+?)\s*}}")
 
@@ -367,6 +375,24 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     if not destino_principal and trechos:
         destino_principal = _fmt_local(trechos[-1].destino_cidade, trechos[-1].destino_estado)
 
+    assunto_payload = build_assunto(oficio, trechos)
+    config_oficio = get_config_oficio()
+    orgao_destino = (
+        "SESP"
+        if is_viagem_fora_pr(oficio, trechos)
+        else getattr(settings, "OFICIO_ORGAO_DESTINO_PADRAO", "")
+    )
+    valor_extenso = (
+        (oficio.valor_diarias_extenso or "").strip()
+        or valor_por_extenso_ptbr(oficio.valor_diarias)
+    )
+    motorista_formatado = format_motorista(oficio, viajantes)
+    tipo_viatura = ""
+    if oficio.veiculo and oficio.veiculo.tipo_viatura:
+        tipo_viatura = oficio.veiculo.tipo_viatura
+    elif oficio.tipo_viatura:
+        tipo_viatura = oficio.tipo_viatura
+
     # campos simples (repare que agora inclui retorno + caracterizada + armamento + sede)
     mapping = {
         "oficio": oficio.oficio or "",
@@ -375,20 +401,25 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         "protocolo": oficio.protocolo or "",
         "destino": destino_principal,
         "destinos_bloco": build_destinos_bloco(trechos),
+        "orgao_destino": orgao_destino,
 
         "diarias_x": (oficio.quantidade_diarias or "").strip(),
         "diaria": (oficio.valor_diarias or "").strip(),
-        "valor_extenso": (oficio.valor_diarias_extenso or "").strip(),
+        "valor_extenso": valor_extenso,
 
         "viatura": (oficio.modelo or "").strip(),
         "combustivel": (oficio.combustivel or "").strip(),
         "placa": (oficio.placa or "").strip(),
-        "motorista": _title_case((oficio.motorista or "").strip()),
+        "motorista": _title_case(motorista_formatado),
 
-        "caracterizada": "Sim" if oficio.motorista_carona else "Não",
-        "armamento": "",  # se você tiver no modelo, pluga aqui
+        "caracterizada": tipo_viatura,
+        "armamento": format_armamento(getattr(oficio, "porte_arma", "")),
 
         "sede": sede,
+        "assunto": assunto_payload["assunto"],
+        "assunto_oficio": assunto_payload["assunto_oficio"],
+        "nome_chefia": config_oficio["nome_chefia"],
+        "cargo_chefia": config_oficio["cargo_chefia"],
 
         # retorno
         "data_hora_saida_destino": _join(

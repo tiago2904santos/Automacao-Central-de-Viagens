@@ -2,6 +2,8 @@ const viajantesPreview = document.getElementById("viajantesPreview");
 const placaInput = document.getElementById("plateInput");
 const modeloInput = document.getElementById("modelInput");
 const combustivelInput = document.getElementById("fuelInput");
+const tipoViaturaInput = document.getElementById("tipoViaturaInput");
+const combustivelHiddenInput = document.querySelector("[data-hidden-combustivel]");
 const servidoresSelect = document.getElementById("servidoresSelect");
 const viajantesList = document.getElementById("viajantesList");
 const motoristaSelect = document.getElementById("motoristaSelect");
@@ -392,7 +394,13 @@ function aplicarVeiculo(veiculo) {
     } else {
       combustivelInput.value = valor;
     }
+    if (combustivelHiddenInput) {
+      combustivelHiddenInput.value = combustivelInput.value || valor;
+    }
     combustivelInput.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (tipoViaturaInput) {
+    tipoViaturaInput.value = veiculo.tipo_viatura || tipoViaturaInput.value;
   }
   updatePreviewFromInputs();
   window.showToast?.("Veiculo selecionado.", "success");
