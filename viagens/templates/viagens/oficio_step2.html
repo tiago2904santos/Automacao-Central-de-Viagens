@@ -21,10 +21,21 @@
       <span class="stepper-index">3</span>
       Roteiro
     </button>
+    <button class="stepper-step" type="button" data-step="4">
+      <span class="stepper-index">4</span>
+      Resumo
+    </button>
   </nav>
 
-  <h2 class="page-title">Etapa 2 - Transporte</h2>
-  <p class="page-subtitle">Informe veiculo e motorista. O motorista pode ser um viajante.</p>
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa 2 - Transporte</h2>
+      <p class="page-subtitle">Informe veiculo e motorista. O motorista pode ser um viajante.</p>
+    </div>
+    <div class="page-actions">
+      <span class="{{ status_class }}">Status: {{ status_label }}</span>
+    </div>
+  </div>
 
   <div class="page-grid page-grid--preview">
     <div class="card">
@@ -33,15 +44,11 @@
         {% for vid in viajantes_ids %}
           <input type="hidden" name="viajantes_ids" value="{{ vid }}" />
         {% endfor %}
-        {% if erro %}
-          <div class="error">{{ erro }}</div>
-        {% endif %}
-
         <section class="grid">
           <label>
             Placa
             <div class="field-row">
-              <input type="text" name="placa" id="plateInput" value="{{ placa }}" required data-preview-target="placa" autocomplete="off" />
+              <input type="text" name="placa" id="plateInput" value="{{ placa }}" data-preview-target="placa" autocomplete="off" />
               <button
                 class="icon-btn"
                 type="button"
@@ -59,12 +66,12 @@
           </label>
           <label>
             Modelo
-            <input type="text" name="modelo" id="modelInput" value="{{ modelo }}" required data-preview-target="modelo" />
+            <input type="text" name="modelo" id="modelInput" value="{{ modelo }}" data-preview-target="modelo" />
             <span class="field-help">Modelo oficial do veiculo.</span>
           </label>
           <label>
             Combustivel
-            <select name="combustivel" id="fuelInput" required data-preview-target="combustivel">
+            <select name="combustivel" id="fuelInput" data-preview-target="combustivel">
               <option value="">Selecione</option>
               {% for item in combustivel_choices %}
                 <option value="{{ item }}" {% if combustivel == item %}selected{% endif %}>{{ item }}</option>

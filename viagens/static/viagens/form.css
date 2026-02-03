@@ -1594,6 +1594,11 @@ body.modal-open {
   margin: 2px 6px 2px 0;
 }
 
+.badge--danger {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
 .app-footer {
   width: 100%;
   padding: 12px 24px;

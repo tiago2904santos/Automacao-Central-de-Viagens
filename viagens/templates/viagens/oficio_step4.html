@@ -27,7 +27,17 @@
     </button>
   </nav>
 
-    <div class="card">
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa 4 - Resumo</h2>
+      <p class="page-subtitle">Revise os dados antes de finalizar o oficio.</p>
+    </div>
+    <div class="page-actions">
+      <span class="{{ status_class }}">Status: {{ status_label }}</span>
+    </div>
+  </div>
+
+  <div class="card">
     <form method="post" id="oficioStep4Form" data-current-step="4">
       {% csrf_token %}
       <input type="hidden" name="action" value="save" />
@@ -190,7 +200,7 @@
 
       <div class="wizard-actions">
         <button class="btn-clear" type="submit" name="action" value="prev">Voltar</button>
-        <button class="btn-primary" type="submit" name="action" value="save">Salvar Ofício</button>
+        <button class="btn-primary" type="submit" name="action" value="save">Finalizar ofício</button>
         <!-- teste de botao -->
 
       </div>
