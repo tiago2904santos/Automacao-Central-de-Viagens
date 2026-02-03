@@ -1,0 +1,144 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Editar oficio - Etapa 1{% endblock %}
+
+{% block breadcrumb %}
+  Oficios <span class="breadcrumb-sep">/</span> Editar <span class="breadcrumb-sep">/</span> Dados
+{% endblock %}
+
+{% block content %}
+  <nav class="stepper" aria-label="Etapas">
+    <a class="stepper-step is-active" href="{% url 'oficio_edit_step1' oficio_id %}" data-step="1" data-step-mode="link">
+      <span class="stepper-index">1</span>
+      Dados
+    </a>
+    <a class="stepper-step" href="{% url 'oficio_edit_step2' oficio_id %}" data-step="2" data-step-mode="link">
+      <span class="stepper-index">2</span>
+      Transporte
+    </a>
+    <a class="stepper-step" href="{% url 'oficio_edit_step3' oficio_id %}" data-step="3" data-step-mode="link">
+      <span class="stepper-index">3</span>
+      Roteiro
+    </a>
+    <a class="stepper-step" href="{% url 'oficio_edit_step4' oficio_id %}" data-step="4" data-step-mode="link">
+      <span class="stepper-index">4</span>
+      Resumo
+    </a>
+  </nav>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa 1 - Dados do oficio</h2>
+      <p class="page-subtitle">Edite numero do oficio, protocolo e viajantes.</p>
+    </div>
+    <div class="page-actions">
+      <span class="badge">Editando Oficio #{{ oficio_id }}</span>
+    </div>
+  </div>
+
+  <div class="page-grid page-grid--preview">
+    <div class="card">
+      <form method="post" id="oficioEditStep1Form" data-mode="edit">
+        {% csrf_token %}
+
+        <section class="grid">
+          <label>
+            Oficio
+            <input type="text" name="oficio" value="{{ oficio }}" data-preview-target="oficio" />
+            <span class="field-help">Use o numero oficial do documento.</span>
+          </label>
+          <label>
+            Protocolo
+            <input type="text" name="protocolo" value="{{ protocolo }}" data-preview-target="protocolo" />
+            <span class="field-help">Informe o protocolo interno.</span>
+          </label>
+          <label>
+            Data de criacao
+            <input type="text" value="{{ data_criacao|default:'-' }}" readonly />
+            <span class="field-help">Definida automaticamente na criacao.</span>
+          </label>
+          <label>
+            Assunto
+            <input type="text" name="assunto" value="{{ assunto }}" placeholder="Solicitacao de autorizacao" data-preview-target="assunto" />
+            <span class="field-help">Resumo institucional do pedido.</span>
+          </label>
+        </section>
+
+        <section class="grid">
+          <div class="full">
+            <div class="field-label">Buscar viajante</div>
+            <div class="field-row">
+              {{ servidores_form.servidores }}
+            </div>
+            <div class="field-actions">
+              <button
+                class="btn-clear btn-small"
+                type="button"
+                data-modal-url="{% url 'modal_viajante_form' %}"
+                data-modal-kind="viajante"
+                data-target-select="#servidoresSelect"
+              >
+                Cadastrar viajante
+              </button>
+            </div>
+            <span class="field-help">Use o campo para localizar por nome, RG ou CPF.</span>
+          </div>
+          <div class="full">
+            <div class="field-label">Viajantes (selecione mais de um)</div>
+            <div class="chip-list" id="viajantesList" data-preview-list="viajantes">
+              {% for viajante in selected_viajantes %}
+                <span class="chip" data-id="{{ viajante.id }}">
+                  {{ viajante.nome }}
+                  <button type="button" class="chip-remove" data-remove-id="{{ viajante.id }}" aria-label="Remover">
+                    &times;
+                  </button>
+                </span>
+              {% endfor %}
+            </div>
+          </div>
+        </section>
+
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'oficio_edit_cancel' oficio_id %}">Cancelar</a>
+          <button class="btn-clear" type="submit" name="goto_step" value="4">Ir para resumo</button>
+          <button class="btn-primary" type="submit" name="goto_step" value="2">Avancar</button>
+          <button class="btn-primary" type="submit" name="action" value="save">Salvar alteracoes</button>
+        </div>
+      </form>
+    </div>
+
+    <aside class="preview-card" aria-live="polite">
+      <h3>Relatorio rapido</h3>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Oficio</span>
+          <span class="preview-value" data-preview-field="oficio">{{ oficio|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Protocolo</span>
+          <span class="preview-value" data-preview-field="protocolo">{{ protocolo|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Data de criacao</span>
+          <span class="preview-value">{{ data_criacao|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Assunto</span>
+          <span class="preview-value" data-preview-field="assunto">{{ assunto|default:"-" }}</span>
+        </div>
+      </div>
+      <div class="preview-doc">
+        <div class="preview-line">
+          <span class="preview-label">Servidores</span>
+          <span class="preview-value" data-preview-field="viajantes-count">0</span>
+        </div>
+        <div data-preview-field="viajantes" class="empty">Nenhum servidor selecionado.</div>
+      </div>
+    </aside>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/form.js' %}"></script>
+{% endblock %}
