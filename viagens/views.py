@@ -5,9 +5,10 @@ from datetime import date, datetime, time, timedelta
 from typing import Iterable
 
 from django.conf import settings
+from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import models, transaction
-from django.db.utils import OperationalError
+from django.db.utils import OperationalError, ProgrammingError
 from django.db.models import Count, Q
 from django.db.models.functions import ExtractMonth, TruncDate
 from django.forms import inlineformset_factory
@@ -19,9 +20,11 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_time
 from django.views.decorators.http import require_GET, require_http_methods
 from .forms import MotoristaSelectForm, ServidoresSelectForm, TrechoForm
-from .models import Cidade, Estado, Oficio, Trecho, Viajante, Veiculo
+from .models import Cargo, Cidade, Estado, Oficio, Trecho, Viajante, Veiculo
 from .services.diarias import calcular_diarias, formatar_valor_diarias
 from .services.oficio_helpers import build_assunto, infer_tipo_destino, valor_por_extenso_ptbr
+from .forms_oficio_config import OficioConfigForm
+from .services.oficio_config import get_oficio_config
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_GET
@@ -165,8 +168,27 @@ DEFAULT_COMBUSTIVEL_CHOICES = [
 def _get_cargo_choices() -> list[str]:
     custom = getattr(settings, "CARGO_CHOICES", None)
     if custom:
-        return list(custom)
-    return list(DEFAULT_CARGO_CHOICES)
+        base = list(custom)
+    else:
+        base = list(DEFAULT_CARGO_CHOICES)
+    try:
+        cargos = list(Cargo.objects.order_by("nome").values_list("nome", flat=True))
+    except (OperationalError, ProgrammingError):
+        cargos = []
+    for nome in cargos:
+        if nome and nome not in base:
+            base.append(nome)
+    return base
+
+
+def _ensure_cargo_exists(nome: str) -> None:
+    raw = (nome or "").strip()
+    if not raw:
+        return
+    try:
+        Cargo.objects.get_or_create(nome=raw)
+    except (OperationalError, ProgrammingError):
+        return
 
 
 def _get_combustivel_choices() -> list[str]:
@@ -2462,6 +2484,7 @@ def viajante_cadastro(request):
         if cargo_novo:
             cargo = cargo_novo
         if nome and rg and cpf and cargo and _nome_completo(nome):
+            _ensure_cargo_exists(cargo)
             Viajante.objects.create(
                 nome=nome,
                 rg=rg,
@@ -2531,7 +2554,9 @@ def veiculo_cadastro(request):
         placa_norm = _normalizar_placa(placa) if placa else ""
         modelo = request.POST.get("modelo", "").strip()
         combustivel = request.POST.get("combustivel", "").strip()
-        tipo_viatura = request.POST.get("tipo_viatura", "").strip().upper()
+        tipo_viatura = (
+            request.POST.get("tipo_viatura", "") or "DESCARACTERIZADA"
+        ).strip().upper()
         if not _placa_valida(placa):
             return render(
                 request,
@@ -2701,6 +2726,7 @@ def viajante_editar(request, viajante_id: int):
             erros["cargo"] = "Informe o cargo."
 
         if not erros:
+            _ensure_cargo_exists(cargo)
             viajante.nome = nome
             viajante.rg = rg
             viajante.cpf = cpf
@@ -2730,7 +2756,9 @@ def veiculo_editar(request, veiculo_id: int):
         placa_norm = _normalizar_placa(placa) if placa else ""
         modelo = request.POST.get("modelo", "").strip()
         combustivel = request.POST.get("combustivel", "").strip()
-        tipo_viatura = request.POST.get("tipo_viatura", "").strip().upper()
+        tipo_viatura = (
+            request.POST.get("tipo_viatura", "") or "DESCARACTERIZADA"
+        ).strip().upper()
 
         if not _placa_valida(placa):
             erros["placa"] = "Informe uma placa valida (AAA1234 ou AAA1A23)."
@@ -3190,6 +3218,25 @@ def motoristas_api(request):
     return servidores_api(request)
 
 
+@require_http_methods(["POST"])
+def cargo_criar(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = request.POST
+
+    nome = (payload.get("nome") or "").strip()
+    if not nome:
+        return JsonResponse({"error": "Informe o nome do cargo."}, status=400)
+
+    cargo = Cargo.objects.filter(nome__iexact=nome).first()
+    if cargo:
+        return JsonResponse({"id": cargo.id, "nome": cargo.nome})
+
+    cargo = Cargo.objects.create(nome=nome)
+    return JsonResponse({"id": cargo.id, "nome": cargo.nome})
+
+
 @require_GET
 def servidor_detail_api(request, servidor_id: int):
     viajante = get_object_or_404(Viajante, id=servidor_id)
@@ -3266,6 +3313,7 @@ def modal_viajante_form(request):
             erros["cargo"] = "Informe o cargo."
 
         if not erros:
+            _ensure_cargo_exists(cargo)
             viajante = Viajante.objects.create(
                 nome=nome,
                 rg=rg,
@@ -3349,6 +3397,29 @@ def modal_veiculo_form(request):
         request,
         "viagens/partials/modal_veiculo.html",
         {"combustivel_choices": _get_combustivel_choices()},
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def configuracoes_oficio(request):
+    config = get_oficio_config()
+
+    if request.method == "POST":
+        form = OficioConfigForm(request.POST, request.FILES, instance=config)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Configuracoes do oficio atualizadas.")
+            return redirect("config_oficio")
+    else:
+        form = OficioConfigForm(instance=config)
+
+    return render(
+        request,
+        "viagens/configuracoes_oficio.html",
+        {
+            "form": form,
+            "config": config,
+        },
     )
 
 

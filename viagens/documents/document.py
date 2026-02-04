@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import zipfile
 import tempfile
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -23,6 +24,8 @@ from docx.shared import Pt
 from num2words import num2words
 
 from viagens.models import Cidade, ConfiguracaoOficio, Estado, Oficio, Trecho, Viajante
+from viagens.services.oficio_config import get_oficio_config
+from viagens.services.text import title_case_pt
 
 PLACEHOLDER_RE = re.compile(r"{{\s*([^}]+?)\s*}}")
 
@@ -37,6 +40,15 @@ NAME_MAX_VISUAL = 35.0
 CARGO_MAX_VISUAL = 35.0
 
 NBSP = "\u00A0"  # não quebra e “segura” linha vazia no Word
+
+HEADER_UNIDADE_DEFAULT = "SECRETARIA DE ESTADO DA SEGURANÇA PÚBLICA"
+HEADER_ORIGEM_DEFAULT = "POLÍCIA CIVIL DO PARANÁ ASSESSORIA DE COMUNICAÇÃO SOCIAL"
+FOOTER_ASSINANTE_NOME_DEFAULT = "DR. RIAD BRAGA FARHAT"
+FOOTER_ASSINANTE_CARGO_DEFAULT = "MD. DELEGADO GERAL ADJUNTO"
+FOOTER_ENDERECO_DEFAULT = (
+    "Assessoria de Comunicação Social - Avenida Iguaçú, 470- Rebouças – "
+    "Curitiba-PR – CEP 80.230-020:  Fone: 41-3235-6476 – e-mail:comunicacaopc.pr.gov.br"
+)
 
 
 # =========================
@@ -76,6 +88,32 @@ def _join(parts: Iterable[str], sep=" - ") -> str:
 
 def _title_case(text: str) -> str:
     return " ".join(w.capitalize() for w in (text or "").split())
+
+
+def _build_endereco_formatado(cfg: OficioConfig) -> str:
+    logradouro = (getattr(cfg, "logradouro", "") or "").strip()
+    numero = (getattr(cfg, "numero", "") or "").strip()
+    complemento = (getattr(cfg, "complemento", "") or "").strip()
+    bairro = (getattr(cfg, "bairro", "") or "").strip()
+    cidade = (getattr(cfg, "cidade", "") or "").strip()
+    uf = (getattr(cfg, "uf", "") or "").strip()
+    cep = (getattr(cfg, "cep", "") or "").strip()
+
+    numero_parte = ""
+    if numero:
+        numero_parte = numero
+        if complemento:
+            numero_parte = f"{numero_parte} {complemento}"
+
+    primeira_parte = ", ".join([p for p in [logradouro, numero_parte] if p])
+    cidade_uf = cidade
+    if uf:
+        cidade_uf = f"{cidade}/{uf}" if cidade else uf
+
+    endereco = " - ".join([p for p in [primeira_parte, bairro, cidade_uf] if p])
+    if cep:
+        endereco = f"{endereco} - CEP {cep}" if endereco else f"CEP {cep}"
+    return endereco
 
 
 def _parse_decimal_string(value: str | Decimal | None) -> Decimal | None:
@@ -128,15 +166,92 @@ def is_viagem_fora_pr(trechos: list[Trecho]) -> bool:
 
 
 def get_assunto(oficio: Oficio, trechos: list[Trecho]) -> tuple[str, str]:
-    data_oficio = oficio.created_at.date() if oficio.created_at else None
-    datas = [t.saida_data for t in trechos if t.saida_data]
-    data_saida = min(datas) if datas else None
-    if data_oficio and data_saida and data_oficio >= data_saida:
+    assunto_tipo = (oficio.assunto_tipo or "").strip().upper()
+    if assunto_tipo == Oficio.AssuntoTipo.CONVALIDACAO:
         return (
-            "Solicitação de convalidação e concessão de diárias.",
-            "(convalidação)",
+            "Solicita\u00e7\u00e3o de convalida\u00e7\u00e3o e concess\u00e3o de di\u00e1rias.",
+            "(convalida\u00e7\u00e3o)",
         )
-    return ("Solicitação de autorização e concessão de diárias.", "")
+    return ("Solicita\u00e7\u00e3o de autoriza\u00e7\u00e3o e concess\u00e3o de di\u00e1rias.", "(autoriza\u00e7\u00e3o)")
+
+
+def _footer_default_parts() -> tuple[str, str, str, str]:
+    text = FOOTER_ENDERECO_DEFAULT
+    unidade = ""
+    endereco = text
+    telefone = ""
+    email = ""
+    if " - " in text:
+        unidade, endereco = text.split(" - ", 1)
+        unidade = unidade.strip()
+    if "Fone:" in endereco:
+        before, after = endereco.split("Fone:", 1)
+        endereco = before.strip(" -: ")
+        if "e-mail:" in after:
+            phone_part, email_part = after.split("e-mail:", 1)
+            telefone = phone_part.strip(" -: ")
+            email = email_part.strip(" -: ")
+        else:
+            telefone = after.strip(" -: ")
+    for token in ("\u2013", "\u2014"):
+        endereco = endereco.replace(token, "").strip()
+        telefone = telefone.replace(token, "").strip()
+        email = email.replace(token, "").strip()
+    return unidade, endereco.strip(), telefone.strip(), email.strip()
+
+
+def _iter_docx_xml_parts_from_path(path: str) -> list[tuple[str, str]]:
+    try:
+        with zipfile.ZipFile(path, "r") as z:
+            parts = []
+            for name in z.namelist():
+                if not (name.startswith("word/") and name.endswith(".xml")):
+                    continue
+                xml = z.read(name).decode("utf-8", errors="ignore")
+                parts.append((name, xml))
+            return parts
+    except Exception:
+        return []
+
+
+def _iter_docx_xml_parts_from_bytes(docx_bytes: bytes) -> list[tuple[str, str]]:
+    try:
+        with zipfile.ZipFile(BytesIO(docx_bytes), "r") as z:
+            parts = []
+            for name in z.namelist():
+                if not (name.startswith("word/") and name.endswith(".xml")):
+                    continue
+                xml = z.read(name).decode("utf-8", errors="ignore")
+                parts.append((name, xml))
+            return parts
+    except Exception:
+        return []
+
+
+def _extract_placeholders(parts: list[tuple[str, str]]) -> set[str]:
+    keys: set[str] = set()
+    for _, xml in parts:
+        if "{{" not in xml:
+            continue
+        for match in PLACEHOLDER_RE.finditer(xml):
+            keys.add(match.group(1).strip())
+    return keys
+
+
+def _find_unresolved_placeholders(docx_bytes: bytes) -> tuple[set[str], list[str]]:
+    parts = _iter_docx_xml_parts_from_bytes(docx_bytes)
+    leftovers: set[str] = set()
+    snippets: list[str] = []
+    for name, xml in parts:
+        if "{{" not in xml:
+            continue
+        for match in PLACEHOLDER_RE.finditer(xml):
+            leftovers.add(match.group(0))
+        cleaned = PLACEHOLDER_RE.sub("", xml)
+        if "{{" in cleaned:
+            idx = cleaned.find("{{")
+            snippets.append(f"{name}: {cleaned[idx:idx+80]}")
+    return leftovers, snippets
 
 
 def build_destinos_e_roteiros(oficio: Oficio, trechos: list[Trecho]) -> tuple[str, str, str]:
@@ -273,6 +388,20 @@ def _apply_font(run, font_name: str = FONT_NAME, font_size_pt: int = FONT_SIZE_P
     rfonts.set(qn("w:eastAsia"), font_name)
 
 
+def _remove_paragraph(paragraph) -> None:
+    element = paragraph._element
+    parent = element.getparent()
+    if parent is not None:
+        parent.remove(element)
+
+
+# Helper para substituir texto preservando o parágrafo (python-docx)
+def _replace_paragraph_text(paragraph, new_text: str) -> None:
+    paragraph.clear()
+    run = paragraph.add_run(new_text or "")
+    _apply_font(run)
+
+
 # =========================
 # ITERADORES (parágrafos em tabelas + header/footer)
 # =========================
@@ -287,7 +416,7 @@ def _iter_all_paragraphs(doc: DocxDocument):
                 for p in cell.paragraphs:
                     yield p
 
-    # headers/footers também (pra não “sumir” nada no futuro)
+    # headers/footers tamb?m (pra n?o perder nada)
     for section in doc.sections:
         for p in section.header.paragraphs:
             yield p
@@ -296,7 +425,6 @@ def _iter_all_paragraphs(doc: DocxDocument):
                 for cell in row.cells:
                     for p in cell.paragraphs:
                         yield p
-
         for p in section.footer.paragraphs:
             yield p
         for table in section.footer.tables:
@@ -306,10 +434,43 @@ def _iter_all_paragraphs(doc: DocxDocument):
                         yield p
 
 
-# =========================
-# REPLACE (preservando formatação)
-# - substitui placeholder por "" se não encontrar no mapping
-# =========================
+def _apply_config_header_footer(doc: DocxDocument, cfg: OficioConfig) -> None:
+    unidade = (cfg.unidade_nome or "").strip().upper()
+    origem = (cfg.origem_nome or "").strip().upper()
+    rodape_unidade_title = title_case_pt(unidade)
+    endereco_formatado = _build_endereco_formatado(cfg)
+    telefone = (cfg.telefone or "").strip()
+    email = (cfg.email or "").strip()
+
+    rodape_line = ""
+    if rodape_unidade_title or endereco_formatado or telefone or email:
+        partes = [rodape_unidade_title, endereco_formatado]
+        contato = []
+        if telefone:
+            contato.append(f"Fone: {telefone}")
+        if email:
+            contato.append(f"e-mail:{email}")
+        if contato:
+            partes.append(" - ".join(contato))
+        rodape_line = " - ".join([parte for parte in partes if parte])
+
+    for section in doc.sections:
+        for p in section.header.paragraphs:
+            texto = "".join(r.text for r in p.runs).strip()
+            if unidade and texto == HEADER_UNIDADE_DEFAULT:
+                _replace_paragraph_text(p, unidade)
+            elif origem and texto == HEADER_ORIGEM_DEFAULT:
+                _replace_paragraph_text(p, origem)
+
+        for p in section.footer.paragraphs:
+            texto = "".join(r.text for r in p.runs).strip()
+            if rodape_line and (
+                texto == FOOTER_ENDERECO_DEFAULT
+                or "Assessoria de Comunica\u00e7\u00e3o Social" in texto
+            ):
+                _replace_paragraph_text(p, rodape_line)
+
+
 def _sub_placeholders(text: str, mapping: dict[str, str]) -> str:
     if "{{" not in text:
         return text
@@ -322,36 +483,64 @@ def _sub_placeholders(text: str, mapping: dict[str, str]) -> str:
     return PLACEHOLDER_RE.sub(repl, text)
 
 
-def replace_everywhere(doc: DocxDocument, mapping: dict[str, str]):
+def _iter_paragraphs_from_container(container):
+    for p in getattr(container, "paragraphs", []):
+        yield p
+    for table in getattr(container, "tables", []):
+        yield from _iter_paragraphs_from_table(table)
+
+
+def _iter_paragraphs_from_table(table):
+    for row in table.rows:
+        for cell in row.cells:
+            yield from _iter_paragraphs_from_container(cell)
+
+
+def replace_placeholders_in_paragraph(paragraph, mapping: dict[str, str]) -> None:
+    full_text = "".join(r.text for r in paragraph.runs)
+    if "{{" not in full_text:
+        return
+
+    # 1) Prefer: replace run-a-run to preserve formatting.
+    changed = False
+    for r in paragraph.runs:
+        new_text = _sub_placeholders(r.text, mapping)
+        if new_text != r.text:
+            r.text = new_text
+            changed = True
+
+    if not changed:
+        return
+
+    # 2) Fallback: if placeholders are split across runs, do a safe rebuild
+    full_text = "".join(r.text for r in paragraph.runs)
+    if "{{" not in full_text:
+        return
+
+    new_full = _sub_placeholders(full_text, mapping)
+    if not paragraph.runs:
+        paragraph.add_run(new_full)
+        return
+
+    first_run = paragraph.runs[0]
+    first_run.text = new_full
+    for r in paragraph.runs[1:]:
+        r.text = ""
+
+
+def replace_only_placeholders(doc: DocxDocument, mapping: dict[str, str]):
     """
-    Substitui placeholders preservando a formatação do Word.
-    (Não limpa o parágrafo; altera run por run.)
+    Substitui somente parágrafos que contenham placeholders.
+    Não toca em textos fixos (sem "{{").
     """
-    for p in _iter_all_paragraphs(doc):
-        # rápido: se não tem placeholder no texto todo, pula
-        full_text = "".join(r.text for r in p.runs)
-        if "{{" not in full_text:
-            continue
+    for p in _iter_paragraphs_from_container(doc):
+        replace_placeholders_in_paragraph(p, mapping)
 
-        # 1) tenta trocar run-a-run (mantém bold/itálico do run)
-        changed_any = False
-        for r in p.runs:
-            new_text = _sub_placeholders(r.text, mapping)
-            if new_text != r.text:
-                r.text = new_text
-                _apply_font(r)
-                changed_any = True
-
-        if changed_any:
-            continue
-
-        # 2) fallback: se o Word quebrou o placeholder em runs diferentes,
-        # reconstrói o parágrafo inteiro (perde granularidade, mas substitui)
-        new_full = _sub_placeholders(full_text, mapping)
-        if new_full != full_text:
-            p.clear()
-            run = p.add_run(new_full)
-            _apply_font(run)
+    for section in doc.sections:
+        for p in _iter_paragraphs_from_container(section.header):
+            replace_placeholders_in_paragraph(p, mapping)
+        for p in _iter_paragraphs_from_container(section.footer):
+            replace_placeholders_in_paragraph(p, mapping)
 
 
 # =========================
@@ -529,16 +718,65 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     trechos = list(oficio.trechos.order_by("ordem"))  # type: ignore
 
     config = get_config_oficio()
+    oficio_cfg = get_oficio_config()
+    cfg_unidade_nome = (oficio_cfg.unidade_nome or "").strip().upper()
+    cfg_origem_nome = (oficio_cfg.origem_nome or "").strip().upper()
+    cfg_rodape_unidade_title = title_case_pt(cfg_unidade_nome)
+    cfg_endereco_formatado = _build_endereco_formatado(oficio_cfg)
+    cfg_telefone = (oficio_cfg.telefone or "").strip()
+    cfg_email = (oficio_cfg.email or "").strip()
+    cfg_assinante_nome_title = ""
+    cfg_assinante_cargo_title = ""
+    if oficio_cfg.assinante:
+        cfg_assinante_nome_title = title_case_pt(oficio_cfg.assinante.nome or "")
+        cfg_assinante_cargo_title = title_case_pt(oficio_cfg.assinante.cargo or "")
+
+    default_unidade, default_endereco, default_telefone, default_email = _footer_default_parts()
+    rodape_unidade_value = cfg_rodape_unidade_title or title_case_pt(default_unidade)
+    endereco_value = cfg_endereco_formatado or default_endereco
+    telefone_value = (
+        f"Fone: {cfg_telefone}"
+        if cfg_telefone
+        else (f"Fone: {default_telefone}" if default_telefone else "")
+    )
+    email_value = (
+        f"e-mail:{cfg_email}"
+        if cfg_email
+        else (f"e-mail:{default_email}" if default_email else "")
+    )
+
     destinos_text, roteiro_ida_text, roteiro_retorno_text = build_destinos_e_roteiros(oficio, trechos)
-    assunto_text, assunto_oficio_text = get_assunto(oficio, trechos)
+    assunto_linha = (oficio.assunto or "").strip()
+    assunto_tipo = (oficio.assunto_tipo or "").strip().upper()
+    detected_tipo = None
+    if assunto_linha:
+        assunto_lower = assunto_linha.lower()
+        if "convalida" in assunto_lower:
+            detected_tipo = Oficio.AssuntoTipo.CONVALIDACAO
+        elif "autoriza" in assunto_lower:
+            detected_tipo = Oficio.AssuntoTipo.AUTORIZACAO
+    if detected_tipo:
+        assunto_tipo = detected_tipo
+    if assunto_tipo == Oficio.AssuntoTipo.CONVALIDACAO:
+        assunto_termo = "convalidação"
+        assunto_text = "Solicitação de convalidação e concessão de diárias."
+    else:
+        assunto_termo = "autorização"
+        assunto_text = "Solicitação de autorização e concessão de diárias."
+    assunto_oficio_text = f"({assunto_termo})"
+    if not assunto_linha or detected_tipo is None:
+        assunto_linha = assunto_text
     motorista_formatado = format_motorista(oficio)
     tipo_viatura_text = format_tipo_viatura(oficio.tipo_viatura)
     armamento_text = format_armamento(getattr(oficio, "armamento", None))
-    orgao_destino_value = "SESP" if is_viagem_fora_pr(trechos) else config["orgao_destino_padrao"]
+    orgao_destino_value = "SESP" if is_viagem_fora_pr(trechos) else "Delegado"
+    orgao_origem_value = (cfg_origem_nome or config["orgao_origem"] or "").upper()
+    unidade_value = cfg_unidade_nome or cfg_origem_nome or orgao_origem_value or HEADER_UNIDADE_DEFAULT
+    origem_value = cfg_origem_nome or cfg_unidade_nome or orgao_origem_value or HEADER_ORIGEM_DEFAULT
     solicitacao_lines = build_col_solicitacao(viajantes, assunto_text)
     retorno_saida_lines, retorno_chegada_lines = build_col_retorno(oficio, trechos)
 
-    # colunas “ricas”
+    # colunas "ricas"
     replace_placeholder_rich(doc, "col_servidor", build_col_nomes(viajantes))
     replace_placeholder_rich(doc, "col_rgcpf", build_col_rgcpf(viajantes))
     replace_placeholder_rich(doc, "col_cargo", build_col_cargo(viajantes))
@@ -550,14 +788,13 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     replace_placeholder_rich(doc, "col_volta_saida", retorno_saida_lines)
     replace_placeholder_rich(doc, "col_volta_chegada", retorno_chegada_lines)
 
-    # sede (p/ retorno) - pega da origem do 1º trecho se existir
+    # sede (p/ retorno) - pega da origem do 1o trecho se existir
     sede = ""
     if trechos:
         t0 = trechos[0]
         sede = _fmt_local(t0.origem_cidade, t0.origem_estado)
 
-    # destino principal (último destino do roteiro) – você já tem oficio.destino,
-    # mas aqui garantimos um fallback coerente.
+    # destino principal (ultimo destino do roteiro)
     destino_principal = oficio.destino or ""
     if not destino_principal and trechos:
         destino_principal = _fmt_local(trechos[-1].destino_cidade, trechos[-1].destino_estado)
@@ -569,7 +806,22 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     )
     caracterizada_text = "Sim" if oficio.motorista_carona else "Não"
 
-    # campos simples (repare que agora inclui retorno + caracterizada + armamento + sede)
+    tipo_custeio = (oficio.tipo_custeio or "").strip().upper()
+    custo_value = ""
+    if tipo_custeio == "UNIDADE":
+        custo_value = "Unidade"
+    elif tipo_custeio == "OUTRA_INSTITUICAO":
+        custo_value = "Outra instituição"
+    elif tipo_custeio == "SEM_ONUS":
+        custo_value = "Sem ônus"
+
+    custo_paragraphs = []
+    for p in _iter_all_paragraphs(doc):
+        full_text = "".join(r.text for r in p.runs)
+        if "{{custo" in full_text:
+            custo_paragraphs.append(p)
+
+    # campos simples
     mapping = {
         "oficio": oficio.oficio or "",
         "ano": str(oficio.created_at.year) if oficio.created_at else "",
@@ -577,12 +829,21 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         "protocolo": oficio.protocolo or "",
         "destino": destino_principal,
         "destinos_bloco": destinos_text,
+        "assunto_linha": assunto_linha,
+        "assunto_termo": assunto_termo,
         "assunto": assunto_text,
         "assunto_oficio": assunto_oficio_text,
         "orgao_destino": orgao_destino_value,
-        "orgao_origem": config["orgao_origem"],
-        "nome_chefia": config["nome_chefia"],
-        "cargo_chefia": config["cargo_chefia"],
+        "orgao_origem": orgao_origem_value,
+        "unidade": unidade_value,
+        "origem": origem_value,
+        "unidade_rodape": rodape_unidade_value,
+        "endereco": endereco_value,
+        "telefone": telefone_value,
+        "email": email_value,
+        "custo": custo_value,
+        "assinante_nome": cfg_assinante_nome_title,
+        "assinante_cargo": cfg_assinante_cargo_title,
         "roteiro_ida": roteiro_ida_text,
         "roteiro_retorno": roteiro_retorno_text,
 
@@ -613,17 +874,45 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         ),
 
         "motivo": (oficio.motivo or "").strip(),
+
     }
 
-    # 1) substitui preservando formatação do modelo
-    replace_everywhere(doc, mapping)
+    template_placeholders = _extract_placeholders(
+        _iter_docx_xml_parts_from_path(template_path)
+    )
+    missing = template_placeholders - set(mapping.keys())
+    if missing:
+        for key in missing:
+            mapping[key] = ""
+        if settings.DEBUG:
+            print(f"[oficio] placeholders sem contexto: {sorted(missing)}")
 
-    # 2) garante retorno em negrito e substitui mesmo se placeholder estiver “quebrado”
+    # 1) substitui apenas parágrafos com placeholders
+    replace_only_placeholders(doc, mapping)
+
+    # 2) garante retorno em negrito e substitui mesmo se placeholder estiver "quebrado"
     _patch_roteiro_retorno(doc, mapping)
+
+    if not custo_value.strip():
+        for p in custo_paragraphs:
+            _remove_paragraph(p)
 
     buf = BytesIO()
     doc.save(buf)
     buf.seek(0)
+
+    if settings.DEBUG:
+        leftovers, snippets = _find_unresolved_placeholders(buf.getvalue())
+        if leftovers or snippets:
+            raw = ", ".join(sorted(leftovers))
+            extra = " | ".join(snippets)
+            message = "Placeholders nao substituidos no DOCX."
+            if raw:
+                message += f" Encontrados: {raw}."
+            if extra:
+                message += f" Snippets: {extra}."
+            raise ValueError(message)
+
     return buf
 
 

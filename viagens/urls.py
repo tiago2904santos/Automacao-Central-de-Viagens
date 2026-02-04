@@ -59,6 +59,7 @@ urlpatterns = [
     path("veiculos/<int:veiculo_id>/editar/", views.veiculo_editar, name="veiculo_editar"),
     path("veiculos/", views.veiculos_lista, name="veiculos_lista"),
     path("oficios/", views.oficios_lista, name="oficios_lista"),
+    path("configuracoes/oficio/", views.configuracoes_oficio, name="config_oficio"),
     path("api/viajantes/", views.viajantes_api, name="viajantes_api"),
     path("api/veiculo/", views.veiculo_api, name="veiculo_api"),
     path("api/cidades/", views.cidades_api, name="cidades_api"),
@@ -70,6 +71,7 @@ urlpatterns = [
     path("api/motoristas/<int:motorista_id>/", views.motorista_detail_api, name="motorista_detail_api"),
     path("api/veiculos/", views.veiculos_busca_api, name="veiculos_busca_api"),
     path("api/veiculos/<int:veiculo_id>/", views.veiculo_detail_api, name="veiculo_detail_api"),
+    path("cargos/criar/", views.cargo_criar, name="cargo_criar"),
     path("modal/viajantes/novo/", views.modal_viajante_form, name="modal_viajante_form"),
     path("modal/veiculos/novo/", views.modal_veiculo_form, name="modal_veiculo_form"),
 ]

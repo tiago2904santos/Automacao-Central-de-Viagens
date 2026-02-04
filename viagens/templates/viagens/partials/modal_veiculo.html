@@ -34,7 +34,7 @@
           <select name="tipo_viatura" required>
             <option value="">Selecione</option>
             <option value="CARACTERIZADA" {% if values.tipo_viatura == "CARACTERIZADA" %}selected{% endif %}>Caracterizada</option>
-            <option value="DESCARACTERIZADA" {% if values.tipo_viatura == "DESCARACTERIZADA" %}selected{% endif %}>Descaracterizada</option>
+            <option value="DESCARACTERIZADA" {% if values.tipo_viatura == "DESCARACTERIZADA" or not values.tipo_viatura %}selected{% endif %}>Descaracterizada</option>
           </select>
         </label>
       </div>

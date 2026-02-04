@@ -12,6 +12,13 @@ class Viajante(models.Model):
         return self.nome
 
 
+class Cargo(models.Model):
+    nome = models.CharField(max_length=120, unique=True)
+
+    def __str__(self) -> str:
+        return self.nome
+
+
 class Veiculo(models.Model):
     placa = models.CharField(max_length=10, unique=True)
     modelo = models.CharField(max_length=120)
@@ -20,6 +27,7 @@ class Veiculo(models.Model):
         max_length=20,
         blank=True,
         choices=[("CARACTERIZADA", "Caracterizada"), ("DESCARACTERIZADA", "Descaracterizada")],
+        default="DESCARACTERIZADA"
     )
 
     def __str__(self) -> str:
@@ -45,19 +53,19 @@ class Cidade(models.Model):
 class ConfiguracaoOficio(models.Model):
     nome_chefia = models.CharField(
         max_length=120,
-        default="Delegado Geral Adjunto",
+        default="",
     )
     cargo_chefia = models.CharField(
         max_length=120,
-        default="Gabinete do Delegado Geral Adjunto",
+        default="",
     )
     orgao_origem = models.CharField(
         max_length=200,
-        default="Assessoria de Comunicação Social",
+        default="ASSESSORIA DE COMUNICAÇÃO SOCIAL",
     )
     orgao_destino_padrao = models.CharField(
         max_length=200,
-        default="Gabinete do Delegado Geral Adjunto",
+        default="GABINETE DO DELEGADO GERAL ADJUNTO",
     )
     rodape = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -96,10 +104,55 @@ class ConfiguracaoOficio(models.Model):
         return obj
 
 
+class OficioConfig(models.Model):
+    unidade_nome = models.CharField(max_length=255, default="")
+    origem_nome = models.CharField(max_length=255, default="")
+
+    cep = models.CharField(max_length=9, default="")
+    logradouro = models.CharField(max_length=255, blank=True, default="")
+    bairro = models.CharField(max_length=255, blank=True, default="")
+    cidade = models.CharField(max_length=255, blank=True, default="")
+    uf = models.CharField(max_length=2, blank=True, default="")
+    numero = models.CharField(max_length=30, default="")
+    complemento = models.CharField(max_length=120, blank=True, default="")
+    telefone = models.CharField(max_length=50, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+
+    assinante = models.ForeignKey(
+        Viajante,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="oficio_configs",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuracao do Oficio"
+        verbose_name_plural = "Configuracoes do Oficio"
+
+    def __str__(self) -> str:
+        return "Configuracao do Oficio"
+
+    def save(self, *args, **kwargs):
+        if self.unidade_nome:
+            self.unidade_nome = self.unidade_nome.upper()
+        if self.origem_nome:
+            self.origem_nome = self.origem_nome.upper()
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+
 class Oficio(models.Model):
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Rascunho"
         FINAL = "FINAL", "Finalizado"
+
+    class AssuntoTipo(models.TextChoices):
+        AUTORIZACAO = "AUTORIZACAO", "Autorizacao"
+        CONVALIDACAO = "CONVALIDACAO", "Convalidacao"
 
     oficio = models.CharField(max_length=50, blank=True, default="")
     protocolo = models.CharField(max_length=80, blank=True, default="")
@@ -111,6 +164,11 @@ class Oficio(models.Model):
         db_index=True,
     )
     assunto = models.CharField(max_length=200, blank=True)
+    assunto_tipo = models.CharField(
+        max_length=20,
+        choices=AssuntoTipo.choices,
+        default=AssuntoTipo.AUTORIZACAO,
+    )
     tipo_destino = models.CharField(
         max_length=20,
         blank=True,
@@ -169,6 +227,7 @@ class Oficio(models.Model):
         max_length=20,
         blank=True,
         choices=[("CARACTERIZADA", "Caracterizada"), ("DESCARACTERIZADA", "Descaracterizada")],
+        default="DESCARACTERIZADA"
     )
     tipo_custeio = models.CharField(
         max_length=30,

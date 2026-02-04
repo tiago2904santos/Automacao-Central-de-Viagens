@@ -1,0 +1,180 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Configuracoes do Oficio{% endblock %}
+
+{% block breadcrumb %}
+  Configuracoes <span class="breadcrumb-sep">/</span> Oficio
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Configuracoes do Oficio</h2>
+      <p class="page-subtitle">Defina unidade, origem, endereco e assinatura padrao.</p>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="page-grid page-grid--preview">
+    <div class="card">
+      <form method="post" id="configOficioForm">
+        {% csrf_token %}
+
+        <div class="sub-card">
+          <div class="sub-card-title">Cabecalho</div>
+          <div class="grid">
+            <label class="full">
+              Unidade
+              {{ form.unidade_nome }}
+              {{ form.unidade_nome.errors }}
+              <span class="field-help">Salvo sempre em maiusculo.</span>
+            </label>
+            <label class="full">
+              Origem
+              {{ form.origem_nome }}
+              {{ form.origem_nome.errors }}
+              <span class="field-help">Salvo sempre em maiusculo.</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-title">Endereco</div>
+          <div class="grid">
+            <label>
+              CEP
+              {{ form.cep }}
+              {{ form.cep.errors }}
+              <span class="field-help" id="cepStatus" role="status"></span>
+            </label>
+            <label>
+              Logradouro
+              {{ form.logradouro }}
+              {{ form.logradouro.errors }}
+            </label>
+            <label>
+              Bairro
+              {{ form.bairro }}
+              {{ form.bairro.errors }}
+            </label>
+            <label>
+              Cidade
+              {{ form.cidade }}
+              {{ form.cidade.errors }}
+            </label>
+            <label>
+              UF
+              {{ form.uf }}
+              {{ form.uf.errors }}
+            </label>
+            <label>
+              Numero
+              {{ form.numero }}
+              {{ form.numero.errors }}
+            </label>
+            <label class="full">
+              Complemento
+              {{ form.complemento }}
+              {{ form.complemento.errors }}
+            </label>
+          </div>
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-title">Contato</div>
+          <div class="grid">
+            <label>
+              Telefone
+              {{ form.telefone }}
+              {{ form.telefone.errors }}
+            </label>
+            <label>
+              Email
+              {{ form.email }}
+              {{ form.email.errors }}
+            </label>
+          </div>
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-title">Assinatura</div>
+          <div class="grid">
+            <label class="full">
+              Assinante
+              {{ form.assinante }}
+              {{ form.assinante.errors }}
+              <span class="field-help">Digite para buscar a pessoa que assina o oficio.</span>
+            </label>
+          </div>
+          <div class="field-actions">
+            <a class="btn-clear btn-small" href="{% url 'viajante_cadastro' %}" target="_blank" rel="noopener">
+              Cadastrar pessoa
+            </a>
+          </div>
+        </div>
+
+        <div class="wizard-actions">
+          <button class="btn-primary" type="submit">Salvar configuracoes</button>
+        </div>
+      </form>
+    </div>
+
+    <aside class="preview-card" aria-live="polite">
+      <h3>Preview</h3>
+
+      <div class="preview-doc">
+        <div class="sub-card-title">Cabecalho</div>
+        <div class="preview-line">
+          <span class="preview-label">Unidade</span>
+          <span class="preview-value" id="previewUnidade">-</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Origem</span>
+          <span class="preview-value" id="previewOrigem">-</span>
+        </div>
+      </div>
+
+      <div class="preview-doc">
+        <div class="sub-card-title">Rodape</div>
+        <div class="preview-line">
+          <span class="preview-label">Unidade</span>
+          <span class="preview-value" id="previewRodapeUnidade">-</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Endereco</span>
+          <span class="preview-value" id="previewEndereco">-</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Telefone</span>
+          <span class="preview-value" id="previewTelefone">-</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Email</span>
+          <span class="preview-value" id="previewEmail">-</span>
+        </div>
+      </div>
+
+      <div class="preview-doc">
+        <div class="sub-card-title">Assinatura</div>
+        <div class="preview-line">
+          <span class="preview-label">Nome</span>
+          <span class="preview-value" id="previewAssinanteNome">-</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Cargo</span>
+          <span class="preview-value" id="previewAssinanteCargo">-</span>
+        </div>
+      </div>
+    </aside>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/oficio_config_preview.js' %}"></script>
+{% endblock %}

@@ -68,12 +68,19 @@ def build_assunto(oficio: Oficio, trechos: list[Trecho] | None = None) -> dict[s
     )
     data_saida = get_data_saida_viagem(oficio, trechos)
     convalidacao = bool(data_saida and data_oficio >= data_saida)
+    assunto_tipo = (getattr(oficio, "assunto_tipo", "") or "").strip().upper()
+    if assunto_tipo == Oficio.AssuntoTipo.CONVALIDACAO:
+        assunto_termo = "convalidação"
+    else:
+        assunto_termo = "autorização"
     if convalidacao:
         return {
+            "assunto_termo": assunto_termo,
             "assunto": "Solicitação de convalidação e concessão de diárias.",
             "assunto_oficio": "(convalidação)",
         }
     return {
+        "assunto_termo": assunto_termo,
         "assunto": "Solicitação de autorização e concessão de diárias.",
         "assunto_oficio": "",
     }

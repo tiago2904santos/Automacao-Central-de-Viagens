@@ -55,31 +55,83 @@ function applyMasks(root) {
   });
 }
 
-function initCargoToggle(root) {
-  root.querySelectorAll("[data-add-cargo]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const container = button.closest("label");
-      if (!container) return;
-      const select = container.querySelector("[data-cargo-select]");
-      const input = container.querySelector("[data-cargo-novo]");
-      if (!select || !input) return;
-      const isHidden = input.hasAttribute("hidden");
-      if (isHidden) {
-        input.removeAttribute("hidden");
-        input.focus();
-        select.value = "";
-      } else {
-        input.setAttribute("hidden", "hidden");
-        input.value = "";
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) {
+    return parts.pop().split(";").shift();
+  }
+  return "";
+}
+
+function ensureCargoOption(select, nome) {
+  if (!select || !nome) return;
+  const exists = Array.from(select.options).find(
+    (option) => option.value.toLowerCase() === nome.toLowerCase()
+  );
+  if (exists) {
+    select.value = exists.value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+  const option = document.createElement("option");
+  option.value = nome;
+  option.textContent = nome;
+  select.appendChild(option);
+  select.value = nome;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+let cargoListenerAttached = false;
+
+function initCargoCreate() {
+  if (cargoListenerAttached) return;
+  cargoListenerAttached = true;
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-add-cargo]");
+    if (!button) return;
+    const container =
+      button.closest("label") || button.closest(".field-row") || button.parentElement;
+    if (!container) return;
+    const select = container.querySelector("[data-cargo-select]");
+    if (!select) return;
+    const nome = window.prompt("Informe o novo cargo:");
+    if (!nome) return;
+    const trimmed = nome.trim();
+    if (!trimmed) return;
+    try {
+      const response = await fetch("/cargos/criar/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCookie("csrftoken"),
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify({ nome: trimmed }),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        const message = error.error || "Nao foi possivel criar o cargo.";
+        window.showToast?.(message, "error");
+        return;
       }
-    });
+      const data = await response.json();
+      ensureCargoOption(select, data.nome || trimmed);
+      const cargoNovo = container.querySelector("[data-cargo-novo]");
+      if (cargoNovo) {
+        cargoNovo.value = "";
+      }
+      window.showToast?.("Cargo criado com sucesso.", "success");
+    } catch (err) {
+      window.showToast?.("Nao foi possivel criar o cargo.", "error");
+    }
   });
 }
 
 function initViajanteForm() {
   const root = document;
   applyMasks(root);
-  initCargoToggle(root);
+  initCargoCreate();
 }
 
 if (document.readyState === "loading") {

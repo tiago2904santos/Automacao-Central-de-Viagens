@@ -40,14 +40,16 @@
           </label>
           <label class="full">
             Cargo
-            <select name="cargo" required data-cargo-select>
-              <option value="">Selecione</option>
-              {% for cargo in cargo_choices %}
-                <option value="{{ cargo }}" {% if cargo == viajante.cargo %}selected{% endif %}>{{ cargo }}</option>
-              {% endfor %}
-            </select>
+            <div class="field-row">
+              <select name="cargo" required data-cargo-select class="input-field">
+                <option value="">Selecione</option>
+                {% for cargo in cargo_choices %}
+                  <option value="{{ cargo }}" {% if cargo == viajante.cargo %}selected{% endif %}>{{ cargo }}</option>
+                {% endfor %}
+              </select>
+              <button class="icon-btn" type="button" data-add-cargo aria-label="Adicionar cargo">+</button>
+            </div>
             {% if erros.cargo %}<span class="field-errors">{{ erros.cargo }}</span>{% endif %}
-            <button class="btn-clear btn-small" type="button" data-add-cargo>Adicionar cargo</button>
             <input type="text" name="cargo_novo" value="" data-cargo-novo hidden />
           </label>
         </section>
