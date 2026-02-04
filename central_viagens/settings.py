@@ -50,12 +50,8 @@ WSGI_APPLICATION = "central_viagens.wsgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB", "central_viagens"),
-        "USER": os.getenv("POSTGRES_USER", "central_viagens"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "central_viagens"),
-        "HOST": os.getenv("POSTGRES_HOST", "localhost"),
-        "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
