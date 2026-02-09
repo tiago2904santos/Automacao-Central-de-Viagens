@@ -118,11 +118,44 @@ class OficioFlowTests(TestCase):
             f"{self.cidade_sede.nome}/{self.estado_pr.sigla}",
         )
 
+    def test_destino_automatico_pr(self) -> None:
+        oficio = Oficio.objects.create(oficio="200/2024")
+        Trecho.objects.create(
+            oficio=oficio,
+            ordem=1,
+            origem_estado=self.estado_pr,
+            origem_cidade=self.cidade_sede,
+            destino_estado=self.estado_pr,
+            destino_cidade=self.cidade_intermediaria,
+        )
+        oficio.refresh_from_db()
+        self.assertEqual(oficio.destino, Oficio.DestinoChoices.GAB)
+        self.assertEqual(
+            oficio.get_destino_display(),
+            "GABINETE DO DELEGADO GERAL ADJUNTO",
+        )
+
+    def test_destino_automatico_fora_pr(self) -> None:
+        estado_sc = Estado.objects.create(sigla="SC", nome="Santa Catarina")
+        cidade_sc = Cidade.objects.create(nome="Florianopolis", estado=estado_sc)
+        oficio = Oficio.objects.create(oficio="201/2024")
+        Trecho.objects.create(
+            oficio=oficio,
+            ordem=1,
+            origem_estado=self.estado_pr,
+            origem_cidade=self.cidade_sede,
+            destino_estado=estado_sc,
+            destino_cidade=cidade_sc,
+        )
+        oficio.refresh_from_db()
+        self.assertEqual(oficio.destino, Oficio.DestinoChoices.SESP)
+        self.assertEqual(oficio.get_destino_display(), "SESP")
+
     def test_update_oficio(self) -> None:
         oficio = Oficio.objects.create(
             oficio="000/2024",
             protocolo="111",
-            destino="Curitiba",
+            destino=Oficio.DestinoChoices.GAB,
             assunto="Original",
             placa="ABC1234",
             modelo="Uno",
@@ -218,7 +251,7 @@ class OficioFlowTests(TestCase):
         oficio = Oficio.objects.create(
             oficio="111/2024",
             protocolo="222",
-            destino="Curitiba",
+            destino=Oficio.DestinoChoices.GAB,
             assunto="Teste",
         )
 

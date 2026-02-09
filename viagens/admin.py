@@ -46,7 +46,7 @@ class TrechoInline(admin.TabularInline):
 
 @admin.register(Oficio)
 class OficioAdmin(admin.ModelAdmin):
-    list_display = ("oficio", "protocolo", "destino", "created_at")
+    list_display = ("oficio", "protocolo", "destino_label", "created_at")
     list_filter = ("created_at",)
     search_fields = (
         "oficio",
@@ -59,3 +59,8 @@ class OficioAdmin(admin.ModelAdmin):
         "cidade_sede__nome",
     )
     inlines = (TrechoInline,)
+
+    def destino_label(self, obj):
+        return obj.get_destino_display()
+
+    destino_label.short_description = "Destino"

@@ -165,6 +165,23 @@
             Protocolo do motorista
             <input type="text" name="motorista_protocolo" id="motoristaProtocolo" value="{{ oficio.motorista_protocolo }}" data-preview-target="motorista_protocolo" />
           </label>
+          <label class="full">
+            OfÃ­cio de referÃªncia da carona
+            <select
+              name="carona_oficio_referencia"
+              class="input-field"
+              data-carona-ref
+              {% if not motorista_carona %}disabled{% endif %}
+            >
+              <option value="">Selecione</option>
+              {% for item in oficios_referencia %}
+                <option value="{{ item.id }}" {% if carona_oficio_referencia_id == item.id %}selected{% endif %}>
+                  {{ item.oficio|default:item.id }}{% if item.protocolo %} - {{ item.protocolo }}{% endif %}
+                </option>
+              {% endfor %}
+            </select>
+            {% if erros.carona_oficio_referencia %}<span class="field-errors">{{ erros.carona_oficio_referencia }}</span>{% endif %}
+          </label>
         </section>
 
         <div class="page-header">
@@ -441,6 +458,32 @@
           </div>
         </div>
 
+        <section class="sub-card" data-custos-group>
+          <div class="sub-card-title">Custos</div>
+          <div class="custos-options">
+            <select
+              name="custeio_tipo"
+              class="input-field"
+              data-custos-select
+            >
+              {% for value, label in custeio_tipo_choices %}
+                <option value="{{ value }}" {% if value == custeio_tipo %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <label class="full custos-instituicao{% if custeio_tipo != 'OUTRA_INSTITUICAO' %} is-hidden{% endif %}" data-custos-field>
+            Nome da instituição de custeio
+            <input
+              type="text"
+              name="nome_instituicao_custeio"
+              value="{{ nome_instituicao_custeio|default:'' }}"
+              data-custos-instituicao
+              {% if custeio_tipo != 'OUTRA_INSTITUICAO' %}disabled{% endif %}
+            />
+            <span class="field-help">Obrigatório quando outra instituição for selecionada.</span>
+          </label>
+        </section>
+
         <section class="grid">
           <label class="full">
             Motivo da viagem
@@ -474,6 +517,10 @@
         <div class="preview-line">
           <span class="preview-label">Assunto</span>
           <span class="preview-value" data-preview-field="assunto">{{ oficio.assunto|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Custos</span>
+          <span class="preview-value" data-preview-field="custos">-</span>
         </div>
       </div>
       <div class="preview-doc">

@@ -64,8 +64,63 @@ function getCookie(name) {
   return "";
 }
 
+function normalizeCargoKey(value) {
+  return (value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function rebuildCargoOptions(select) {
+  if (!select) return;
+  const current = select.value || "";
+  const seen = new Set();
+  const options = [];
+  let placeholderText = null;
+
+  Array.from(select.options).forEach((option) => {
+    const value = (option.value || "").trim();
+    const label = (option.textContent || "").trim() || value;
+    if (!value) {
+      if (placeholderText === null) {
+        placeholderText = label || "Selecione";
+      }
+      return;
+    }
+    const key = normalizeCargoKey(value || label);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    options.push({ value, label });
+  });
+
+  select.innerHTML = "";
+  if (placeholderText !== null) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = placeholderText;
+    select.appendChild(placeholder);
+  }
+  options.forEach((opt) => {
+    const option = document.createElement("option");
+    option.value = opt.value;
+    option.textContent = opt.label;
+    select.appendChild(option);
+  });
+
+  if (current) {
+    const match = Array.from(select.options).find(
+      (option) => normalizeCargoKey(option.value) === normalizeCargoKey(current)
+    );
+    if (match) {
+      select.value = match.value;
+    }
+  }
+}
+
 function ensureCargoOption(select, nome) {
   if (!select || !nome) return;
+  rebuildCargoOptions(select);
   const exists = Array.from(select.options).find(
     (option) => option.value.toLowerCase() === nome.toLowerCase()
   );
@@ -131,6 +186,9 @@ function initCargoCreate() {
 function initViajanteForm() {
   const root = document;
   applyMasks(root);
+  root.querySelectorAll("[data-cargo-select]").forEach((select) => {
+    rebuildCargoOptions(select);
+  });
   initCargoCreate();
 }
 

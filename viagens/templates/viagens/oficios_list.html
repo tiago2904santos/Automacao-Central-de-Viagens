@@ -62,7 +62,7 @@
                 {% if oficio.cidade_destino %}
                   {{ oficio.cidade_destino.nome }}/{{ oficio.cidade_destino.estado.sigla }}
                 {% else %}
-                  {{ oficio.destino }}
+                  {{ oficio.get_destino_display }}
                 {% endif %}
               </td>
               <td>

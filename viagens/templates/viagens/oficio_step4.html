@@ -66,6 +66,19 @@
           </div>
         </div>
         <div class="sub-card">
+          <div class="sub-card-title">Custos</div>
+          <div class="preview-line">
+            <span class="preview-label">Custos</span>
+            <span class="preview-value">{{ custos|default:"-" }}</span>
+          </div>
+          {% if nome_instituicao_custeio %}
+            <div class="preview-line">
+              <span class="preview-label">Instituição</span>
+              <span class="preview-value">{{ nome_instituicao_custeio }}</span>
+            </div>
+          {% endif %}
+        </div>
+        <div class="sub-card">
           <div class="sub-card-title">Servidores</div>
           {% if preview_viajantes %}
             {% for servidor in preview_viajantes %}

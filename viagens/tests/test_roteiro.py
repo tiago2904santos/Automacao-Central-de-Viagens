@@ -59,7 +59,6 @@ class RoteiroFormsetTests(TestCase):
         }
 
         response = self.client.post(reverse("oficio_step3"), payload)
-
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, reverse("oficio_step4"))
         response = self.client.post(reverse("oficio_step4"))
@@ -105,7 +104,6 @@ class RoteiroFormsetTests(TestCase):
         }
 
         response = self.client.post(reverse("oficio_step3"), payload)
-
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, reverse("oficio_step4"))
         response = self.client.post(reverse("oficio_step4"))
@@ -143,7 +141,6 @@ class RoteiroFormsetTests(TestCase):
         }
 
         response = self.client.post(reverse("oficio_step3"), payload)
-
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, reverse("oficio_step4"))
         response = self.client.post(reverse("oficio_step4"))

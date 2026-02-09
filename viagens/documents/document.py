@@ -1,6 +1,7 @@
 # viagens/documents/document.py
 from __future__ import annotations
 
+import logging
 import re
 import zipfile
 import tempfile
@@ -26,6 +27,9 @@ from num2words import num2words
 from viagens.models import Cidade, ConfiguracaoOficio, Estado, Oficio, Trecho, Viajante
 from viagens.services.oficio_config import get_oficio_config
 from viagens.services.text import title_case_pt
+
+
+logger = logging.getLogger(__name__)
 
 PLACEHOLDER_RE = re.compile(r"{{\s*([^}]+?)\s*}}")
 
@@ -238,20 +242,17 @@ def _extract_placeholders(parts: list[tuple[str, str]]) -> set[str]:
     return keys
 
 
-def _find_unresolved_placeholders(docx_bytes: bytes) -> tuple[set[str], list[str]]:
+def _find_unresolved_placeholders(docx_bytes: bytes) -> set[str]:
     parts = _iter_docx_xml_parts_from_bytes(docx_bytes)
     leftovers: set[str] = set()
-    snippets: list[str] = []
-    for name, xml in parts:
+    for _, xml in parts:
         if "{{" not in xml:
             continue
         for match in PLACEHOLDER_RE.finditer(xml):
-            leftovers.add(match.group(0))
-        cleaned = PLACEHOLDER_RE.sub("", xml)
-        if "{{" in cleaned:
-            idx = cleaned.find("{{")
-            snippets.append(f"{name}: {cleaned[idx:idx+80]}")
-    return leftovers, snippets
+            key = match.group(1).strip()
+            if key:
+                leftovers.add(key)
+    return leftovers
 
 
 def build_destinos_e_roteiros(oficio: Oficio, trechos: list[Trecho]) -> tuple[str, str, str]:
@@ -307,16 +308,83 @@ def format_armamento(value: str | bool | None) -> str:
     return "Sim"
 
 
-def format_motorista(oficio: Oficio) -> str:
-    motorista_obj = oficio.motorista_viajante
-    if motorista_obj and motorista_obj.nome:
-        return _title_case(motorista_obj.nome)
-    name = (oficio.motorista or "").strip()
-    if not name:
+def _normalize_name(value: str | None) -> str:
+    if not value:
+        return ""
+    return " ".join(value.strip().split()).casefold()
+
+
+def _format_carona_ref(oficio: Oficio) -> str:
+    ref = getattr(oficio, "carona_oficio_referencia", None)
+    if not ref:
+        return ""
+    numero = (getattr(ref, "oficio", "") or "").strip()
+    if not numero:
+        numero_raw = (getattr(ref, "numero", "") or getattr(ref, "numero_oficio", "") or "").strip()
+        ano_raw = (getattr(ref, "ano", "") or getattr(ref, "ano_oficio", "") or "").strip()
+        if numero_raw and ano_raw:
+            numero = f"{numero_raw}/{ano_raw}"
+        else:
+            numero = numero_raw or ""
+    protocolo = (getattr(ref, "protocolo", "") or getattr(ref, "protocolo_numero", "") or "").strip()
+    parts: list[str] = []
+    if numero:
+        parts.append(f"oficio {numero}")
+    if protocolo:
+        parts.append(f"protocolo: {protocolo}")
+    if not parts:
+        return ""
+    return " - ".join(parts)
+
+
+def motorista_para_documento(oficio: Oficio) -> str:
+    # Motorista do of?cio (principal)
+    motorista_oficio_obj = oficio.motorista_viajante
+    motorista_oficio_nome = (motorista_oficio_obj.nome if motorista_oficio_obj else "") or ""
+
+    # Motorista usado na viagem (o que j? ? exibido hoje no documento)
+    motorista_usado_nome = (oficio.motorista or "").strip() or motorista_oficio_nome
+
+    if getattr(oficio, "motorista_carona", False):
+        same = False
+    elif not motorista_oficio_nome or not motorista_usado_nome:
+        same = True
+    elif motorista_oficio_obj:
+        same = _normalize_name(motorista_oficio_obj.nome) == _normalize_name(motorista_usado_nome)
+    else:
+        same = _normalize_name(motorista_oficio_nome) == _normalize_name(motorista_usado_nome)
+
+    if same:
+        return _title_case(motorista_oficio_nome or motorista_usado_nome) or "-"
+
+    base = f"{_title_case(motorista_usado_nome)} (carona)"
+    referencia = _format_carona_ref(oficio)
+    if referencia:
+        base = f"{base} ({referencia})"
+    return base
+
+    motorista_oficio_nome = (motorista_obj.nome if motorista_obj else "") or ""
+    motorista_informado = (oficio.motorista or "").strip()
+
+    if not motorista_oficio_nome or not motorista_informado:
+        same = True
+    elif motorista_obj:
+        same = _normalize_name(motorista_obj.nome) == _normalize_name(motorista_informado)
+    else:
+        same = _normalize_name(motorista_oficio_nome) == _normalize_name(motorista_informado)
+
+    if same:
+        nome = motorista_oficio_nome or motorista_informado
+        return _title_case(nome) if nome else "-"
+
+    nome = motorista_informado or motorista_oficio_nome
+    if not nome:
         return "-"
-    oficio_ref = oficio.motorista_oficio or "-"
-    protocolo = oficio.motorista_protocolo or "-"
-    return f"{_title_case(name)} (carona) – Ofício {oficio_ref} – Protocolo {protocolo}"
+
+    referencia = _format_oficio_ref(oficio)
+    if referencia:
+        return f"{_title_case(nome)} (carona) ({referencia})"
+    return f"{_title_case(nome)} (carona)"
 
 
 def build_col_solicitacao(viajantes: list[Viajante], assunto_text: str) -> list[RichLine]:
@@ -510,22 +578,14 @@ def replace_placeholders_in_paragraph(paragraph, mapping: dict[str, str]) -> Non
             changed = True
 
     if not changed:
+        # try a more precise cross-run replacement
+        _replace_placeholders_across_runs(paragraph, mapping)
         return
 
-    # 2) Fallback: if placeholders are split across runs, do a safe rebuild
+    # 2) After run-level replacement, check if anything still broken across runs
     full_text = "".join(r.text for r in paragraph.runs)
-    if "{{" not in full_text:
-        return
-
-    new_full = _sub_placeholders(full_text, mapping)
-    if not paragraph.runs:
-        paragraph.add_run(new_full)
-        return
-
-    first_run = paragraph.runs[0]
-    first_run.text = new_full
-    for r in paragraph.runs[1:]:
-        r.text = ""
+    if "{{" in full_text:
+        _replace_placeholders_across_runs(paragraph, mapping)
 
 
 def replace_only_placeholders(doc: DocxDocument, mapping: dict[str, str]):
@@ -541,6 +601,62 @@ def replace_only_placeholders(doc: DocxDocument, mapping: dict[str, str]):
             replace_placeholders_in_paragraph(p, mapping)
         for p in _iter_paragraphs_from_container(section.footer):
             replace_placeholders_in_paragraph(p, mapping)
+
+
+def _replace_placeholders_across_runs(paragraph, mapping: dict[str, str]) -> None:
+    full_text = "".join(r.text for r in paragraph.runs)
+    if "{{" not in full_text:
+        return
+
+    spans: list[tuple[int, int, str]] = []
+    for match in PLACEHOLDER_RE.finditer(full_text):
+        key = match.group(1).strip()
+        value = str(mapping.get(key, ""))
+        spans.append((match.start(), match.end(), value))
+
+    if not spans:
+        return
+
+    run_bounds: list[tuple[int, int]] = []
+    cursor = 0
+    for run in paragraph.runs:
+        start = cursor
+        cursor += len(run.text)
+        run_bounds.append((start, cursor))
+
+    # process from end to start to avoid index shifts
+    for start, end, value in reversed(spans):
+        first_idx = None
+        last_idx = None
+        for i, (rs, re) in enumerate(run_bounds):
+            if rs <= start < re:
+                first_idx = i
+            if rs < end <= re:
+                last_idx = i
+                break
+        if first_idx is None or last_idx is None:
+            continue
+
+        if first_idx == last_idx:
+            run = paragraph.runs[first_idx]
+            rs, _ = run_bounds[first_idx]
+            left = run.text[: start - rs]
+            right = run.text[end - rs :]
+            run.text = f"{left}{value}{right}"
+            continue
+
+        first_run = paragraph.runs[first_idx]
+        rs_first, _ = run_bounds[first_idx]
+        prefix = first_run.text[: start - rs_first]
+        first_run.text = f"{prefix}{value}"
+
+        for i in range(first_idx + 1, last_idx):
+            paragraph.runs[i].text = ""
+
+        last_run = paragraph.runs[last_idx]
+        rs_last, _ = run_bounds[last_idx]
+        suffix = last_run.text[end - rs_last :]
+        last_run.text = suffix
 
 
 # =========================
@@ -647,6 +763,41 @@ def build_col_cargo(viajantes: list[Viajante]) -> list[RichLine]:
             lines.extend(_blank_lines(blanks))
 
     return lines or [[(NBSP, False)]]
+
+
+def _build_custos_block(oficio: Oficio) -> str:
+    override = (getattr(oficio, "custeio_texto_override", "") or "").strip()
+    if override:
+        return override
+
+    options = [
+        Oficio.CusteioTipoChoices.UNIDADE,
+        Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO,
+        Oficio.CusteioTipoChoices.ONUS_LIMITADOS,
+    ]
+    selected = (getattr(oficio, "custeio_tipo", "") or "").strip()
+    if selected == "SEM_ONUS":
+        selected = Oficio.CusteioTipoChoices.ONUS_LIMITADOS.value
+    if selected not in {opt.value for opt in options}:
+        selected = Oficio.CusteioTipoChoices.UNIDADE
+
+    instituicao = (getattr(oficio, "nome_instituicao_custeio", "") or "").strip()
+    labels = {
+        Oficio.CusteioTipoChoices.UNIDADE.value: "UNIDADE \u2013 DPC (di\u00e1ria e combust\u00edvel ser\u00e3o custeados pela DPC).",
+        Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO.value: "OUTRA INSTITUI\u00c7\u00c3O",
+        Oficio.CusteioTipoChoices.ONUS_LIMITADOS.value: "\u00d4NUS LIMITADOS AOS PR\u00d3PRIOS VENCIMENTOS",
+    }
+
+    lines = []
+    for choice in options:
+        marker = "\u2612" if choice.value == selected else "\u2610"
+        label = labels.get(choice.value, choice.label)
+        if choice.value == Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO.value and choice.value == selected and instituicao:
+            label = f"{label}: {instituicao}"
+        lines.append(f"{marker} {label}")
+
+    return "\n".join(lines)
+
 
 
 # =========================
@@ -766,10 +917,10 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     assunto_oficio_text = f"({assunto_termo})"
     if not assunto_linha or detected_tipo is None:
         assunto_linha = assunto_text
-    motorista_formatado = format_motorista(oficio)
+    motorista_formatado = motorista_para_documento(oficio)
     tipo_viatura_text = format_tipo_viatura(oficio.tipo_viatura)
     armamento_text = format_armamento(getattr(oficio, "armamento", None))
-    orgao_destino_value = "SESP" if is_viagem_fora_pr(trechos) else "Delegado"
+    orgao_destino_value = oficio.get_destino_display() or Oficio.DestinoChoices.GAB.label
     orgao_origem_value = (cfg_origem_nome or config["orgao_origem"] or "").upper()
     unidade_value = cfg_unidade_nome or cfg_origem_nome or orgao_origem_value or HEADER_UNIDADE_DEFAULT
     origem_value = cfg_origem_nome or cfg_unidade_nome or orgao_origem_value or HEADER_ORIGEM_DEFAULT
@@ -795,7 +946,7 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         sede = _fmt_local(t0.origem_cidade, t0.origem_estado)
 
     # destino principal (ultimo destino do roteiro)
-    destino_principal = oficio.destino or ""
+    destino_principal = oficio.get_destino_display()
     if not destino_principal and trechos:
         destino_principal = _fmt_local(trechos[-1].destino_cidade, trechos[-1].destino_estado)
 
@@ -805,21 +956,6 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         or "(preencher manualmente)"
     )
     caracterizada_text = "Sim" if oficio.motorista_carona else "Não"
-
-    tipo_custeio = (oficio.tipo_custeio or "").strip().upper()
-    custo_value = ""
-    if tipo_custeio == "UNIDADE":
-        custo_value = "Unidade"
-    elif tipo_custeio == "OUTRA_INSTITUICAO":
-        custo_value = "Outra instituição"
-    elif tipo_custeio == "SEM_ONUS":
-        custo_value = "Sem ônus"
-
-    custo_paragraphs = []
-    for p in _iter_all_paragraphs(doc):
-        full_text = "".join(r.text for r in p.runs)
-        if "{{custo" in full_text:
-            custo_paragraphs.append(p)
 
     # campos simples
     mapping = {
@@ -837,11 +973,11 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         "orgao_origem": orgao_origem_value,
         "unidade": unidade_value,
         "origem": origem_value,
-        "unidade_rodape": rodape_unidade_value,
+        "unidade_rodape": rodape_unidade_value or "",
         "endereco": endereco_value,
         "telefone": telefone_value,
         "email": email_value,
-        "custo": custo_value,
+        "custo": _build_custos_block(oficio),
         "assinante_nome": cfg_assinante_nome_title,
         "assinante_cargo": cfg_assinante_cargo_title,
         "roteiro_ida": roteiro_ida_text,
@@ -885,7 +1021,7 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         for key in missing:
             mapping[key] = ""
         if settings.DEBUG:
-            print(f"[oficio] placeholders sem contexto: {sorted(missing)}")
+            logger.debug("[oficio] placeholders sem contexto: %s", sorted(missing))
 
     # 1) substitui apenas parágrafos com placeholders
     replace_only_placeholders(doc, mapping)
@@ -893,24 +1029,17 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     # 2) garante retorno em negrito e substitui mesmo se placeholder estiver "quebrado"
     _patch_roteiro_retorno(doc, mapping)
 
-    if not custo_value.strip():
-        for p in custo_paragraphs:
-            _remove_paragraph(p)
-
     buf = BytesIO()
     doc.save(buf)
     buf.seek(0)
 
     if settings.DEBUG:
-        leftovers, snippets = _find_unresolved_placeholders(buf.getvalue())
-        if leftovers or snippets:
+        leftovers = _find_unresolved_placeholders(buf.getvalue())
+        if leftovers:
             raw = ", ".join(sorted(leftovers))
-            extra = " | ".join(snippets)
             message = "Placeholders nao substituidos no DOCX."
             if raw:
                 message += f" Encontrados: {raw}."
-            if extra:
-                message += f" Snippets: {extra}."
             raise ValueError(message)
 
     return buf

@@ -1,9 +1,10 @@
 import csv
+import unicodedata
 from pathlib import Path
 
 from django.core.management.base import BaseCommand
 
-from viagens.models import Cidade, Estado, Viajante
+from viagens.models import Cargo, Cidade, Estado, Viajante
 
 
 class Command(BaseCommand):
@@ -127,17 +128,28 @@ class Command(BaseCommand):
     def _import_viajantes(self, path: Path):
         created = 0
         updated = 0
+        cargo_keys = {
+            self._cargo_key(nome): nome
+            for nome in Cargo.objects.values_list("nome", flat=True)
+            if self._cargo_key(nome)
+        }
         with self._open_csv(path) as handle:
             reader = csv.DictReader(handle)
             for row in reader:
                 nome = self._get_value(row, ["nome", "servidor (nome completo)"])
                 rg = self._get_value(row, ["rg"]) 
                 cpf = self._get_value(row, ["cpf"]) 
-                cargo = self._get_value(row, ["cargo"]) 
+                cargo = self._get_value(row, ["cargo"])
                 telefone = self._get_value(row, ["telefone", "fone", "celular"]) 
 
                 if not nome:
                     continue
+                cargo = cargo.strip()
+                if cargo:
+                    key = self._cargo_key(cargo)
+                    if key and key not in cargo_keys:
+                        Cargo.objects.create(nome=cargo)
+                        cargo_keys[key] = cargo
 
                 lookup = {"cpf": cpf} if cpf else {"nome": nome}
                 obj, was_created = Viajante.objects.update_or_create(
@@ -172,3 +184,11 @@ class Command(BaseCommand):
                 if key in normalized:
                     return name
         return None
+
+    def _cargo_key(self, value: str) -> str:
+        raw = " ".join((value or "").strip().split())
+        if not raw:
+            return ""
+        raw = raw.casefold()
+        raw = unicodedata.normalize("NFKD", raw)
+        return "".join(ch for ch in raw if not unicodedata.combining(ch))

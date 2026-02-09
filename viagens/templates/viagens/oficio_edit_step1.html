@@ -97,6 +97,32 @@
           </label>
         </section>
 
+        <section class="sub-card" data-custos-group>
+          <div class="sub-card-title">Custos</div>
+          <div class="custos-options">
+            <select
+              name="custeio_tipo"
+              class="input-field"
+              data-custos-select
+            >
+              {% for value, label in custeio_tipo_choices %}
+                <option value="{{ value }}" {% if value == custeio_tipo %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <label class="full custos-instituicao{% if custeio_tipo != 'OUTRA_INSTITUICAO' %} is-hidden{% endif %}" data-custos-field>
+            Nome da instituição de custeio
+            <input
+              type="text"
+              name="nome_instituicao_custeio"
+              value="{{ nome_instituicao_custeio|default:'' }}"
+              data-custos-instituicao
+              {% if custeio_tipo != 'OUTRA_INSTITUICAO' %}disabled{% endif %}
+            />
+            <span class="field-help">Obrigatório quando outra instituição for selecionada.</span>
+          </label>
+        </section>
+
         <section class="grid">
           <div class="full">
             <div class="field-label">Buscar viajante</div>
@@ -158,6 +184,10 @@
         <div class="preview-line">
           <span class="preview-label">Motivo</span>
           <span class="preview-value" data-preview-field="motivo">{{ motivo|default:"-" }}</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Custos</span>
+          <span class="preview-value" data-preview-field="custos">-</span>
         </div>
       </div>
       <div class="preview-doc">

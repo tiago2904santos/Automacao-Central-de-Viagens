@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -154,9 +155,29 @@ class Oficio(models.Model):
         AUTORIZACAO = "AUTORIZACAO", "Autorizacao"
         CONVALIDACAO = "CONVALIDACAO", "Convalidacao"
 
+    class CustosChoices(models.TextChoices):
+        UNIDADE = "UNIDADE", "UNIDADE – DPC (diária e combustível serão custeados pela DPC)."
+        OUTRA_INSTITUICAO = "OUTRA_INSTITUICAO", "OUTRA INSTITUIÇÃO"
+        SEM_ONUS = "SEM_ONUS", "Com ônus limitados aos próprios vencimentos"
+
+    class CusteioTipoChoices(models.TextChoices):
+        UNIDADE = "UNIDADE", "UNIDADE - DPC (diarias e combustivel serao custeados pela DPC)."
+        OUTRA_INSTITUICAO = "OUTRA_INSTITUICAO", "OUTRA INSTITUICAO"
+        ONUS_LIMITADOS = "ONUS_LIMITADOS", "ONUS LIMITADOS AOS PROPRIOS VENCIMENTOS"
+
+
+    class DestinoChoices(models.TextChoices):
+        GAB = "GAB", "GABINETE DO DELEGADO GERAL ADJUNTO"
+        SESP = "SESP", "SESP"
+
     oficio = models.CharField(max_length=50, blank=True, default="")
     protocolo = models.CharField(max_length=80, blank=True, default="")
-    destino = models.CharField(max_length=200, blank=True, default="")
+    destino = models.CharField(
+        max_length=40,
+        choices=DestinoChoices.choices,
+        default=DestinoChoices.GAB,
+        editable=False,
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -238,6 +259,23 @@ class Oficio(models.Model):
             ("SEM_ONUS", "Sem onus"),
         ],
     )
+    custeio_tipo = models.CharField(
+        max_length=30,
+        blank=True,
+        choices=CusteioTipoChoices.choices,
+        default=CusteioTipoChoices.UNIDADE,
+    )
+    custeio_texto_override = models.TextField(blank=True, default="")
+    custos = models.CharField(
+        max_length=20,
+        choices=CustosChoices.choices,
+        default=CustosChoices.UNIDADE,
+    )
+    nome_instituicao_custeio = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+    )
     google_doc_id = models.CharField(max_length=200, blank=True)
     google_doc_url = models.URLField(blank=True)
     pdf_file_id = models.CharField(max_length=200, blank=True)
@@ -256,6 +294,13 @@ class Oficio(models.Model):
         blank=True,
         related_name="oficios_motorista",
     )
+    carona_oficio_referencia = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="oficios_que_usam_como_carona",
+    )
     motivo = models.TextField(blank=True)
     veiculo = models.ForeignKey(
         Veiculo,
@@ -273,8 +318,57 @@ class Oficio(models.Model):
         return self.status == self.Status.DRAFT
 
     def __str__(self) -> str:
-        destino = self.cidade_destino or self.destino
+        destino = self.cidade_destino or self.get_destino_display() or self.destino
         return f"Oficio {self.oficio} - {destino}"
+
+    def calcular_destino_automatico(self) -> str:
+        if not self.pk:
+            return self.DestinoChoices.GAB
+        trechos = self.trechos.select_related("destino_estado", "destino_cidade__estado")
+        for trecho in trechos:
+            estado = trecho.destino_estado or (
+                trecho.destino_cidade.estado if trecho.destino_cidade else None
+            )
+            if estado and (estado.sigla or "").strip().upper() != "PR":
+                return self.DestinoChoices.SESP
+        return self.DestinoChoices.GAB
+
+    def clean(self) -> None:
+        super().clean()
+        custeio_tipo = (self.custeio_tipo or self.custos or "").strip()
+        if custeio_tipo == "SEM_ONUS":
+            custeio_tipo = "ONUS_LIMITADOS"
+        if (
+            custeio_tipo == self.CusteioTipoChoices.OUTRA_INSTITUICAO
+            and not (self.nome_instituicao_custeio or "").strip()
+        ):
+            raise ValidationError(
+                {"nome_instituicao_custeio": "Informe a instituicao de custeio."}
+            )
+
+    def save(self, *args, **kwargs):
+        if not (self.custeio_tipo or "").strip():
+            custos_value = (self.custos or "").strip()
+            if custos_value == "SEM_ONUS":
+                custos_value = "ONUS_LIMITADOS"
+            if custos_value:
+                self.custeio_tipo = custos_value
+        if self.custeio_tipo == "SEM_ONUS":
+            self.custeio_tipo = "ONUS_LIMITADOS"
+        if self.custeio_tipo != self.CusteioTipoChoices.OUTRA_INSTITUICAO:
+            if (self.nome_instituicao_custeio or "").strip():
+                self.nome_instituicao_custeio = ""
+        self.destino = self.calcular_destino_automatico()
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            update_fields.add("destino")
+            if "nome_instituicao_custeio" not in update_fields and not (
+                self.nome_instituicao_custeio or ""
+            ):
+                update_fields.add("nome_instituicao_custeio")
+            kwargs["update_fields"] = list(update_fields)
+        super().save(*args, **kwargs)
 
 
 class Trecho(models.Model):

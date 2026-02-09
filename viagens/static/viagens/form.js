@@ -57,6 +57,69 @@ function updatePreviewFromInputs() {
   });
 }
 
+function getCustosSelect() {
+  return document.querySelector("[data-custos-select]");
+}
+
+function getCustosGroup(select) {
+  return select?.closest("[data-custos-group]") || document.body;
+}
+
+function getCustosInstitutionInput(select) {
+  const group = getCustosGroup(select);
+  return group.querySelector("[data-custos-instituicao]");
+}
+
+function buildCustosPreviewText(select) {
+  if (!select) {
+    return "";
+  }
+  const option = select.selectedOptions?.[0];
+  const label = option ? option.textContent.trim() : select.value;
+  const instituicao = (getCustosInstitutionInput(select)?.value || "").trim();
+  if (select.value === "OUTRA_INSTITUICAO" && instituicao) {
+    return `${label} – ${instituicao}`;
+  }
+  return label;
+}
+
+function updateCustosPreview() {
+  const select = getCustosSelect();
+  const preview = buildCustosPreviewText(select);
+  setPreviewValue("custos", preview || "-");
+}
+
+function toggleCustosInstitutionField(select) {
+  const group = getCustosGroup(select);
+  const container = group.querySelector("[data-custos-field]");
+  if (!container) {
+    return;
+  }
+  const show = select?.value === "OUTRA_INSTITUICAO";
+  container.classList.toggle("is-hidden", !show);
+  const input = container.querySelector("[data-custos-instituicao]");
+  if (input) {
+    input.disabled = !show;
+    if (!show) {
+      input.value = "";
+    }
+  }
+}
+
+function initCustosControls() {
+  document.querySelectorAll("[data-custos-select]").forEach((select) => {
+    select.addEventListener("change", () => {
+      toggleCustosInstitutionField(select);
+      updateCustosPreview();
+    });
+    toggleCustosInstitutionField(select);
+  });
+  document.querySelectorAll("[data-custos-instituicao]").forEach((input) => {
+    input.addEventListener("input", updateCustosPreview);
+  });
+  updateCustosPreview();
+}
+
 function renderPreviewViajantes(viajantes) {
   const container = getPreviewField("viajantes");
   const countEl = getPreviewField("viajantes-count");
@@ -373,6 +436,7 @@ function aplicarVeiculo(veiculo) {
   if (!veiculo) {
     return;
   }
+
   if (placaInput) {
     placaInput.value = veiculo.placa || placaInput.value;
   }
@@ -438,6 +502,13 @@ function updateCaronaVisibility() {
   }
   const isCarona = isMotoristaCarona();
   caronaFields.classList.toggle("is-visible", isCarona);
+  const refSelect = caronaFields.querySelector("[data-carona-ref]");
+  if (refSelect) {
+    refSelect.disabled = !isCarona;
+    if (!isCarona) {
+      refSelect.value = "";
+    }
+  }
   document.querySelectorAll("[data-carona-preview]").forEach((el) => {
     el.classList.toggle("is-hidden", !isCarona);
   });
@@ -536,6 +607,7 @@ function initBindings() {
     input.addEventListener("change", updatePreviewFromInputs);
   });
   updatePreviewFromInputs();
+  initCustosControls();
 
   if (motoristaNome) {
     motoristaNome.addEventListener("input", () => {

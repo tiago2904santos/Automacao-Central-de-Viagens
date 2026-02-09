@@ -125,7 +125,6 @@
           <label class="full">
             Motorista (nome manual)
             <input type="text" name="motorista_nome" id="motoristaNome" value="{{ motorista_nome }}" placeholder="Digite caso nao esteja na lista" data-preview-target="motorista_nome" />
-            <span class="field-help">Use este campo somente quando o motorista nao estiver cadastrado.</span>
           </label>
         </section>
 
@@ -137,6 +136,23 @@
           <label>
             Protocolo do motorista
             <input type="text" name="motorista_protocolo" id="motoristaProtocolo" value="{{ motorista_protocolo }}" data-preview-target="motorista_protocolo" />
+          </label>
+          <label class="full">
+            OfÃ­cio de referÃªncia da carona
+            <select
+              name="carona_oficio_referencia"
+              class="input-field"
+              data-carona-ref
+              {% if not motorista_carona %}disabled{% endif %}
+            >
+              <option value="">Selecione</option>
+              {% for item in oficios_referencia %}
+                <option value="{{ item.id }}" {% if carona_oficio_referencia_id == item.id %}selected{% endif %}>
+                  {{ item.oficio|default:item.id }}{% if item.protocolo %} - {{ item.protocolo }}{% endif %}
+                </option>
+              {% endfor %}
+            </select>
+            {% if erro_carona_ref %}<span class="field-errors">{{ erro_carona_ref }}</span>{% endif %}
           </label>
         </section>
 

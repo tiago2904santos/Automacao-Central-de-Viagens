@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, time, timedelta
+import unicodedata
 from typing import Iterable
 
 from django.conf import settings
@@ -35,6 +36,46 @@ from .documents.document import build_oficio_docx_and_pdf
 def _normalizar_placa(placa: str) -> str:
     return placa.replace(" ", "").replace("-", "").upper()
 
+
+def _normalizar_cargo_key(nome: str) -> str:
+    raw = " ".join((nome or "").strip().split())
+    if not raw:
+        return ""
+    raw = raw.casefold()
+    raw = unicodedata.normalize("NFKD", raw)
+    return "".join(ch for ch in raw if not unicodedata.combining(ch))
+
+
+def _normalize_destino_choice(value: str | None) -> str:
+    raw = (value or "").strip().upper()
+    if not raw:
+        return Oficio.DestinoChoices.GAB
+    if "SESP" in raw:
+        return Oficio.DestinoChoices.SESP
+    if raw == Oficio.DestinoChoices.SESP:
+        return Oficio.DestinoChoices.SESP
+    return Oficio.DestinoChoices.GAB
+
+
+def _normalize_custeio_choice(value: str | None) -> str:
+    raw = (value or "").strip().upper()
+    if raw == "SEM_ONUS":
+        raw = "ONUS_LIMITADOS"
+    valid = {
+        Oficio.CusteioTipoChoices.UNIDADE,
+        Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO,
+        Oficio.CusteioTipoChoices.ONUS_LIMITADOS,
+    }
+    if raw in valid:
+        return raw
+    return Oficio.CusteioTipoChoices.UNIDADE
+
+
+def _destino_label_from_code(code: str | None) -> str:
+    try:
+        return Oficio.DestinoChoices(code or Oficio.DestinoChoices.GAB).label
+    except ValueError:
+        return Oficio.DestinoChoices.GAB.label
 
 def _placa_valida(placa: str) -> bool:
     if not placa:
@@ -146,15 +187,44 @@ def _format_estado_label(estado: Estado | None, fallback: str | None = "") -> st
     return (fallback or "").strip()
 
 
+
+
+def _calcular_destino_automatico_from_trechos(trechos):
+    for trecho in trechos:
+        sigla = None
+        if hasattr(trecho, 'destino_estado'):
+            estado = trecho.destino_estado
+            cidade = trecho.destino_cidade
+            if estado:
+                sigla = estado.sigla
+            elif cidade and cidade.estado:
+                sigla = cidade.estado.sigla
+        else:
+            estado = _resolve_estado(trecho.get('destino_estado'))
+            if estado:
+                sigla = estado.sigla
+            else:
+                cidade = _resolve_cidade(trecho.get('destino_cidade'))
+                if cidade and cidade.estado:
+                    sigla = cidade.estado.sigla
+        if sigla and sigla.upper() != 'PR':
+            return Oficio.DestinoChoices.SESP
+    return Oficio.DestinoChoices.GAB
+
+
+def _recalcular_destino_no_dado(data):
+    trechos = data.get('trechos') or []
+    data['destino'] = _calcular_destino_automatico_from_trechos(trechos)
 class OrderedTrechoInlineFormSet(BaseInlineFormSet):
     def get_queryset(self):
         return super().get_queryset().order_by("ordem", "id")
 
 DEFAULT_CARGO_CHOICES = [
-    "Agente de Policia Judiciaria",
+    "Agente de Polícia Judiciária",
     "Delegado",
     "Administrativo",
     "Assessor",
+    "Assessor de Comunicação Social",
     "Papiloscopista",
 ]
 
@@ -166,19 +236,63 @@ DEFAULT_COMBUSTIVEL_CHOICES = [
 
 
 def _get_cargo_choices() -> list[str]:
-    custom = getattr(settings, "CARGO_CHOICES", None)
-    if custom:
-        base = list(custom)
-    else:
-        base = list(DEFAULT_CARGO_CHOICES)
+    raw_values: list[str] = []
     try:
-        cargos = list(Cargo.objects.order_by("nome").values_list("nome", flat=True))
+        viajante_cargos = (
+            Viajante.objects.exclude(cargo__isnull=True)
+            .exclude(cargo="")
+            .values_list("cargo", flat=True)
+            .distinct()
+            .order_by("cargo")
+        )
+        raw_values.extend(viajante_cargos)
     except (OperationalError, ProgrammingError):
-        cargos = []
-    for nome in cargos:
-        if nome and nome not in base:
-            base.append(nome)
-    return base
+        pass
+    try:
+        cargo_names = (
+            Cargo.objects.exclude(nome__isnull=True)
+            .exclude(nome="")
+            .values_list("nome", flat=True)
+            .order_by("nome")
+        )
+        raw_values.extend(cargo_names)
+    except (OperationalError, ProgrammingError):
+        pass
+
+    seen: dict[str, str] = {}
+    for raw in raw_values:
+        cleaned = " ".join((raw or "").strip().split())
+        if not cleaned:
+            continue
+        key = _normalizar_cargo_key(cleaned)
+        if not key:
+            continue
+        if key not in seen:
+            seen[key] = cleaned
+
+    ordered = sorted(seen.values(), key=lambda value: value.casefold())
+    return ordered
+
+
+def _buscar_cargo_por_key(nome: str) -> Cargo | None:
+    key = _normalizar_cargo_key(nome)
+    if not key:
+        return None
+    try:
+        for cargo in Cargo.objects.only("id", "nome"):
+            if _normalizar_cargo_key(cargo.nome) == key:
+                return cargo
+    except (OperationalError, ProgrammingError):
+        return None
+    return None
+
+
+def _resolver_cargo_nome(nome: str) -> str:
+    raw = " ".join((nome or "").strip().split())
+    if not raw:
+        return ""
+    cargo = _buscar_cargo_por_key(raw)
+    return cargo.nome if cargo else raw
 
 
 def _ensure_cargo_exists(nome: str) -> None:
@@ -186,10 +300,20 @@ def _ensure_cargo_exists(nome: str) -> None:
     if not raw:
         return
     try:
+        if _buscar_cargo_por_key(raw):
+            return
         Cargo.objects.get_or_create(nome=raw)
     except (OperationalError, ProgrammingError):
         return
 
+
+
+
+def _get_carona_oficios_referencia(limit: int = 200, exclude_id: int | None = None) -> list[Oficio]:
+    qs = Oficio.objects.order_by("-created_at")
+    if exclude_id:
+        qs = qs.exclude(id=exclude_id)
+    return list(qs[0:limit])
 
 def _get_combustivel_choices() -> list[str]:
     custom = getattr(settings, "COMBUSTIVEL_CHOICES", None)
@@ -248,12 +372,33 @@ def _get_wizard_data(request) -> dict:
         data = _hydrate_wizard_data_from_db(oficio)
         request.session["oficio_wizard"] = data
         request.session.modified = True
+    if not data.get("destino"):
+        data["destino"] = Oficio.DestinoChoices.GAB
+        request.session["oficio_wizard"] = data
+        request.session.modified = True
+    updated = False
+    if "custeio_tipo" not in data:
+        legacy = data.get("custos")
+        data["custeio_tipo"] = _normalize_custeio_choice(legacy)
+        updated = True
+    if "nome_instituicao_custeio" not in data:
+        data["nome_instituicao_custeio"] = ""
+        updated = True
+
+    if "carona_oficio_referencia_id" not in data:
+        data["carona_oficio_referencia_id"] = ""
+        updated = True
+    if updated:
+        request.session["oficio_wizard"] = data
+        request.session.modified = True
+    _recalcular_destino_no_dado(data)
     return data
 
 
 def _update_wizard_data(request, new_data: dict) -> dict:
     data = _get_wizard_data(request)
     data.update(new_data)
+    _recalcular_destino_no_dado(data)
     request.session["oficio_wizard"] = data
     request.session.modified = True
     return data
@@ -281,6 +426,7 @@ def _set_edit_data(request, oficio_id: int, data: dict) -> None:
 def _update_edit_data(request, oficio_id: int, new_data: dict) -> dict:
     data = _get_edit_data(request, oficio_id)
     data.update(new_data)
+    _recalcular_destino_no_dado(data)
     _set_edit_data(request, oficio_id, data)
     return data
 
@@ -627,6 +773,7 @@ def _hydrate_edit_session_from_db(oficio: Oficio) -> dict:
         "motorista_nome": motorista_nome,
         "motorista_oficio": oficio.motorista_oficio,
         "motorista_protocolo": oficio.motorista_protocolo,
+        "carona_oficio_referencia_id": str(oficio.carona_oficio_referencia_id or ""),
         "motorista_carona": oficio.motorista_carona,
         "sede_uf": sede_uf,
         "sede_cidade": sede_cidade,
@@ -640,8 +787,10 @@ def _hydrate_edit_session_from_db(oficio: Oficio) -> dict:
         "valor_diarias_extenso": oficio.valor_diarias_extenso,
         "quantidade_diarias": oficio.quantidade_diarias,
         "valor_diarias": oficio.valor_diarias,
-        "destino": oficio.destino,
+        "destino": _calcular_destino_automatico_from_trechos(trechos),
         "erros": {},
+        "custeio_tipo": _normalize_custeio_choice(oficio.custeio_tipo or oficio.custos),
+        "nome_instituicao_custeio": oficio.nome_instituicao_custeio,
     }
 
 
@@ -710,14 +859,30 @@ def _build_step4_context(wizard_data: dict) -> dict:
     )
     motorista_preview = _servidor_payload(motorista_obj) if motorista_obj else None
 
+    destino_code = _calcular_destino_automatico_from_trechos(wizard_data.get("trechos") or [])
+    custeio_code = _normalize_custeio_choice(wizard_data.get("custeio_tipo"))
+    try:
+        custeio_label = Oficio.CusteioTipoChoices(custeio_code).label
+    except ValueError:
+        custeio_label = Oficio.CusteioTipoChoices.UNIDADE.label
+    nome_instituicao_custeio = (wizard_data.get("nome_instituicao_custeio") or "").strip()
+    if custeio_code == Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO and nome_instituicao_custeio:
+        custeio_label = f"{custeio_label} ? {nome_instituicao_custeio}"
+    try:
+        destino_display = Oficio.DestinoChoices(destino_code).label
+    except ValueError:
+        destino_display = Oficio.DestinoChoices.GAB.label
     return {
         "oficio": wizard_data.get("oficio", ""),
         "protocolo": wizard_data.get("protocolo", ""),
         "assunto": assunto_payload["assunto"],
-        "destino": wizard_data.get("destino", ""),
+        "destino": destino_code,
+        "destino_display": destino_display,
         "placa": wizard_data.get("placa", ""),
         "modelo": wizard_data.get("modelo", ""),
         "combustivel": wizard_data.get("combustivel", ""),
+        "custos": custeio_label,
+        "nome_instituicao_custeio": nome_instituicao_custeio,
         "motorista_nome": motorista_nome,
         "motorista_preview": motorista_preview,
         "motorista_carona": wizard_data.get("motorista_carona", False),
@@ -772,6 +937,9 @@ def _validate_edit_wizard_data(draft: dict) -> dict[str, str]:
         motorista_protocolo = (draft.get("motorista_protocolo") or "").strip()
         if not motorista_oficio or not motorista_protocolo:
             erros["motorista_oficio"] = "Informe oficio e protocolo do motorista."
+
+        if not (draft.get("carona_oficio_referencia_id") or "").strip():
+            erros["carona_oficio_referencia"] = "Informe o oficio de referencia da carona."
 
     trechos_data = draft.get("trechos") or []
     if not trechos_data:
@@ -921,18 +1089,16 @@ def _finalize_oficio_from_wizard(wizard_data: dict) -> tuple[Oficio, list[Viajan
     quantidade_diarias = resultado_diarias.quantidade_diarias_str
     valor_diarias = formatar_valor_diarias(resultado_diarias.valor_total_oficio)
 
-    destino_texto = ""
-    if destino_cidade and destino_estado:
-        destino_texto = f"{destino_cidade.nome} / {destino_estado.sigla}"
-
     retorno_saida_cidade = _format_trecho_local(destino_cidade, destino_estado)
     retorno_chegada_cidade = _format_trecho_local(sede_cidade, sede_estado)
+
+    destino_code = _calcular_destino_automatico_from_trechos(trechos_serialized)
 
     with transaction.atomic():
         oficio_obj = Oficio.objects.create(
             oficio=wizard_data.get("oficio", ""),
             protocolo=wizard_data.get("protocolo", ""),
-            destino=destino_texto or wizard_data.get("destino", ""),
+            destino=destino_code,
             assunto=wizard_data.get("assunto", ""),
             tipo_destino=tipo_destino_final,
             estado_sede=sede_estado,
@@ -956,7 +1122,12 @@ def _finalize_oficio_from_wizard(wizard_data: dict) -> tuple[Oficio, list[Viajan
             motorista_protocolo=wizard_data.get("motorista_protocolo", ""),
             motorista_carona=motorista_carona,
             motorista_viajante=motorista_obj,
+            carona_oficio_referencia=_resolve_oficio_by_id(
+                wizard_data.get("carona_oficio_referencia_id")
+            ),
             motivo=wizard_data.get("motivo", ""),
+            custeio_tipo=_normalize_custeio_choice(wizard_data.get("custeio_tipo")),
+            nome_instituicao_custeio=(wizard_data.get("nome_instituicao_custeio") or "").strip(),
             veiculo=veiculo,
             tipo_viatura=veiculo.tipo_viatura if veiculo else "",
         )
@@ -987,9 +1158,8 @@ def _finalize_oficio_from_wizard(wizard_data: dict) -> tuple[Oficio, list[Viajan
                 if trecho.get("chegada_hora")
                 else None,
             )
+            trecho_obj.save()
             trechos_instances.append(trecho_obj)
-
-        Trecho.objects.bulk_create(trechos_instances)
         if viajantes:
             oficio_obj.viajantes.set(viajantes)
 
@@ -1015,6 +1185,9 @@ def _validate_oficio_for_finalize(oficio: Oficio) -> dict[str, str]:
         not oficio.motorista_oficio.strip() or not oficio.motorista_protocolo.strip()
     ):
         erros["motorista_oficio"] = "Informe oficio e protocolo do motorista."
+
+    if oficio.motorista_carona and not oficio.carona_oficio_referencia_id:
+        erros["carona_oficio_referencia"] = "Informe o oficio de referencia da carona."
 
     trechos = list(oficio.trechos.select_related("origem_estado", "origem_cidade", "destino_estado", "destino_cidade").order_by("ordem", "id"))
     if not trechos:
@@ -1047,11 +1220,17 @@ def _validate_oficio_for_finalize(oficio: Oficio) -> dict[str, str]:
         retorno_chegada_dt = _combine_date_time(retorno_chegada_data, retorno_chegada_hora)
         if retorno_saida_dt and retorno_chegada_dt and retorno_chegada_dt < retorno_saida_dt:
             erros["retorno"] = "A chegada do retorno deve ocorrer apos a saida."
-        if trechos and not erros.get("retorno"):
-            primeiro = trechos[0]
-            saida_sede_dt = _combine_date_time(primeiro.saida_data, primeiro.saida_hora)
-            if saida_sede_dt and retorno_chegada_dt and retorno_chegada_dt < saida_sede_dt:
-                erros["retorno"] = "A chegada na sede deve ocorrer apos a saida da sede."
+    if trechos and not erros.get("retorno"):
+        primeiro = trechos[0]
+        saida_sede_dt = _combine_date_time(primeiro.saida_data, primeiro.saida_hora)
+        if saida_sede_dt and retorno_chegada_dt and retorno_chegada_dt < saida_sede_dt:
+            erros["retorno"] = "A chegada na sede deve ocorrer apos a saida da sede."
+
+    if (
+        oficio.custeio_tipo == Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO
+        and not (oficio.nome_instituicao_custeio or "").strip()
+    ):
+        erros["nome_instituicao_custeio"] = "Informe a instituição de custeio."
 
     return erros
 
@@ -1083,15 +1262,10 @@ def _finalize_oficio_draft(oficio: Oficio) -> tuple[Oficio, list[Viajante]]:
         quantidade_servidores=oficio.viajantes.count(),
     )
 
-    destino_texto = ""
-    if destino_cidade and destino_estado:
-        destino_texto = f"{destino_cidade.nome} / {destino_estado.sigla}"
-
     oficio.estado_sede = sede_estado
     oficio.cidade_sede = sede_cidade
     oficio.estado_destino = destino_estado
     oficio.cidade_destino = destino_cidade
-    oficio.destino = destino_texto or oficio.destino
     oficio.retorno_saida_cidade = _format_trecho_local(destino_cidade, destino_estado)
     oficio.retorno_chegada_cidade = _format_trecho_local(sede_cidade, sede_estado)
     oficio.quantidade_diarias = resultado_diarias.quantidade_diarias_str
@@ -1104,6 +1278,28 @@ def _finalize_oficio_draft(oficio: Oficio) -> tuple[Oficio, list[Viajante]]:
 
     return oficio, list(oficio.viajantes.all())
 
+
+
+
+
+
+def _normalize_int(value: str | int | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    raw = str(value).strip()
+    if raw.isdigit():
+        return int(raw)
+    return None
+
+def _resolve_oficio_by_id(value: str | None) -> Oficio | None:
+    if not value:
+        return None
+    raw = str(value).strip()
+    if not raw or not raw.isdigit():
+        return None
+    return Oficio.objects.filter(id=int(raw)).first()
 
 def _resolve_estado(value: str | int | None) -> Estado | None:
     if value is None or value == "":
@@ -1158,30 +1354,20 @@ def _sync_trechos_from_serialized(
         origem_cidade = _resolve_cidade(trecho.get("origem_cidade"), estado=origem_estado)
         destino_estado = _resolve_estado(trecho.get("destino_estado"))
         destino_cidade = _resolve_cidade(trecho.get("destino_cidade"), estado=destino_estado)
-        trechos_instances.append(
-            Trecho(
-                oficio=oficio,
-                ordem=idx + 1,
-                origem_estado=origem_estado,
-                origem_cidade=origem_cidade,
-                destino_estado=destino_estado,
-                destino_cidade=destino_cidade,
-                saida_data=parse_date(trecho.get("saida_data"))
-                if trecho.get("saida_data")
-                else None,
-                saida_hora=parse_time(trecho.get("saida_hora"))
-                if trecho.get("saida_hora")
-                else None,
-                chegada_data=parse_date(trecho.get("chegada_data"))
-                if trecho.get("chegada_data")
-                else None,
-                chegada_hora=parse_time(trecho.get("chegada_hora"))
-                if trecho.get("chegada_hora")
-                else None,
-            )
+        trecho_obj = Trecho(
+            oficio=oficio,
+            ordem=idx + 1,
+            origem_estado=origem_estado,
+            origem_cidade=origem_cidade,
+            destino_estado=destino_estado,
+            destino_cidade=destino_cidade,
+            saida_data=parse_date(trecho.get("saida_data")) if trecho.get("saida_data") else None,
+            saida_hora=parse_time(trecho.get("saida_hora")) if trecho.get("saida_hora") else None,
+            chegada_data=parse_date(trecho.get("chegada_data")) if trecho.get("chegada_data") else None,
+            chegada_hora=parse_time(trecho.get("chegada_hora")) if trecho.get("chegada_hora") else None,
         )
-    if trechos_instances:
-        Trecho.objects.bulk_create(trechos_instances)
+        trecho_obj.save()
+        trechos_instances.append(trecho_obj)
     return trechos_instances
 
 
@@ -1190,6 +1376,8 @@ def _apply_step1_to_oficio(oficio: Oficio, payload: dict) -> None:
     oficio.protocolo = payload.get("protocolo", "").strip()
     oficio.assunto = payload.get("assunto", "").strip()
     oficio.motivo = payload.get("motivo", "").strip()
+    oficio.custeio_tipo = _normalize_custeio_choice(payload.get("custeio_tipo") or payload.get("custos"))
+    oficio.nome_instituicao_custeio = (payload.get("nome_instituicao_custeio") or "").strip()
     oficio.save()
     viajantes_ids = payload.get("viajantes_ids", [])
     if viajantes_ids:
@@ -1232,6 +1420,7 @@ def _apply_step2_to_oficio(oficio: Oficio, payload: dict) -> None:
     oficio.motorista_protocolo = payload.get("motorista_protocolo", "").strip()
     oficio.motorista_carona = motorista_carona
     oficio.motorista_viajante = motorista_obj
+    oficio.carona_oficio_referencia = _resolve_oficio_by_id(payload.get("carona_oficio_referencia_id"))
     oficio.veiculo = veiculo
     if veiculo and veiculo.tipo_viatura:
         oficio.tipo_viatura = veiculo.tipo_viatura
@@ -1274,11 +1463,6 @@ def _apply_step3_to_oficio(oficio: Oficio, payload: dict) -> None:
     retorno_chegada_cidade = _format_trecho_local(sede_cidade, sede_estado)
     oficio.retorno_saida_cidade = retorno_saida_cidade
     oficio.retorno_chegada_cidade = retorno_chegada_cidade
-
-    destino_texto = ""
-    if destino_cidade and destino_estado:
-        destino_texto = f"{destino_cidade.nome} / {destino_estado.sigla}"
-    oficio.destino = destino_texto or oficio.destino
 
     tipo_destino = oficio.tipo_destino
     retorno_saida_data = oficio.retorno_saida_data
@@ -1498,6 +1682,7 @@ def dashboard_data_api(request):
 @require_http_methods(["GET", "POST"])
 def formulario(request):
     data = _get_wizard_data(request)
+    erro = ""
     if request.method == "GET":
         if not request.GET.get("resume"):
             _clear_wizard_data(request)
@@ -1515,6 +1700,8 @@ def formulario(request):
         oficio_val = _formatar_oficio_numero(request.POST.get("oficio", "").strip())
         protocolo_val = _formatar_protocolo(request.POST.get("protocolo", "").strip())
         motivo_val = request.POST.get("motivo", "").strip()
+        custeio_tipo_val = _normalize_custeio_choice(request.POST.get("custeio_tipo") or request.POST.get("custos"))
+        nome_instituicao_custeio = request.POST.get("nome_instituicao_custeio", "").strip()
         servidores_form = ServidoresSelectForm(request.POST)
         if servidores_form.is_valid():
             viajantes_ids = [
@@ -1530,19 +1717,23 @@ def formulario(request):
             "protocolo": protocolo_val,
             "motivo": motivo_val,
             "viajantes_ids": viajantes_ids,
+            "custeio_tipo": custeio_tipo_val,
+            "nome_instituicao_custeio": nome_instituicao_custeio,
         }
         _apply_step1_to_oficio(oficio_obj, payload)
         data = _update_wizard_data(request, payload)
-
-        if goto_step == "1":
-            return redirect("formulario")
-        if goto_step == "2":
+        if custeio_tipo_val == Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO and not nome_instituicao_custeio:
+            erro = "Informe a instituição de custeio."
+        if not erro:
+            if goto_step == "1":
+                return redirect("formulario")
+            if goto_step == "2":
+                return redirect("oficio_step2")
+            if goto_step == "3":
+                return redirect("oficio_step3")
+            if goto_step == "4":
+                return redirect("oficio_step4")
             return redirect("oficio_step2")
-        if goto_step == "3":
-            return redirect("oficio_step3")
-        if goto_step == "4":
-            return redirect("oficio_step4")
-        return redirect("oficio_step2")
 
     selected_ids = [str(item) for item in data.get("viajantes_ids", [])]
     selected_viajantes = list(
@@ -1560,12 +1751,16 @@ def formulario(request):
             "oficio": data.get("oficio", ""),
             "protocolo": data.get("protocolo", ""),
             "motivo": data.get("motivo", ""),
+            "custeio_tipo": data.get("custeio_tipo", Oficio.CusteioTipoChoices.UNIDADE),
+            "nome_instituicao_custeio": data.get("nome_instituicao_custeio", ""),
+            "custeio_tipo_choices": Oficio.CusteioTipoChoices.choices,
             "data_criacao": data_criacao,
             "selected_ids": selected_ids,
             "selected_viajantes": selected_viajantes,
             "servidores_form": servidores_form,
             "status_label": status_context["status_label"],
             "status_class": status_context["status_class"],
+            "erro": erro,
         },
     )
 
@@ -1590,6 +1785,7 @@ def oficio_step2(request):
         tipo_viatura_val = request.POST.get("tipo_viatura", "").strip()
         motorista_form = MotoristaSelectForm(request.POST)
         motorista_id = ""
+        motorista_obj = None
         if motorista_form.is_valid():
             motorista_obj = motorista_form.cleaned_data.get("motorista")
             if motorista_obj:
@@ -1597,6 +1793,8 @@ def oficio_step2(request):
         motorista_nome = request.POST.get("motorista_nome", "").strip()
         motorista_oficio = request.POST.get("motorista_oficio", "").strip()
         motorista_protocolo = request.POST.get("motorista_protocolo", "").strip()
+        carona_oficio_referencia_id = (request.POST.get("carona_oficio_referencia") or "").strip()
+        carona_oficio_referencia = _resolve_oficio_by_id(carona_oficio_referencia_id)
 
         placa_norm = _normalizar_placa(placa_val) if placa_val else ""
         if placa_norm and (not modelo_val or not combustivel_val):
@@ -1612,6 +1810,14 @@ def oficio_step2(request):
         elif motorista_nome:
             motorista_carona = True
 
+        erro_carona_ref = ""
+        if motorista_carona and not carona_oficio_referencia:
+            erro_carona_ref = "Informe o oficio de referencia da carona."
+
+        if not motorista_carona:
+            carona_oficio_referencia = None
+            carona_oficio_referencia_id = ""
+
         oficio_obj = _get_wizard_oficio(request, create=True)
         payload = {
             "placa": placa_norm or placa_val,
@@ -1623,7 +1829,36 @@ def oficio_step2(request):
             "motorista_oficio": motorista_oficio,
             "motorista_protocolo": motorista_protocolo,
             "motorista_carona": motorista_carona,
+            "carona_oficio_referencia_id": str(carona_oficio_referencia.id) if carona_oficio_referencia else "",
         }
+        if erro_carona_ref:
+            status_context = _wizard_status_context(oficio_obj)
+            return render(
+                request,
+                "viagens/oficio_step2.html",
+                {
+                    "viajantes": Viajante.objects.order_by("nome"),
+                    "placa": payload.get("placa", ""),
+                    "modelo": payload.get("modelo", ""),
+                    "combustivel": payload.get("combustivel", ""),
+                    "tipo_viatura": payload.get("tipo_viatura", ""),
+                    "combustivel_choices": _get_combustivel_choices(),
+                    "motorista_id": payload.get("motorista_id", ""),
+                    "motorista_nome": payload.get("motorista_nome", ""),
+                    "motorista_oficio": payload.get("motorista_oficio", ""),
+                    "motorista_protocolo": payload.get("motorista_protocolo", ""),
+                    "motorista_carona": motorista_carona,
+                    "viajantes_ids": viajantes_ids,
+                    "preview_viajantes": preview_viajantes,
+                    "motorista_preview": motorista_obj if motorista_id else None,
+                    "motorista_form": motorista_form,
+                    "status_label": status_context["status_label"],
+                    "status_class": status_context["status_class"],
+                    "oficios_referencia": _get_carona_oficios_referencia(),
+                    "carona_oficio_referencia_id": _normalize_int(carona_oficio_referencia.id if carona_oficio_referencia else None),
+                    "erro_carona_ref": erro_carona_ref,
+                },
+            )
         _apply_step2_to_oficio(oficio_obj, payload)
         data = _update_wizard_data(request, payload)
         viajantes_ids = data.get("viajantes_ids", [])
@@ -1680,6 +1915,9 @@ def oficio_step2(request):
             "motorista_form": motorista_form,
             "status_label": status_context["status_label"],
             "status_class": status_context["status_class"],
+            "oficios_referencia": _get_carona_oficios_referencia(),
+            "carona_oficio_referencia_id": _normalize_int(data.get("carona_oficio_referencia_id")),
+            "erro_carona_ref": "",
         },
     )
 
@@ -1798,6 +2036,31 @@ def oficio_step3(request):
             },
         )
         oficio_obj = _get_wizard_oficio(request, create=True)
+        _apply_step1_to_oficio(
+            oficio_obj,
+            {
+                "oficio": data.get("oficio", ""),
+                "protocolo": data.get("protocolo", ""),
+                "motivo": data.get("motivo", ""),
+                "viajantes_ids": data.get("viajantes_ids", []),
+                "custeio_tipo": data.get("custeio_tipo", Oficio.CusteioTipoChoices.UNIDADE),
+                "nome_instituicao_custeio": data.get("nome_instituicao_custeio", ""),
+            },
+        )
+        _apply_step2_to_oficio(
+            oficio_obj,
+            {
+                "placa": data.get("placa", ""),
+                "modelo": data.get("modelo", ""),
+                "combustivel": data.get("combustivel", ""),
+                "tipo_viatura": data.get("tipo_viatura", ""),
+                "motorista_id": data.get("motorista_id", ""),
+                "motorista_nome": data.get("motorista_nome", ""),
+                "motorista_oficio": data.get("motorista_oficio", ""),
+                "motorista_protocolo": data.get("motorista_protocolo", ""),
+                # assume driver carona determined from data
+            },
+        )
         _apply_step3_to_oficio(
             oficio_obj,
             {
@@ -1811,7 +2074,6 @@ def oficio_step3(request):
                 "trechos": trechos_serialized,
             },
         )
-
         if goto_step == "1":
             return redirect(f"{reverse('formulario')}?resume=1")
         if goto_step == "2":
@@ -1867,9 +2129,12 @@ def oficio_step3(request):
             "sede_label": sede_label,
             "destinos": destinos_display,
             "destinos_total_forms": len(destinos_display),
-            "destinos_order": destinos_order,
             "status_label": status_context["status_label"],
             "status_class": status_context["status_class"],
+            "destinos_order": destinos_order,
+            "destino_display": _destino_label_from_code(
+                _calcular_destino_automatico_from_trechos(trechos_session)
+            ),
         },
     )
 
@@ -1913,6 +2178,8 @@ def oficio_edit_step1(request, oficio_id: int):
         oficio_val = _formatar_oficio_numero(request.POST.get("oficio", "").strip())
         protocolo_val = _formatar_protocolo(request.POST.get("protocolo", "").strip())
         motivo_val = request.POST.get("motivo", "").strip()
+        custeio_tipo_val = _normalize_custeio_choice(request.POST.get("custeio_tipo") or request.POST.get("custos"))
+        nome_instituicao_custeio = request.POST.get("nome_instituicao_custeio", "").strip()
         servidores_form = ServidoresSelectForm(request.POST)
         if servidores_form.is_valid():
             viajantes_ids = [
@@ -1930,6 +2197,8 @@ def oficio_edit_step1(request, oficio_id: int):
                 "protocolo": protocolo_val,
                 "motivo": motivo_val,
                 "viajantes_ids": viajantes_ids,
+                "custeio_tipo": custeio_tipo_val,
+                "nome_instituicao_custeio": nome_instituicao_custeio,
                 "erros": {},
             },
         )
@@ -1961,6 +2230,9 @@ def oficio_edit_step1(request, oficio_id: int):
             "data_criacao": data_criacao,
             "servidores_form": servidores_form,
             "selected_viajantes": selected_viajantes,
+            "custeio_tipo": data.get("custeio_tipo", Oficio.CusteioTipoChoices.UNIDADE),
+            "nome_instituicao_custeio": data.get("nome_instituicao_custeio", ""),
+            "custeio_tipo_choices": Oficio.CusteioTipoChoices.choices,
         },
     )
 
@@ -1983,6 +2255,7 @@ def oficio_edit_step2(request, oficio_id: int):
         tipo_viatura_val = request.POST.get("tipo_viatura", "").strip()
         motorista_form = MotoristaSelectForm(request.POST)
         motorista_id = ""
+        motorista_obj = None
         if motorista_form.is_valid():
             motorista_obj = motorista_form.cleaned_data.get("motorista")
             if motorista_obj:
@@ -1990,6 +2263,8 @@ def oficio_edit_step2(request, oficio_id: int):
         motorista_nome = request.POST.get("motorista_nome", "").strip()
         motorista_oficio = request.POST.get("motorista_oficio", "").strip()
         motorista_protocolo = request.POST.get("motorista_protocolo", "").strip()
+        carona_oficio_referencia_id = (request.POST.get("carona_oficio_referencia") or "").strip()
+        carona_oficio_referencia = _resolve_oficio_by_id(carona_oficio_referencia_id)
 
         placa_norm = _normalizar_placa(placa_val) if placa_val else ""
         if placa_norm and (not modelo_val or not combustivel_val):
@@ -2005,6 +2280,42 @@ def oficio_edit_step2(request, oficio_id: int):
         elif motorista_nome:
             motorista_carona = True
 
+        erro_carona_ref = ""
+        if motorista_carona and not carona_oficio_referencia:
+            erro_carona_ref = "Informe o oficio de referencia da carona."
+
+        if not motorista_carona:
+            carona_oficio_referencia = None
+            carona_oficio_referencia_id = ""
+
+        if erro_carona_ref:
+            return render(
+                request,
+                "viagens/oficio_edit_step2.html",
+                {
+                    "oficio_id": oficio_id,
+                    "placa": placa_norm or placa_val,
+                    "modelo": modelo_val,
+                    "combustivel": combustivel_val,
+                    "tipo_viatura": tipo_viatura_val,
+                    "combustivel_choices": _get_combustivel_choices(),
+                    "motorista_id": motorista_id,
+                    "motorista_nome": motorista_nome,
+                    "motorista_oficio": motorista_oficio,
+                    "motorista_protocolo": motorista_protocolo,
+                    "motorista_carona": motorista_carona,
+                    "oficio": data.get("oficio", ""),
+                    "protocolo": data.get("protocolo", ""),
+                    "motivo": data.get("motivo", ""),
+                    "viajantes_ids": viajantes_ids,
+                    "preview_viajantes": preview_viajantes,
+                    "motorista_preview": motorista_obj if motorista_id else None,
+                    "motorista_form": motorista_form,
+                    "oficios_referencia": _get_carona_oficios_referencia(exclude_id=oficio_id),
+                    "carona_oficio_referencia_id": _normalize_int(carona_oficio_referencia.id if carona_oficio_referencia else None),
+                    "erro_carona_ref": erro_carona_ref,
+                },
+            )
         data = _update_edit_data(
             request,
             oficio_id,
@@ -2018,6 +2329,7 @@ def oficio_edit_step2(request, oficio_id: int):
                 "motorista_oficio": motorista_oficio,
                 "motorista_protocolo": motorista_protocolo,
                 "motorista_carona": motorista_carona,
+                "carona_oficio_referencia_id": str(carona_oficio_referencia.id) if carona_oficio_referencia else "",
                 "erros": {},
             },
         )
@@ -2062,6 +2374,9 @@ def oficio_edit_step2(request, oficio_id: int):
             "preview_viajantes": preview_viajantes,
             "motorista_preview": motorista_preview,
             "motorista_form": motorista_form,
+            "oficios_referencia": _get_carona_oficios_referencia(exclude_id=oficio_id),
+            "carona_oficio_referencia_id": _normalize_int(data.get("carona_oficio_referencia_id")),
+            "erro_carona_ref": "",
         },
     )
 
@@ -2364,10 +2679,6 @@ def oficio_edit_save(request, oficio_id: int):
     quantidade_diarias = resultado_diarias.quantidade_diarias_str
     valor_diarias = formatar_valor_diarias(resultado_diarias.valor_total_oficio)
 
-    destino_texto = ""
-    if destino_cidade and destino_estado:
-        destino_texto = f"{destino_cidade.nome} / {destino_estado.sigla}"
-
     retorno_saida_cidade = _format_trecho_local(destino_cidade, destino_estado)
     retorno_chegada_cidade = _format_trecho_local(sede_cidade, sede_estado)
 
@@ -2401,7 +2712,6 @@ def oficio_edit_save(request, oficio_id: int):
         oficio_obj.protocolo = draft.get("protocolo", "")
         oficio_obj.assunto = build_assunto(oficio_obj, temp_trechos)["assunto"]
         oficio_obj.tipo_destino = tipo_destino_val
-        oficio_obj.destino = destino_texto or draft.get("destino", "")
         oficio_obj.estado_sede = sede_estado
         oficio_obj.cidade_sede = sede_cidade
         oficio_obj.estado_destino = destino_estado
@@ -2426,6 +2736,9 @@ def oficio_edit_save(request, oficio_id: int):
         oficio_obj.motorista_protocolo = draft.get("motorista_protocolo", "")
         oficio_obj.motorista_carona = motorista_carona
         oficio_obj.motorista_viajante = motorista_obj
+        oficio_obj.carona_oficio_referencia = _resolve_oficio_by_id(
+            draft.get("carona_oficio_referencia_id")
+        )
         oficio_obj.motivo = draft.get("motivo", "")
         oficio_obj.veiculo = veiculo
         oficio_obj.save()
@@ -2438,29 +2751,20 @@ def oficio_edit_save(request, oficio_id: int):
             origem_cidade_obj = _resolve_cidade(trecho.get("origem_cidade"))
             destino_estado_obj = _resolve_estado(trecho.get("destino_estado"))
             destino_cidade_obj = _resolve_cidade(trecho.get("destino_cidade"))
-            trechos_instances.append(
-                Trecho(
-                    oficio=oficio_obj,
-                    ordem=idx + 1,
-                    origem_estado=origem_estado_obj,
-                    origem_cidade=origem_cidade_obj,
-                    destino_estado=destino_estado_obj,
-                    destino_cidade=destino_cidade_obj,
-                    saida_data=parse_date(trecho.get("saida_data"))
-                    if trecho.get("saida_data")
-                    else None,
-                    saida_hora=parse_time(trecho.get("saida_hora"))
-                    if trecho.get("saida_hora")
-                    else None,
-                    chegada_data=parse_date(trecho.get("chegada_data"))
-                    if trecho.get("chegada_data")
-                    else None,
-                    chegada_hora=parse_time(trecho.get("chegada_hora"))
-                    if trecho.get("chegada_hora")
-                    else None,
-                )
+            trecho_obj = Trecho(
+                oficio=oficio_obj,
+                ordem=idx + 1,
+                origem_estado=origem_estado_obj,
+                origem_cidade=origem_cidade_obj,
+                destino_estado=destino_estado_obj,
+                destino_cidade=destino_cidade_obj,
+                saida_data=parse_date(trecho.get("saida_data")) if trecho.get("saida_data") else None,
+                saida_hora=parse_time(trecho.get("saida_hora")) if trecho.get("saida_hora") else None,
+                chegada_data=parse_date(trecho.get("chegada_data")) if trecho.get("chegada_data") else None,
+                chegada_hora=parse_time(trecho.get("chegada_hora")) if trecho.get("chegada_hora") else None,
             )
-        Trecho.objects.bulk_create(trechos_instances)
+            trecho_obj.save()
+            trechos_instances.append(trecho_obj)
 
     _clear_edit_data(request, oficio_id)
     return redirect(f"{reverse('oficio_edit_step4', args=[oficio_id])}?salvo=1")
@@ -2483,6 +2787,7 @@ def viajante_cadastro(request):
         telefone = _formatar_telefone(request.POST.get("telefone", ""))
         if cargo_novo:
             cargo = cargo_novo
+        cargo = _resolver_cargo_nome(cargo)
         if nome and rg and cpf and cargo and _nome_completo(nome):
             _ensure_cargo_exists(cargo)
             Viajante.objects.create(
@@ -2715,6 +3020,7 @@ def viajante_editar(request, viajante_id: int):
         telefone = _formatar_telefone(request.POST.get("telefone", ""))
         if cargo_novo:
             cargo = cargo_novo
+        cargo = _resolver_cargo_nome(cargo)
 
         if not nome or not _nome_completo(nome):
             erros["nome"] = "Informe nome e sobrenome."
@@ -2810,6 +3116,8 @@ def oficio_editar(request, oficio_id: int):
         data_criacao = timezone.localtime(oficio.created_at).strftime("%d/%m/%Y")
     motorista_carona = oficio.motorista_carona
     motorista_preview = oficio.motorista_viajante
+    custeio_tipo_val = _normalize_custeio_choice(oficio.custeio_tipo or oficio.custos)
+    nome_instituicao_custeio = oficio.nome_instituicao_custeio
     TrechoFormSet = inlineformset_factory(
         Oficio,
         Trecho,
@@ -2859,6 +3167,8 @@ def oficio_editar(request, oficio_id: int):
             motorista_preview = motorista_obj or motorista_preview
         motorista_oficio = request.POST.get("motorista_oficio", "").strip()
         motorista_protocolo = request.POST.get("motorista_protocolo", "").strip()
+        carona_oficio_referencia_id = (request.POST.get("carona_oficio_referencia") or "").strip()
+        carona_oficio_referencia = _resolve_oficio_by_id(carona_oficio_referencia_id)
         motivo = request.POST.get("motivo", "").strip()
         tipo_destino_val = (request.POST.get("tipo_destino") or "").strip().upper()
         retorno_saida_data_val = request.POST.get("retorno_saida_data", "").strip()
@@ -2866,6 +3176,8 @@ def oficio_editar(request, oficio_id: int):
         retorno_chegada_data_val = request.POST.get("retorno_chegada_data", "").strip()
         retorno_chegada_hora_val = request.POST.get("retorno_chegada_hora", "").strip()
         valor_diarias_extenso_val = request.POST.get("valor_diarias_extenso", "").strip()
+        custeio_tipo_val = _normalize_custeio_choice(request.POST.get("custeio_tipo") or request.POST.get("custos"))
+        nome_instituicao_custeio = request.POST.get("nome_instituicao_custeio", "").strip()
         servidores_ids = []
         if servidores_form.is_valid():
             servidores_ids = [
@@ -2878,16 +3190,25 @@ def oficio_editar(request, oficio_id: int):
         elif motorista_nome_manual:
             motorista_carona = True
 
+        if not motorista_carona:
+            carona_oficio_referencia = None
+
         if not oficio_val:
             erros["oficio"] = "Informe o numero do oficio."
         if not protocolo:
             erros["protocolo"] = "Informe o protocolo."
         if motorista_carona and (not motorista_oficio or not motorista_protocolo):
             erros["motorista_oficio"] = "Informe oficio e protocolo do motorista."
+
+        if motorista_carona and not carona_oficio_referencia:
+            erros["carona_oficio_referencia"] = "Informe o oficio de referencia da carona."
         if not formset.is_valid():
             erros["trechos"] = "Revise os trechos do roteiro."
         if not tipo_destino_val:
             erros["tipo_destino"] = "Selecione o tipo de destino."
+
+        if custeio_tipo_val == Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO and not nome_instituicao_custeio:
+            erros["nome_instituicao_custeio"] = "Informe a instituição de custeio."
 
         if not erros:
             forms_validas = [form for form in formset.forms if form.cleaned_data]
@@ -2952,16 +3273,12 @@ def oficio_editar(request, oficio_id: int):
                 chegada_sede=retorno_chegada_dt,
                 quantidade_servidores=len(servidores_ids),
             )
-            destino_texto = ""
-            if destino_cidade and destino_estado:
-                destino_texto = f"{destino_cidade.nome} / {destino_estado.sigla}"
             retorno_saida_cidade = _format_trecho_local(destino_cidade, destino_estado)
             retorno_chegada_cidade = _format_trecho_local(sede_cidade, sede_estado)
             oficio.oficio = oficio_val
             oficio.protocolo = protocolo
             oficio.assunto = assunto
             oficio.tipo_destino = tipo_destino_val
-            oficio.destino = destino_texto or oficio.destino
             oficio.estado_sede = sede_estado
             oficio.cidade_sede = sede_cidade
             oficio.estado_destino = destino_estado
@@ -2986,7 +3303,10 @@ def oficio_editar(request, oficio_id: int):
             oficio.motorista_protocolo = motorista_protocolo
             oficio.motorista_carona = motorista_carona
             oficio.motorista_viajante = motorista_obj
+            oficio.carona_oficio_referencia = carona_oficio_referencia
             oficio.motivo = motivo
+            oficio.custeio_tipo = custeio_tipo_val
+            oficio.nome_instituicao_custeio = nome_instituicao_custeio
             with transaction.atomic():
                 oficio.save()
                 if servidores_form.is_valid():
@@ -3044,12 +3364,17 @@ def oficio_editar(request, oficio_id: int):
             "data_criacao": data_criacao,
             "combustivel_choices": _get_combustivel_choices(),
             "tipo_destino": tipo_destino_val,
+            "custeio_tipo": custeio_tipo_val,
+            "nome_instituicao_custeio": nome_instituicao_custeio,
+            "custeio_tipo_choices": Oficio.CusteioTipoChoices.choices,
             "retorno_saida_data": retorno_saida_data_val,
             "retorno_saida_hora": retorno_saida_hora_val,
             "retorno_chegada_data": retorno_chegada_data_val,
             "retorno_chegada_hora": retorno_chegada_hora_val,
             "valor_diarias_extenso": valor_diarias_extenso_val,
             "quantidade_servidores": len(selected_viajantes),
+            "oficios_referencia": _get_carona_oficios_referencia(exclude_id=oficio.id),
+            "carona_oficio_referencia_id": _normalize_int(oficio.carona_oficio_referencia_id),
         },
     )
 
@@ -3225,11 +3550,11 @@ def cargo_criar(request):
     except Exception:
         payload = request.POST
 
-    nome = (payload.get("nome") or "").strip()
+    nome = " ".join((payload.get("nome") or "").strip().split())
     if not nome:
         return JsonResponse({"error": "Informe o nome do cargo."}, status=400)
 
-    cargo = Cargo.objects.filter(nome__iexact=nome).first()
+    cargo = _buscar_cargo_por_key(nome)
     if cargo:
         return JsonResponse({"id": cargo.id, "nome": cargo.nome})
 
@@ -3301,6 +3626,7 @@ def modal_viajante_form(request):
         telefone = _formatar_telefone(request.POST.get("telefone", ""))
         if cargo_novo:
             cargo = cargo_novo
+        cargo = _resolver_cargo_nome(cargo)
 
         erros = {}
         if not nome or not _nome_completo(nome):
