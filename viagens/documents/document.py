@@ -8,7 +8,7 @@ import tempfile
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterable
 
 try:
     import pythoncom
@@ -20,8 +20,6 @@ except ImportError:  # pragma: no cover - optional Windows dependency
 from django.conf import settings
 from docx import Document as DocxFactory
 from docx.document import Document as DocxDocument
-from docx.oxml.ns import qn
-from docx.shared import Pt
 from num2words import num2words
 
 from viagens.models import Cidade, ConfiguracaoOficio, Estado, Oficio, Trecho, Viajante
@@ -32,12 +30,6 @@ from viagens.services.text import title_case_pt
 logger = logging.getLogger(__name__)
 
 PLACEHOLDER_RE = re.compile(r"{{\s*([^}]+?)\s*}}")
-
-# =========================
-# AJUSTES DE LAYOUT
-# =========================
-FONT_NAME = "Times New Roman"
-FONT_SIZE_PT = 8
 
 # “largura” aproximada para estimar quebra em tabela
 NAME_MAX_VISUAL = 35.0
@@ -368,17 +360,17 @@ def motorista_para_documento(oficio: Oficio) -> str:
     return f"{_title_case(nome)} (carona)"
 
 
-def build_col_solicitacao(viajantes: list[Viajante], assunto_text: str) -> list[RichLine]:
-    lines: list[RichLine] = []
+def build_col_solicitacao(viajantes: list[Viajante], assunto_text: str) -> str:
+    lines: list[str] = []
     texto = assunto_text or "-"
     for idx in range(len(viajantes)):
-        lines.append([(texto, False)])
+        lines.append(texto)
         if idx < len(viajantes) - 1:
             lines.extend(_blank_lines(1))
-    return lines or [[(NBSP, False)]]
+    return "\n".join(lines or [NBSP])
 
 
-def build_col_retorno(oficio: Oficio, trechos: list[Trecho]) -> tuple[list[RichLine], list[RichLine]]:
+def build_col_retorno(oficio: Oficio, trechos: list[Trecho]) -> tuple[str, str]:
     saida_cidade = oficio.retorno_saida_cidade or ""
     if not saida_cidade and trechos:
         saida_cidade = _fmt_local(trechos[-1].destino_cidade, trechos[-1].destino_estado)
@@ -403,7 +395,7 @@ def build_col_retorno(oficio: Oficio, trechos: list[Trecho]) -> tuple[list[RichL
 
     saida_line = saida_text or NBSP
     chegada_line = chegada_text or NBSP
-    return ([[(saida_line, True)]], [[(chegada_line, True)]])
+    return (saida_line, chegada_line)
 
 
 def get_config_oficio() -> dict[str, str]:
@@ -421,22 +413,6 @@ def get_config_oficio() -> dict[str, str]:
     }
 
 
-# =========================
-# FONTE (garante Times 8)
-# =========================
-def _apply_font(run, font_name: str = FONT_NAME, font_size_pt: int = FONT_SIZE_PT):
-    run.font.name = font_name
-    run.font.size = Pt(font_size_pt)
-
-    # garante Times em todos os “slots” do Word
-    rpr = run._element.get_or_add_rPr()
-    rfonts = rpr.get_or_add_rFonts()
-    rfonts.set(qn("w:ascii"), font_name)
-    rfonts.set(qn("w:hAnsi"), font_name)
-    rfonts.set(qn("w:cs"), font_name)
-    rfonts.set(qn("w:eastAsia"), font_name)
-
-
 def _remove_paragraph(paragraph) -> None:
     element = paragraph._element
     parent = element.getparent()
@@ -446,9 +422,12 @@ def _remove_paragraph(paragraph) -> None:
 
 # Helper para substituir texto preservando o parágrafo (python-docx)
 def _replace_paragraph_text(paragraph, new_text: str) -> None:
-    paragraph.clear()
-    run = paragraph.add_run(new_text or "")
-    _apply_font(run)
+    if not paragraph.runs:
+        paragraph.add_run(new_text or "")
+        return
+    paragraph.runs[0].text = new_text or ""
+    for run in paragraph.runs[1:]:
+        run.text = ""
 
 
 # =========================
@@ -640,13 +619,6 @@ def _replace_placeholders_across_runs(paragraph, mapping: dict[str, str]) -> Non
         last_run.text = suffix
 
 
-# =========================
-# MULTILINHA “RICA” (negrito/normal)
-# =========================
-RunPart = Tuple[str, bool]   # (texto, bold)
-RichLine = List[RunPart]     # uma “linha”
-
-
 def _visual_length(text: str) -> float:
     total = 0.0
     for ch in text:
@@ -672,78 +644,53 @@ def _estimate_wrapped_lines(text: str, max_visual: float) -> int:
     return lines
 
 
-def _blank_lines(n: int) -> list[RichLine]:
-    return [[(NBSP, False)] for _ in range(max(0, n))]
-
-
-def _write_rich_lines(p, lines: list[RichLine]):
-    p.clear()
-    first_line = True
-
-    for line in lines:
-        if not first_line:
-            p.add_run().add_break()
-        first_line = False
-
-        for text, bold in line:
-            run = p.add_run(text)
-            run.bold = bold
-            _apply_font(run)
-
-    p.paragraph_format.space_before = Pt(0)
-    p.paragraph_format.space_after = Pt(0)
-
-
-def replace_placeholder_rich(doc: DocxDocument, key: str, lines: list[RichLine]):
-    token = f"{{{{{key}}}}}"
-    for p in _iter_all_paragraphs(doc):
-        full = "".join(r.text for r in p.runs).strip()
-        if full == token:
-            _write_rich_lines(p, lines)
+def _blank_lines(n: int) -> list[str]:
+    return [NBSP for _ in range(max(0, n))]
 
 
 # =========================
 # BLOCOS: SERVIDORES
 # =========================
-def build_col_nomes(viajantes: list[Viajante]) -> list[RichLine]:
-    lines: list[RichLine] = []
+def build_col_nomes(viajantes: list[Viajante]) -> str:
+    lines: list[str] = []
     for i, v in enumerate(viajantes):
         nome = _title_case(v.nome or "")
-        lines.append([(nome or NBSP, False)])
+        lines.append(nome or NBSP)
 
         if i < len(viajantes) - 1:
             used = _estimate_wrapped_lines(nome, NAME_MAX_VISUAL)
             blanks = 2 if used <= 1 else 1
             lines.extend(_blank_lines(blanks))
 
-    return lines or [[(NBSP, False)]]
+    return "\n".join(lines or [NBSP])
 
 
-def build_col_rgcpf(viajantes: list[Viajante]) -> list[RichLine]:
-    lines: list[RichLine] = []
+def build_col_rgcpf(viajantes: list[Viajante]) -> str:
+    lines: list[str] = []
     for i, v in enumerate(viajantes):
         rg = (v.rg or "").strip() or "-"
         cpf = (v.cpf or "").strip() or "-"
-        lines.append([(f"RG: {rg} / CPF: {cpf}", False)])
+        lines.append(f"RG: {rg}")
+        lines.append(f"CPF: {cpf}")
 
         if i < len(viajantes) - 1:
             lines.extend(_blank_lines(1))
 
-    return lines or [[(NBSP, False)]]
+    return "\n".join(lines or [NBSP])
 
 
-def build_col_cargo(viajantes: list[Viajante]) -> list[RichLine]:
-    lines: list[RichLine] = []
+def build_col_cargo(viajantes: list[Viajante]) -> str:
+    lines: list[str] = []
     for i, v in enumerate(viajantes):
         cargo = (v.cargo or "").strip()
-        lines.append([(cargo or NBSP, True)])  # cargo sempre em negrito
+        lines.append(cargo or NBSP)
 
         if i < len(viajantes) - 1:
             used = _estimate_wrapped_lines(cargo, CARGO_MAX_VISUAL)
             blanks = 2 if used <= 1 else 1
             lines.extend(_blank_lines(blanks))
 
-    return lines or [[(NBSP, False)]]
+    return "\n".join(lines or [NBSP])
 
 
 def _build_custos_block(oficio: Oficio) -> str:
@@ -771,9 +718,13 @@ def _build_custos_block(oficio: Oficio) -> str:
 
     lines = []
     for choice in options:
-        marker = "\u2612" if choice.value == selected else "\u2610"
+        marker = "( X )" if choice.value == selected else "(   )"
         label = labels.get(choice.value, choice.label)
-        if choice.value == Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO.value and choice.value == selected and instituicao:
+        if (
+            choice.value == Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO.value
+            and choice.value == selected
+            and instituicao
+        ):
             label = f"{label}: {instituicao}"
         lines.append(f"{marker} {label}")
 
@@ -795,9 +746,9 @@ def build_destinos_bloco(trechos: list[Trecho]) -> str:
     return ", ".join(destinos)
 
 
-def build_roteiro_ida(trechos: list[Trecho]) -> tuple[list[RichLine], list[RichLine]]:
-    saida_lines: list[RichLine] = []
-    chegada_lines: list[RichLine] = []
+def build_roteiro_ida(trechos: list[Trecho]) -> tuple[str, str]:
+    saida_lines: list[str] = []
+    chegada_lines: list[str] = []
 
     for i, t in enumerate(trechos):
         origem = _fmt_local(t.origem_cidade, t.origem_estado)
@@ -806,37 +757,17 @@ def build_roteiro_ida(trechos: list[Trecho]) -> tuple[list[RichLine], list[RichL
         saida_dt = _join([_fmt_date(t.saida_data), _fmt_time(t.saida_hora)], " ")
         chegada_dt = _join([_fmt_date(t.chegada_data), _fmt_time(t.chegada_hora)], " ")
 
-        # Linha inteira em negrito (como você pediu)
-        saida_lines.append([(f"Saída {origem}: {saida_dt}".strip() or NBSP, True)])
-        chegada_lines.append([(f"Chegada {destino}: {chegada_dt}".strip() or NBSP, True)])
+        saida_lines.append(f"Saída {origem}: {saida_dt}".strip() or NBSP)
+        chegada_lines.append(f"Chegada {destino}: {chegada_dt}".strip() or NBSP)
 
         if i < len(trechos) - 1:
             saida_lines.extend(_blank_lines(1))
             chegada_lines.extend(_blank_lines(1))
 
-    return (saida_lines or [[(NBSP, False)]], chegada_lines or [[(NBSP, False)]])
-
-
-# =========================
-# ROTEIRO DE RETORNO (mantém negrito mesmo com placeholders)
-# =========================
-def _patch_roteiro_retorno(doc: DocxDocument, mapping: dict[str, str]):
-    """
-    No seu modelo o retorno está como:
-      "Saída {{destino}}: {{data_hora_saida_destino}}"
-      "Chegada {{sede}}: {{data_hora_chegada_sede}}"
-    O replace run-a-run pode falhar se o Word quebrar os placeholders em runs.
-    Aqui a gente identifica esses parágrafos e reescreve como rich text.
-    """
-    for p in _iter_all_paragraphs(doc):
-        full = "".join(r.text for r in p.runs).strip()
-        if "{{data_hora_saida_destino}}" in full:
-            # substitui TUDO e deixa a linha inteira em negrito
-            line = _sub_placeholders(full, mapping).strip()
-            _write_rich_lines(p, [[(line or NBSP, True)]])
-        elif "{{data_hora_chegada_sede}}" in full:
-            line = _sub_placeholders(full, mapping).strip()
-            _write_rich_lines(p, [[(line or NBSP, True)]])
+    return (
+        "\n".join(saida_lines or [NBSP]),
+        "\n".join(chegada_lines or [NBSP]),
+    )
 
 
 # =========================
@@ -880,23 +811,21 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     destinos_text, roteiro_ida_text, roteiro_retorno_text = build_destinos_e_roteiros(oficio, trechos)
     assunto_linha = (oficio.assunto or "").strip()
     assunto_tipo = (oficio.assunto_tipo or "").strip().upper()
-    detected_tipo = None
-    if assunto_linha:
-        assunto_lower = assunto_linha.lower()
-        if "convalida" in assunto_lower:
-            detected_tipo = Oficio.AssuntoTipo.CONVALIDACAO
-        elif "autoriza" in assunto_lower:
-            detected_tipo = Oficio.AssuntoTipo.AUTORIZACAO
-    if detected_tipo:
-        assunto_tipo = detected_tipo
+    if not assunto_tipo:
+        assunto_tipo = Oficio.AssuntoTipo.AUTORIZACAO
+    if assunto_linha and "convalida" in assunto_linha.lower():
+        assunto_tipo = Oficio.AssuntoTipo.CONVALIDACAO
+    assunto_termo = (
+        "CONVALIDAÇÃO"
+        if assunto_tipo == Oficio.AssuntoTipo.CONVALIDACAO
+        else "AUTORIZAÇÃO"
+    )
     if assunto_tipo == Oficio.AssuntoTipo.CONVALIDACAO:
-        assunto_termo = "convalidação"
         assunto_text = "Solicitação de convalidação e concessão de diárias."
     else:
-        assunto_termo = "autorização"
         assunto_text = "Solicitação de autorização e concessão de diárias."
     assunto_oficio_text = f"({assunto_termo})"
-    if not assunto_linha or detected_tipo is None:
+    if not assunto_linha:
         assunto_linha = assunto_text
     motorista_formatado = motorista_para_documento(oficio)
     tipo_viatura_text = format_tipo_viatura(oficio.tipo_viatura)
@@ -908,17 +837,7 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     solicitacao_lines = build_col_solicitacao(viajantes, assunto_text)
     retorno_saida_lines, retorno_chegada_lines = build_col_retorno(oficio, trechos)
 
-    # colunas "ricas"
-    replace_placeholder_rich(doc, "col_servidor", build_col_nomes(viajantes))
-    replace_placeholder_rich(doc, "col_rgcpf", build_col_rgcpf(viajantes))
-    replace_placeholder_rich(doc, "col_cargo", build_col_cargo(viajantes))
-    replace_placeholder_rich(doc, "col_solicitacao", solicitacao_lines)
-
     saida_lines, chegada_lines = build_roteiro_ida(trechos)
-    replace_placeholder_rich(doc, "col_ida_saida", saida_lines)
-    replace_placeholder_rich(doc, "col_ida_chegada", chegada_lines)
-    replace_placeholder_rich(doc, "col_volta_saida", retorno_saida_lines)
-    replace_placeholder_rich(doc, "col_volta_chegada", retorno_chegada_lines)
 
     # sede (p/ retorno) - pega da origem do 1o trecho se existir
     sede = ""
@@ -994,6 +913,15 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
 
         "motivo": (oficio.motivo or "").strip(),
 
+        "col_servidor": build_col_nomes(viajantes),
+        "col_rgcpf": build_col_rgcpf(viajantes),
+        "col_cargo": build_col_cargo(viajantes),
+        "col_solicitacao": solicitacao_lines,
+        "col_ida_saida": saida_lines,
+        "col_ida_chegada": chegada_lines,
+        "col_volta_saida": retorno_saida_lines,
+        "col_volta_chegada": retorno_chegada_lines,
+
     }
 
     template_placeholders = _extract_placeholders(
@@ -1006,11 +934,8 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         if settings.DEBUG:
             logger.debug("[oficio] placeholders sem contexto: %s", sorted(missing))
 
-    # 1) substitui apenas parágrafos com placeholders
+    # substitui apenas parágrafos com placeholders
     replace_only_placeholders(doc, mapping)
-
-    # 2) garante retorno em negrito e substitui mesmo se placeholder estiver "quebrado"
-    _patch_roteiro_retorno(doc, mapping)
 
     buf = BytesIO()
     doc.save(buf)

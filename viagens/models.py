@@ -126,6 +126,13 @@ class OficioConfig(models.Model):
         blank=True,
         related_name="oficio_configs",
     )
+    sede_cidade_default = models.ForeignKey(
+        Cidade,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="oficio_config_sede_default",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
