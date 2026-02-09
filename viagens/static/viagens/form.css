@@ -1405,6 +1405,10 @@ body.modal-open {
   display: grid;
 }
 
+.carona-fields label.full {
+  display: none;
+}
+
 .carona-preview.is-hidden {
   display: none;
 }

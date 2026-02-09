@@ -315,26 +315,7 @@ def _normalize_name(value: str | None) -> str:
 
 
 def _format_carona_ref(oficio: Oficio) -> str:
-    ref = getattr(oficio, "carona_oficio_referencia", None)
-    if not ref:
-        return ""
-    numero = (getattr(ref, "oficio", "") or "").strip()
-    if not numero:
-        numero_raw = (getattr(ref, "numero", "") or getattr(ref, "numero_oficio", "") or "").strip()
-        ano_raw = (getattr(ref, "ano", "") or getattr(ref, "ano_oficio", "") or "").strip()
-        if numero_raw and ano_raw:
-            numero = f"{numero_raw}/{ano_raw}"
-        else:
-            numero = numero_raw or ""
-    protocolo = (getattr(ref, "protocolo", "") or getattr(ref, "protocolo_numero", "") or "").strip()
-    parts: list[str] = []
-    if numero:
-        parts.append(f"oficio {numero}")
-    if protocolo:
-        parts.append(f"protocolo: {protocolo}")
-    if not parts:
-        return ""
-    return " - ".join(parts)
+    return ""
 
 
 def motorista_para_documento(oficio: Oficio) -> str:
@@ -779,7 +760,7 @@ def _build_custos_block(oficio: Oficio) -> str:
     if selected == "SEM_ONUS":
         selected = Oficio.CusteioTipoChoices.ONUS_LIMITADOS.value
     if selected not in {opt.value for opt in options}:
-        selected = Oficio.CusteioTipoChoices.UNIDADE
+        selected = Oficio.CusteioTipoChoices.UNIDADE.value
 
     instituicao = (getattr(oficio, "nome_instituicao_custeio", "") or "").strip()
     labels = {
@@ -993,6 +974,8 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         "placa": (oficio.placa or "").strip(),
         "motorista": motorista_formatado,
         "motorista_formatado": motorista_formatado,
+        "motorista_oficio": (oficio.motorista_oficio or "").strip(),
+        "motorista_protocolo": (oficio.motorista_protocolo or "").strip(),
 
         "caracterizada": caracterizada_text,
         "armamento": armamento_text,

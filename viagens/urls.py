@@ -71,6 +71,7 @@ urlpatterns = [
     path("api/motoristas/<int:motorista_id>/", views.motorista_detail_api, name="motorista_detail_api"),
     path("api/veiculos/", views.veiculos_busca_api, name="veiculos_busca_api"),
     path("api/veiculos/<int:veiculo_id>/", views.veiculo_detail_api, name="veiculo_detail_api"),
+    path("api/oficio-motorista-referencia/", views.oficio_motorista_referencia, name="oficio_motorista_referencia"),
     path("cargos/criar/", views.cargo_criar, name="cargo_criar"),
     path("modal/viajantes/novo/", views.modal_viajante_form, name="modal_viajante_form"),
     path("modal/veiculos/novo/", views.modal_veiculo_form, name="modal_veiculo_form"),

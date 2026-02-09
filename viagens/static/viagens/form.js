@@ -120,6 +120,96 @@ function initCustosControls() {
   updateCustosPreview();
 }
 
+function getMotoristaReferenciaElements() {
+  return {
+    numero: document.querySelector("[data-motorista-ref-numero]"),
+    protocolo: document.querySelector("[data-motorista-ref-protocolo]"),
+    button: document.querySelector("[data-motorista-ref-button]"),
+    error: document.querySelector("[data-motorista-ref-error]"),
+  };
+}
+
+function setMotoristaReferenciaError(message) {
+  const { error } = getMotoristaReferenciaElements();
+  if (!error) {
+    return;
+  }
+  if (!message) {
+    error.textContent = "";
+    error.classList.add("is-hidden");
+    return;
+  }
+  error.textContent = message;
+  error.classList.remove("is-hidden");
+}
+
+function preencherMotoristaReferencia(data) {
+  if (!data) {
+    return;
+  }
+  clearMotorista();
+  if (data.motorista_nome) {
+    motoristaNome.value = data.motorista_nome;
+  }
+  if (data.motorista_oficio) {
+    motoristaOficio.value = data.motorista_oficio;
+  }
+  if (data.motorista_protocolo) {
+    motoristaProtocolo.value = data.motorista_protocolo;
+  }
+  if (data.placa || data.viatura || data.combustivel || data.meio_transporte || data.tipo_viatura) {
+    aplicarVeiculo({
+      placa: data.placa,
+      modelo: data.viatura,
+      combustivel: data.combustivel,
+      tipo_viatura: data.meio_transporte || data.tipo_viatura,
+    });
+    if (data.tipo_viatura && tipoViaturaInput) {
+      tipoViaturaInput.value = data.tipo_viatura;
+    }
+  }
+  updatePreviewFromInputs();
+  updateMotoristaPreview();
+}
+
+async function buscarMotoristaPorReferencia() {
+  const { numero, protocolo } = getMotoristaReferenciaElements();
+  setMotoristaReferenciaError("");
+  const oficioNumero = (numero?.value || "").trim();
+  const protocoloVal = (protocolo?.value || "").trim();
+  if (!oficioNumero || !protocoloVal) {
+    setMotoristaReferenciaError("Informe número e protocolo para buscar.");
+    return;
+  }
+  const url = new URL("/api/oficio-motorista-referencia/", window.location.origin);
+  url.searchParams.set("numero_oficio_ref", oficioNumero);
+  url.searchParams.set("protocolo_ref", protocoloVal);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || "Erro ao buscar referÃªncia.");
+    }
+    const payload = await response.json();
+    preencherMotoristaReferencia(payload);
+    } catch (err) {
+    setMotoristaReferenciaError(err.message || "Erro ao buscar referencia.");
+  }
+}
+
+function initMotoristaReferencia() {
+  const { button } = getMotoristaReferenciaElements();
+  if (!button) {
+    return;
+  }
+  button.addEventListener("click", () => {
+    buscarMotoristaPorReferencia().catch(() => {});
+  });
+}
+
 function renderPreviewViajantes(viajantes) {
   const container = getPreviewField("viajantes");
   const countEl = getPreviewField("viajantes-count");
@@ -608,6 +698,7 @@ function initBindings() {
   });
   updatePreviewFromInputs();
   initCustosControls();
+  initMotoristaReferencia();
 
   if (motoristaNome) {
     motoristaNome.addEventListener("input", () => {
