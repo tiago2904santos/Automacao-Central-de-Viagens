@@ -2,7 +2,7 @@ import re
 
 from django import forms
 
-from viagens.models import OficioConfig, Viajante
+from viagens.models import Cidade, OficioConfig, Viajante
 
 
 class OficioConfigForm(forms.ModelForm):
@@ -21,6 +21,7 @@ class OficioConfigForm(forms.ModelForm):
             "telefone",
             "email",
             "assinante",
+            "sede_cidade_default",
         ]
 
     def __init__(self, *args, **kwargs):
@@ -37,8 +38,17 @@ class OficioConfigForm(forms.ModelForm):
         )
         self.fields["assinante"].widget.attrs.update(
             {
-                "data-autocomplete-url": "/api/servidores/",
+                "data-autocomplete-url": "/api/assinantes/",
                 "data-autocomplete-type": "servidor",
+            }
+        )
+        self.fields["sede_cidade_default"].queryset = Cidade.objects.order_by("nome")
+        self.fields["sede_cidade_default"].empty_label = "Selecione"
+        self.fields["sede_cidade_default"].widget.attrs.update(
+            {
+                "data-autocomplete-url": "/api/cidades-busca/",
+                "data-autocomplete-type": "cidade",
+                "data-role": "sede-cidade",
             }
         )
 
@@ -85,3 +95,9 @@ class OficioConfigForm(forms.ModelForm):
 
     def clean_uf(self):
         return (self.cleaned_data.get("uf") or "").strip().upper()
+
+    def clean_sede_cidade_default(self):
+        cidade = self.cleaned_data.get("sede_cidade_default")
+        if cidade and (cidade.estado.sigla or "").strip().upper() != "PR":
+            raise forms.ValidationError("A sede padrao deve ser no estado do PR.")
+        return cidade

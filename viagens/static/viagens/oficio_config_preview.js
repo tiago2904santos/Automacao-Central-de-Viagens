@@ -111,13 +111,6 @@
     setPreview(previewAssinanteCargo, titleCasePt(cargo));
   };
 
-  const clearEndereco = () => {
-    if (logradouroInput) logradouroInput.value = "";
-    if (bairroInput) bairroInput.value = "";
-    if (cidadeInput) cidadeInput.value = "";
-    if (ufInput) ufInput.value = "";
-  };
-
   const setCepStatus = (message, isError) => {
     if (!cepStatus) return;
     cepStatus.textContent = message || "";
@@ -136,14 +129,12 @@
     if (!cepInput) return;
     const digits = (cepInput.value || "").replace(/\D/g, "");
     if (!digits) {
-      clearEndereco();
       setCepStatus("", false);
       updatePreview();
       return;
     }
     if (digits.length !== 8) {
       setCepStatus("CEP deve conter 8 digitos.", true);
-      clearEndereco();
       updatePreview();
       return;
     }
@@ -151,21 +142,20 @@
     cepInput.value = formatted;
     setCepStatus("Buscando CEP...", false);
     try {
-      const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const response = await fetch(`/api/cep/${digits}/`);
       if (!response.ok) {
         throw new Error("CEP nao encontrado");
       }
       const data = await response.json();
-      if (data.erro) {
+      if (data.error) {
         throw new Error("CEP nao encontrado");
       }
       if (logradouroInput) logradouroInput.value = data.logradouro || "";
       if (bairroInput) bairroInput.value = data.bairro || "";
-      if (cidadeInput) cidadeInput.value = data.localidade || "";
+      if (cidadeInput) cidadeInput.value = data.cidade || "";
       if (ufInput) ufInput.value = data.uf || "";
       setCepStatus("CEP atualizado.", false);
     } catch (err) {
-      clearEndereco();
       setCepStatus("CEP nao encontrado.", true);
     }
     updatePreview();

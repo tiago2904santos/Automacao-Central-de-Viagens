@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, time, timedelta
+import json
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 import unicodedata
 from typing import Iterable
 
@@ -27,8 +30,6 @@ from .services.oficio_helpers import build_assunto, infer_tipo_destino, valor_po
 from .forms_oficio_config import OficioConfigForm
 from .services.oficio_config import get_oficio_config
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
-from django.views.decorators.http import require_GET
 from .documents.document import build_oficio_docx_bytes
 from .documents.document import build_oficio_docx_and_pdf
 
@@ -69,6 +70,15 @@ def _normalize_custeio_choice(value: str | None) -> str:
     if raw in valid:
         return raw
     return Oficio.CusteioTipoChoices.UNIDADE
+
+
+def _get_sede_cidade_default_id() -> str:
+    config = get_oficio_config()
+    default_id = getattr(config, "sede_cidade_default_id", None)
+    if default_id:
+        return str(default_id)
+    curitiba = Cidade.objects.filter(nome__iexact="Curitiba", estado__sigla="PR").first()
+    return str(curitiba.id) if curitiba else ""
 
 
 def _destino_label_from_code(code: str | None) -> str:
@@ -1943,11 +1953,9 @@ def oficio_step3(request):
     if not sede_uf_raw:
         defaults["sede_uf"] = "PR"
     if not sede_cidade_raw:
-        curitiba = (
-            Cidade.objects.filter(nome__iexact="Curitiba", estado__sigla="PR").first()
-        )
-        if curitiba:
-            defaults["sede_cidade"] = str(curitiba.id)
+        sede_default = _get_sede_cidade_default_id()
+        if sede_default:
+            defaults["sede_cidade"] = sede_default
     if defaults:
         data = _update_wizard_data(request, defaults)
     sede_uf = (data.get("sede_uf") or "").strip().upper() or "PR"
@@ -2091,11 +2099,7 @@ def oficio_step3(request):
     sede_uf = (data.get("sede_uf") or "").strip().upper() or "PR"
     sede_cidade = (data.get("sede_cidade") or "").strip()
     if not sede_cidade:
-        curitiba = (
-            Cidade.objects.filter(nome__iexact="Curitiba", estado__sigla="PR").first()
-        )
-        if curitiba:
-            sede_cidade = str(curitiba.id)
+        sede_cidade = _get_sede_cidade_default_id()
     sede_estado = _resolve_estado(sede_uf)
     sede_cidade_obj = _resolve_cidade(sede_cidade, estado=sede_estado)
     sede_label = _format_trecho_local(sede_cidade_obj, sede_estado)
@@ -2401,11 +2405,9 @@ def oficio_edit_step3(request, oficio_id: int):
     if not sede_uf_raw:
         defaults["sede_uf"] = "PR"
     if not sede_cidade_raw:
-        curitiba = (
-            Cidade.objects.filter(nome__iexact="Curitiba", estado__sigla="PR").first()
-        )
-        if curitiba:
-            defaults["sede_cidade"] = str(curitiba.id)
+        sede_default = _get_sede_cidade_default_id()
+        if sede_default:
+            defaults["sede_cidade"] = sede_default
     if defaults:
         data = _update_edit_data(request, oficio_id, defaults)
     sede_uf = (data.get("sede_uf") or "").strip().upper() or "PR"
@@ -2551,11 +2553,7 @@ def oficio_edit_step3(request, oficio_id: int):
     sede_uf = (data.get("sede_uf") or "").strip().upper() or "PR"
     sede_cidade = (data.get("sede_cidade") or "").strip()
     if not sede_cidade:
-        curitiba = (
-            Cidade.objects.filter(nome__iexact="Curitiba", estado__sigla="PR").first()
-        )
-        if curitiba:
-            sede_cidade = str(curitiba.id)
+        sede_cidade = _get_sede_cidade_default_id()
     sede_estado = _resolve_estado(sede_uf)
     sede_cidade_obj = _resolve_cidade(sede_cidade, estado=sede_estado)
     sede_label = _format_trecho_local(sede_cidade_obj, sede_estado)
@@ -2990,6 +2988,14 @@ def oficios_lista(request):
             "dev_safety": dev_safety,
         },
     )
+
+
+@require_http_methods(["POST"])
+def oficio_excluir(request, oficio_id: int):
+    oficio = get_object_or_404(Oficio, id=oficio_id)
+    oficio.delete()
+    messages.success(request, "Oficio excluido com sucesso.")
+    return redirect("oficios_lista")
 
 
 @require_http_methods(["GET"])
@@ -3539,6 +3545,44 @@ def servidores_api(request):
 
 
 @require_GET
+def assinantes_api(request):
+    q = request.GET.get("q", "").strip()
+    queryset = Viajante.objects.all()
+    if q:
+        viajantes = list(
+            queryset.filter(Q(nome__icontains=q) | Q(cargo__icontains=q)).order_by("nome")[:20]
+        )
+    else:
+        viajantes = list(queryset.order_by("-id")[:20])
+        viajantes.sort(key=lambda item: item.nome or "")
+    return JsonResponse({"results": [_autocomplete_viajante_payload(v) for v in viajantes]})
+
+
+@require_GET
+def cep_api(request, cep: str):
+    digits = re.sub(r"\D", "", cep or "")
+    if len(digits) != 8:
+        return JsonResponse({"error": "CEP invalido."}, status=400)
+    url = f"https://viacep.com.br/ws/{digits}/json/"
+    try:
+        with urlopen(url, timeout=3) as response:
+            data = json.load(response)
+    except (HTTPError, URLError, ValueError):
+        return JsonResponse({"error": "CEP nao encontrado."}, status=404)
+    if data.get("erro"):
+        return JsonResponse({"error": "CEP nao encontrado."}, status=404)
+    return JsonResponse(
+        {
+            "cep": f"{digits[:5]}-{digits[5:]}",
+            "logradouro": data.get("logradouro", ""),
+            "bairro": data.get("bairro", ""),
+            "cidade": data.get("localidade", ""),
+            "uf": data.get("uf", ""),
+        }
+    )
+
+
+@require_GET
 def motoristas_api(request):
     return servidores_api(request)
 
@@ -3749,7 +3793,6 @@ def configuracoes_oficio(request):
     )
 
 
-import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
