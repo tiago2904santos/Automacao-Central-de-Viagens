@@ -103,6 +103,19 @@
         </div>
 
         <div class="sub-card">
+          <div class="sub-card-title">Defaults</div>
+          <div class="grid">
+            <input type="hidden" value="PR" data-role="sede-uf" />
+            <label class="full">
+              Cidade sede padrao
+              {{ form.sede_cidade_default }}
+              {{ form.sede_cidade_default.errors }}
+              <span class="field-help">UF fixa em PR.</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="sub-card">
           <div class="sub-card-title">Assinatura</div>
           <div class="grid">
             <label class="full">

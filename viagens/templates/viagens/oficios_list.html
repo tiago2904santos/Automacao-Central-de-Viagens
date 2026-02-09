@@ -95,6 +95,10 @@
                     <a class="btn-icon btn-icon--docx" href="{% url 'oficio_download_docx' oficio.id %}" aria-label="Baixar DOCX">W</a>
                     <a class="btn-icon btn-icon--pdf" href="{% url 'oficio_download_pdf' oficio.id %}" aria-label="Baixar PDF">PDF</a>
                   {% endif %}
+                  <form method="post" action="{% url 'oficio_excluir' oficio.id %}" class="table-action-form" onsubmit="return confirm('Excluir este ofício?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-danger btn-small">Excluir</button>
+                  </form>
                 </div>
               </td>
             </tr>
