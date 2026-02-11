@@ -8,6 +8,12 @@ urlpatterns = [
     path("dashboard/", views.dashboard_home, name="dashboard_home_alt"),
     path("dashboard/data/", views.dashboard_data_api, name="dashboard_data_api"),
     path("simulacao-diarias/", views.simulacao_diarias, name="simulacao_diarias"),
+    path("plano-trabalho/novo/etapa-1/", views.plano_trabalho_step1, name="plano_trabalho_step1"),
+    path("plano-trabalho/novo/etapa-2/", views.plano_trabalho_step2, name="plano_trabalho_step2"),
+    path("plano-trabalho/novo/resumo/", views.plano_trabalho_resumo, name="plano_trabalho_resumo"),
+    path("plano-trabalho/<int:plano_id>/", views.plano_trabalho_detail, name="plano_trabalho_detail"),
+    path("plano-trabalho/<int:plano_id>/download-docx/", views.plano_trabalho_download_docx, name="plano_trabalho_download_docx"),
+    path("plano-trabalho/<int:plano_id>/download-pdf/", views.plano_trabalho_download_pdf, name="plano_trabalho_download_pdf"),
     path(
         "simulacao-diarias/calcular/",
         views.simulacao_diarias_calcular,

@@ -27,7 +27,7 @@ from docx import Document as DocxFactory
 from docx.document import Document as DocxDocument
 from num2words import num2words
 
-from viagens.models import Cidade, ConfiguracaoOficio, Estado, Oficio, OficioConfig, Trecho, Viajante
+from viagens.models import Cidade, ConfiguracaoOficio, Estado, Oficio, OficioConfig, PlanoTrabalho, Trecho, Viajante
 from viagens.services.oficio_config import get_oficio_config
 from viagens.services.text import title_case_pt
 from viagens.utils.normalize import format_protocolo_num, format_rg
@@ -1554,3 +1554,94 @@ def build_oficio_docx_and_pdf_bytes(oficio: Oficio) -> tuple[bytes, bytes]:
 # Alias pra não quebrar import antigo em views.py
 def build_oficio_docx_and_pdf(oficio: Oficio):
     return build_oficio_docx_and_pdf_bytes(oficio)
+
+
+
+def validate_plano_config_required_fields() -> None:
+    cfg = get_oficio_config()
+    missing = []
+    required_map = {
+        "plano_divisao": "divisão",
+        "plano_unidade": "unidade",
+        "plano_sede": "sede",
+        "plano_nome_chefia": "nome da chefia",
+        "plano_cargo_chefia": "cargo da chefia",
+    }
+    for field, label in required_map.items():
+        if not _clean_inline_text(getattr(cfg, field, "") or ""):
+            missing.append(label)
+    if missing:
+        raise ValueError(
+            "Não foi possível gerar o Plano de Trabalho. Configure os campos obrigatórios em Configurações: "
+            + ", ".join(missing)
+            + "."
+        )
+
+
+def _fmt_periodo_evento_plano(plano: PlanoTrabalho) -> str:
+    inicio = plano.data_evento_inicio
+    fim = plano.data_evento_fim
+    if plano.fim_mesmo_dia or inicio == fim:
+        return f"em {inicio.strftime('%d/%m/%Y')}"
+    return f"de {inicio.strftime('%d/%m/%Y')} a {fim.strftime('%d/%m/%Y')}"
+
+
+def build_plano_docx_bytes(plano: PlanoTrabalho) -> BytesIO:
+    validate_plano_config_required_fields()
+    cfg = get_oficio_config()
+    default_path = Path('/mnt/data/modelo_plano_de_trabalho.docx')
+    repo_path = Path(settings.BASE_DIR) / 'viagens' / 'documents' / 'plano_trabalho_modelo.docx'
+    template_path = str(default_path if default_path.exists() else repo_path)
+    doc = DocxFactory(template_path)
+
+    destino = ""
+    if plano.destino_cidade and plano.destino_estado:
+        destino = f"{plano.destino_cidade.nome}/{plano.destino_estado.sigla}"
+    elif plano.destino_cidade:
+        destino = plano.destino_cidade.nome
+
+    horario = f"{_fmt_time(plano.horario_inicio)} às {_fmt_time(plano.horario_fim)}".strip()
+    snapshot = plano.diarias_snapshot or {}
+    totais = snapshot.get('totais', {}) if isinstance(snapshot, dict) else {}
+
+    mapping = {
+        'divisao': getattr(cfg, 'plano_divisao', '') or '',
+        'unidade': getattr(cfg, 'plano_unidade', '') or '',
+        'numero_plano': plano.numero_formatado,
+        'destino': destino,
+        'periodo_evento': _fmt_periodo_evento_plano(plano),
+        'horario_atendimento': horario,
+        'sede': getattr(cfg, 'plano_sede', '') or '',
+        'data_do_plano': timezone.localdate().strftime('%d/%m/%Y'),
+        'nome_servidor': getattr(plano.servidor_responsavel, 'nome', '') or '',
+        'cargo_servidor': getattr(plano.servidor_responsavel, 'cargo', '') or '',
+        'nome_chefia': getattr(cfg, 'plano_nome_chefia', '') or '',
+        'cargo_chefia': getattr(cfg, 'plano_cargo_chefia', '') or '',
+        'atividades': plano.atividades_texto or '',
+        'metas': plano.metas or '',
+        'microonibus_frase': (
+            'incluindo o micro-ônibus utilizado como Unidade Móvel de Atendimento,'
+            if plano.incluir_microonibus
+            else ''
+        ),
+        'valor_total_diarias': totais.get('total_valor', ''),
+        'valor_total_diarias_extenso': totais.get('valor_extenso', ''),
+        'qtd_diarias_resumo': totais.get('total_diarias', ''),
+    }
+
+    placeholders = _extract_placeholders(_iter_docx_xml_parts_from_path(template_path))
+    for key in placeholders:
+        mapping.setdefault(key, '')
+
+    safe_replace_placeholders(doc, _sanitize_mapping_values({k: str(v) for k, v in mapping.items()}))
+    out = BytesIO()
+    doc.save(out)
+    out.seek(0)
+    return out
+
+
+def build_plano_docx_and_pdf_bytes(plano: PlanoTrabalho) -> tuple[bytes, bytes]:
+    docx_buf = build_plano_docx_bytes(plano)
+    docx_bytes = docx_buf.getvalue()
+    pdf_bytes = docx_bytes_to_pdf_bytes(docx_bytes, oficio_id=getattr(plano, 'id', None))
+    return docx_bytes, pdf_bytes

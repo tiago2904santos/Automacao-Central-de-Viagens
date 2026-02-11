@@ -1,0 +1,65 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Plano de Trabalho - Etapa 2{% endblock %}
+{% block breadcrumb %}Plano de Trabalho <span class="breadcrumb-sep">/</span> Etapa 2{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2 class="page-title">Plano de Trabalho — Etapa 2</h2>
+  <form method="post" id="planoStep2Form">
+    {% csrf_token %}
+    <div class="sub-card">
+      <div class="sub-card-title">Atividades</div>
+      {{ form.atividades }}
+      {{ form.atividades_ordenadas }}
+      <p class="field-help">Selecione múltiplas atividades. O texto final será montado automaticamente.</p>
+    </div>
+
+    <div class="sub-card">
+      <div class="sub-card-title">Diárias / Valores</div>
+      <label>Quantidade de servidores {{ form.quantidade_servidores }}</label>
+      <div id="periodosList"></div>
+      <button type="button" class="btn-clear" id="addPeriodoBtn">Adicionar período</button>
+      {{ form.periodos_json }}
+      <p class="field-help">Tipo + data/hora de início e fim por período.</p>
+    </div>
+
+    <div class="wizard-actions">
+      <a class="btn-clear" href="{% url 'plano_trabalho_step1' %}">Voltar</a>
+      <button class="btn-primary" type="submit">Ir para resumo</button>
+    </div>
+  </form>
+</div>
+<script>
+(function(){
+  const list=document.getElementById('periodosList');
+  const hidden=document.getElementById('id_periodos_json');
+  const addBtn=document.getElementById('addPeriodoBtn');
+  const form=document.getElementById('planoStep2Form');
+  const tipos=['INTERIOR','CAPITAL','BRASILIA'];
+  function row(v={}){
+    const div=document.createElement('div');
+    div.className='grid';
+    div.innerHTML=`<label>Tipo<select data-k="tipo">${tipos.map(t=>`<option ${v.tipo===t?'selected':''}>${t}</option>`).join('')}</select></label>
+    <label>Início data<input type="date" data-k="start_date" value="${v.start_date||''}"/></label>
+    <label>Início hora<input type="time" data-k="start_time" value="${v.start_time||''}"/></label>
+    <label>Fim data<input type="date" data-k="end_date" value="${v.end_date||''}"/></label>
+    <label>Fim hora<input type="time" data-k="end_time" value="${v.end_time||''}"/></label>
+    <button type="button" class="btn-clear" data-remove>Remover</button>`;
+    div.querySelector('[data-remove]').onclick=()=>div.remove();
+    list.appendChild(div);
+  }
+  addBtn.onclick=()=>row();
+  form.addEventListener('submit',()=>{
+    const rows=[];
+    list.querySelectorAll('.grid').forEach(g=>{
+      const o={}; g.querySelectorAll('[data-k]').forEach(i=>o[i.dataset.k]=i.value); rows.push(o);
+    });
+    hidden.value=JSON.stringify(rows.filter(r=>r.start_date&&r.start_time&&r.end_date&&r.end_time));
+    const checked=[...form.querySelectorAll('input[name="atividades"]:checked')].map(i=>i.value);
+    document.getElementById('id_atividades_ordenadas').value=checked.join(',');
+  });
+})();
+</script>
+{% endblock %}

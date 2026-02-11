@@ -1,0 +1,19 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Plano de Trabalho {{ plano.numero_formatado }}{% endblock %}
+{% block breadcrumb %}Plano de Trabalho <span class="breadcrumb-sep">/</span> {{ plano.numero_formatado }}{% endblock %}
+
+{% block content %}
+<div class="card">
+  {% if messages %}{% for message in messages %}<div class="{{ message.tags }}">{{ message }}</div>{% endfor %}{% endif %}
+  <h2 class="page-title">Plano {{ plano.numero_formatado }}</h2>
+  <p>Destino: {{ plano.destino_cidade.nome }}/{{ plano.destino_cidade.estado.sigla }}</p>
+  <p>Servidor: {{ plano.servidor_responsavel.nome }} — {{ plano.servidor_responsavel.cargo }}</p>
+  <p>Metas: {{ plano.metas|linebreaksbr }}</p>
+  <pre>{{ plano.atividades_texto }}</pre>
+  <div class="wizard-actions">
+    <a class="btn-primary" href="{% url 'plano_trabalho_download_docx' plano.id %}">Download DOCX</a>
+    <a class="btn-clear" href="{% url 'plano_trabalho_download_pdf' plano.id %}">Download PDF</a>
+  </div>
+</div>
+{% endblock %}

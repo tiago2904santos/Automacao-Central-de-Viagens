@@ -161,6 +161,12 @@ class OficioConfig(models.Model):
     unidade_nome = models.CharField(max_length=255, default="")
     origem_nome = models.CharField(max_length=255, default="")
 
+    plano_divisao = models.CharField(max_length=255, default="")
+    plano_unidade = models.CharField(max_length=255, default="")
+    plano_sede = models.CharField(max_length=255, default="")
+    plano_nome_chefia = models.CharField(max_length=255, default="")
+    plano_cargo_chefia = models.CharField(max_length=255, default="")
+
     cep = models.CharField(max_length=9, default="")
     logradouro = models.CharField(max_length=255, blank=True, default="")
     bairro = models.CharField(max_length=255, blank=True, default="")
@@ -212,6 +218,74 @@ class OficioCounter(models.Model):
 
     def __str__(self) -> str:
         return f"{self.ano}: {self.last_numero}"
+
+
+class PlanoTrabalhoCounter(models.Model):
+    ano = models.IntegerField(unique=True)
+    last_numero = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.ano}: {self.last_numero}"
+
+
+class PlanoAtividadeOpcao(models.Model):
+    titulo = models.CharField(max_length=255, unique=True)
+    ativo = models.BooleanField(default=True)
+    ordem = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["ordem", "titulo"]
+        verbose_name = "Opcao de atividade do plano"
+        verbose_name_plural = "Opcoes de atividade do plano"
+
+    def __str__(self) -> str:
+        return self.titulo
+
+
+class PlanoTrabalho(models.Model):
+    numero = models.PositiveIntegerField(db_index=True)
+    ano = models.PositiveIntegerField(db_index=True)
+    destino_estado = models.ForeignKey(
+        Estado,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="planos_destino",
+    )
+    destino_cidade = models.ForeignKey(
+        Cidade,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="planos_destino",
+    )
+    data_evento_inicio = models.DateField()
+    data_evento_fim = models.DateField()
+    fim_mesmo_dia = models.BooleanField(default=False)
+    horario_inicio = models.TimeField()
+    horario_fim = models.TimeField()
+    servidor_responsavel = models.ForeignKey(
+        Viajante,
+        on_delete=models.PROTECT,
+        related_name="planos_responsavel",
+    )
+    metas = models.TextField(blank=True, default="")
+    incluir_microonibus = models.BooleanField(default=False)
+    atividades_selecionadas = models.JSONField(default=list, blank=True)
+    atividades_texto = models.TextField(blank=True, default="")
+    quantidade_servidores = models.PositiveIntegerField(default=1)
+    diarias_snapshot = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-ano", "-numero", "-id"]
+        unique_together = ("numero", "ano")
+
+    @property
+    def numero_formatado(self) -> str:
+        return f"{self.numero:02d}/{self.ano}"
 
 
 class Oficio(models.Model):

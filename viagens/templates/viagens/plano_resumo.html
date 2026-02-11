@@ -1,0 +1,25 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Plano de Trabalho - Resumo{% endblock %}
+{% block breadcrumb %}Plano de Trabalho <span class="breadcrumb-sep">/</span> Resumo{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2 class="page-title">Resumo do Plano de Trabalho</h2>
+  <p>Número do plano: <strong>{{ numero_preview }}</strong> (final definido ao salvar)</p>
+  <ul>
+    <li>Destino: {{ cidade.nome }}/{{ cidade.estado.sigla }}</li>
+    <li>Servidor responsável: {{ servidor.nome }} - {{ servidor.cargo }}</li>
+    <li>Horário: {{ step1.horario_inicio }} às {{ step1.horario_fim }}</li>
+    <li>Atividades selecionadas:</li>
+  </ul>
+  <pre>{{ step2.atividades_texto }}</pre>
+  <form method="post">
+    {% csrf_token %}
+    <div class="wizard-actions">
+      <a class="btn-clear" href="{% url 'plano_trabalho_step2' %}">Voltar</a>
+      <button class="btn-primary" type="submit">Salvar plano</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

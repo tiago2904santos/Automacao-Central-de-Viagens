@@ -20,7 +20,7 @@ from django.db.models import Count, Q
 from django.db.models.functions import ExtractMonth, TruncDate
 from django.forms import inlineformset_factory
 from django.forms.models import BaseInlineFormSet
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -34,11 +34,24 @@ from .forms import (
     TrechoForm,
     ViajanteNormalizeForm,
 )
-from .models import Cargo, Cidade, Estado, Oficio, OficioCounter, Trecho, Viajante, Veiculo
+from .models import (
+    Cargo,
+    Cidade,
+    Estado,
+    Oficio,
+    OficioCounter,
+    PlanoAtividadeOpcao,
+    PlanoTrabalho,
+    PlanoTrabalhoCounter,
+    Trecho,
+    Viajante,
+    Veiculo,
+)
 from .diarias import PeriodMarker, calculate_periodized_diarias
 from .simulacao import calculate_periods_from_payload
 from .services.oficio_helpers import build_assunto, infer_tipo_destino, valor_por_extenso_ptbr
 from .forms_oficio_config import OficioConfigForm
+from .forms_plano import PlanoStep1Form, PlanoStep2Form
 from .services.oficio_config import get_oficio_config
 from .utils.normalize import (
     format_oficio_num,
@@ -60,6 +73,9 @@ from .documents.document import (
     MotoristaCaronaValidationError,
     build_oficio_docx_and_pdf_bytes,
     build_oficio_docx_bytes,
+    build_plano_docx_and_pdf_bytes,
+    build_plano_docx_bytes,
+    validate_plano_config_required_fields,
 )
 
 
@@ -4610,7 +4626,7 @@ def configuracoes_oficio(request):
     )
 
 
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 @csrf_exempt
@@ -4623,3 +4639,181 @@ def validacao_resultado(request):
     # exemplo: oficio_id = data["oficio_id"]; status = data["status"]
 
     return JsonResponse({"ok": True})
+
+PLANO_SESSION_KEY = "plano_trabalho_wizard"
+
+
+def _plano_get_draft(request):
+    return request.session.get(PLANO_SESSION_KEY, {})
+
+
+def _plano_set_draft(request, data):
+    request.session[PLANO_SESSION_KEY] = data
+    request.session.modified = True
+
+
+def _plano_get_or_create_numero(ano: int) -> int:
+    with transaction.atomic():
+        counter, _ = PlanoTrabalhoCounter.objects.select_for_update().get_or_create(
+            ano=ano,
+            defaults={"last_numero": 0},
+        )
+        counter.last_numero += 1
+        counter.save(update_fields=["last_numero", "updated_at"])
+        return counter.last_numero
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def plano_trabalho_step1(request):
+    draft = _plano_get_draft(request)
+    initial = draft.get("step1", {})
+    if request.method == "POST":
+        form = PlanoStep1Form(request.POST)
+        if form.is_valid():
+            payload = form.cleaned_data
+            payload["destino_cidade"] = str(payload["destino_cidade"])
+            payload["servidor_responsavel"] = str(payload["servidor_responsavel"].id)
+            payload["data_evento_inicio"] = payload["data_evento_inicio"].isoformat()
+            payload["data_evento_fim"] = payload["data_evento_fim"].isoformat() if payload.get("data_evento_fim") else ""
+            payload["horario_inicio"] = payload["horario_inicio"].strftime("%H:%M")
+            payload["horario_fim"] = payload["horario_fim"].strftime("%H:%M")
+            draft["step1"] = payload
+            _plano_set_draft(request, draft)
+            return redirect("plano_trabalho_step2")
+    else:
+        form = PlanoStep1Form(initial=initial)
+    cidades_pr = Cidade.objects.filter(estado__sigla="PR").order_by("nome")
+    return render(request, "viagens/plano_step1.html", {"form": form, "cidades_pr": cidades_pr})
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def plano_trabalho_step2(request):
+    draft = _plano_get_draft(request)
+    if not draft.get("step1"):
+        return redirect("plano_trabalho_step1")
+
+    initial = draft.get("step2", {})
+    if request.method == "POST":
+        form = PlanoStep2Form(request.POST)
+        if form.is_valid():
+            atividades = form.cleaned_data.get("atividades") or []
+            ordem_raw = (form.cleaned_data.get("atividades_ordenadas") or "").strip()
+            if ordem_raw:
+                ordered = [x for x in ordem_raw.split(",") if x in atividades]
+                for aid in atividades:
+                    if aid not in ordered:
+                        ordered.append(aid)
+                atividades = ordered
+            atividades_txt = [
+                f"• {item.titulo}"
+                for item in PlanoAtividadeOpcao.objects.filter(id__in=atividades).order_by("ordem", "titulo")
+            ]
+            periodos_json = (form.cleaned_data.get("periodos_json") or "").strip()
+            periodos = json.loads(periodos_json) if periodos_json else []
+            snapshot = calculate_periods_from_payload(periodos, form.cleaned_data["quantidade_servidores"]) if periodos else {}
+            draft["step2"] = {
+                "atividades": atividades,
+                "atividades_texto": "\n".join(atividades_txt),
+                "quantidade_servidores": form.cleaned_data["quantidade_servidores"],
+                "periodos_json": periodos,
+                "diarias_snapshot": snapshot,
+            }
+            _plano_set_draft(request, draft)
+            return redirect("plano_trabalho_resumo")
+    else:
+        form = PlanoStep2Form(initial=initial)
+
+    return render(request, "viagens/plano_step2.html", {"form": form, "draft": draft, "step2": initial})
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def plano_trabalho_resumo(request):
+    draft = _plano_get_draft(request)
+    step1 = draft.get("step1")
+    step2 = draft.get("step2")
+    if not step1:
+        return redirect("plano_trabalho_step1")
+    if not step2:
+        return redirect("plano_trabalho_step2")
+
+    cidade = Cidade.objects.filter(id=step1.get("destino_cidade")).select_related("estado").first()
+    servidor = Viajante.objects.filter(id=step1.get("servidor_responsavel")).first()
+    if request.method == "POST":
+        ano = timezone.localdate().year
+        numero = _plano_get_or_create_numero(ano)
+        plano = PlanoTrabalho.objects.create(
+            numero=numero,
+            ano=ano,
+            destino_estado=cidade.estado if cidade else None,
+            destino_cidade=cidade,
+            data_evento_inicio=parse_date(step1.get("data_evento_inicio")),
+            data_evento_fim=parse_date(step1.get("data_evento_fim")) or parse_date(step1.get("data_evento_inicio")),
+            fim_mesmo_dia=bool(step1.get("fim_mesmo_dia")),
+            horario_inicio=parse_time(step1.get("horario_inicio")),
+            horario_fim=parse_time(step1.get("horario_fim")),
+            servidor_responsavel=servidor,
+            metas=step1.get("metas", ""),
+            incluir_microonibus=bool(step1.get("incluir_microonibus")),
+            atividades_selecionadas=step2.get("atividades", []),
+            atividades_texto=step2.get("atividades_texto", ""),
+            quantidade_servidores=step2.get("quantidade_servidores") or 1,
+            diarias_snapshot=step2.get("diarias_snapshot", {}),
+        )
+        request.session.pop(PLANO_SESSION_KEY, None)
+        return redirect("plano_trabalho_detail", plano_id=plano.id)
+
+    return render(
+        request,
+        "viagens/plano_resumo.html",
+        {
+            "step1": step1,
+            "step2": step2,
+            "cidade": cidade,
+            "servidor": servidor,
+            "numero_preview": f"--/{timezone.localdate().year}",
+        },
+    )
+
+
+@login_required
+@require_GET
+def plano_trabalho_detail(request, plano_id: int):
+    plano = get_object_or_404(PlanoTrabalho.objects.select_related("destino_cidade__estado", "servidor_responsavel"), id=plano_id)
+    return render(request, "viagens/plano_detail.html", {"plano": plano})
+
+
+@login_required
+@require_GET
+def plano_trabalho_download_docx(request, plano_id: int):
+    plano = get_object_or_404(PlanoTrabalho.objects.select_related("destino_cidade__estado", "servidor_responsavel"), id=plano_id)
+    try:
+        validate_plano_config_required_fields()
+        buf = build_plano_docx_bytes(plano)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect("plano_trabalho_detail", plano_id=plano.id)
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    response["Content-Disposition"] = f'attachment; filename="plano_trabalho_{plano.numero_formatado.replace("/", "_")}.docx"'
+    return response
+
+
+@login_required
+@require_GET
+def plano_trabalho_download_pdf(request, plano_id: int):
+    plano = get_object_or_404(PlanoTrabalho.objects.select_related("destino_cidade__estado", "servidor_responsavel"), id=plano_id)
+    try:
+        validate_plano_config_required_fields()
+        _docx, pdf = build_plano_docx_and_pdf_bytes(plano)
+    except (ValueError, DocxPdfConversionError) as exc:
+        messages.error(request, str(exc))
+        return redirect("plano_trabalho_download_docx", plano_id=plano.id)
+
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="plano_trabalho_{plano.numero_formatado.replace("/", "_")}.pdf"'
+    return response

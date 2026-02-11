@@ -11,6 +11,11 @@ class OficioConfigForm(forms.ModelForm):
         fields = [
             "unidade_nome",
             "origem_nome",
+            "plano_divisao",
+            "plano_unidade",
+            "plano_sede",
+            "plano_nome_chefia",
+            "plano_cargo_chefia",
             "cep",
             "logradouro",
             "bairro",

@@ -1,0 +1,43 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Plano de Trabalho - Etapa 1{% endblock %}
+{% block breadcrumb %}Plano de Trabalho <span class="breadcrumb-sep">/</span> Etapa 1{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2 class="page-title">Plano de Trabalho — Etapa 1</h2>
+  <form method="post" class="grid">
+    {% csrf_token %}
+    <label>UF destino (padrão PR)
+      <input type="text" name="destino_uf" value="{{ form.destino_uf.value|default:'PR' }}" maxlength="2" />
+    </label>
+    <label>Cidade destino
+      <select name="destino_cidade" required>
+        <option value="">Selecione</option>
+        {% for cidade in cidades_pr %}
+          <option value="{{ cidade.id }}" {% if form.destino_cidade.value|stringformat:'s' == cidade.id|stringformat:'s' %}selected{% endif %}>{{ cidade.nome }}/{{ cidade.estado.sigla }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Data início evento {{ form.data_evento_inicio }}</label>
+    <label><input type="checkbox" name="fim_mesmo_dia" value="1" {% if form.fim_mesmo_dia.value %}checked{% endif %} id="fimMesmoDia"/> fim do evento no mesmo dia</label>
+    <label id="dataFimWrap">Data fim evento {{ form.data_evento_fim }}</label>
+    <label>Horário início {{ form.horario_inicio }}</label>
+    <label>Horário fim {{ form.horario_fim }}</label>
+    <label>Servidor responsável {{ form.servidor_responsavel }}
+      <a class="btn-clear btn-small" href="{% url 'viajante_cadastro' %}" target="_blank" rel="noopener">Adicionar</a>
+    </label>
+    <label class="full">Metas {{ form.metas }}</label>
+    <label>Incluir referência ao micro-ônibus (Unidade Móvel) <input type="checkbox" name="incluir_microonibus" value="1" {% if form.incluir_microonibus.value %}checked{% endif %}></label>
+    <div class="wizard-actions full"><button class="btn-primary" type="submit">Próxima etapa</button></div>
+  </form>
+</div>
+<script>
+(function(){
+  const cb=document.getElementById('fimMesmoDia');
+  const wrap=document.getElementById('dataFimWrap');
+  function toggle(){wrap.style.display=cb.checked?'none':'block';}
+  cb.addEventListener('change',toggle); toggle();
+})();
+</script>
+{% endblock %}
