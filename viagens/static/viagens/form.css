@@ -812,6 +812,8 @@ textarea {
 }
 
 .btn-danger {
+  display: inline-flex;
+  align-items: center;
   background: var(--danger);
   color: #fff;
   border: none;

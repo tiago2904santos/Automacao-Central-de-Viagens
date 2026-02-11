@@ -1,0 +1,273 @@
+.diarias-panel {
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  border-radius: 16px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
+}
+
+.diarias-cta {
+  display: grid;
+  gap: 14px;
+}
+
+.diarias-cta-text {
+  margin: 0;
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.diarias-primary-button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 46px;
+}
+
+.diarias-primary-button.is-loading,
+#recalcularDiariasBtn.is-loading {
+  position: relative;
+  pointer-events: none;
+}
+
+.diarias-primary-button.is-loading::after,
+#recalcularDiariasBtn.is-loading::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-top-color: #ffffff;
+  animation: diarias-spin 0.85s linear infinite;
+}
+
+.diarias-results {
+  margin-top: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  background: #ffffff;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.diarias-results.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.diarias-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.diarias-results-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.diarias-results-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.diarias-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.diarias-status.bg-success {
+  color: #0f5132;
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+}
+
+.diarias-status.bg-danger {
+  color: #842029;
+  background: #f8d7da;
+  border: 1px solid #f5c2c7;
+}
+
+.diarias-status.bg-info {
+  color: #0c4a6e;
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
+}
+
+.diarias-status.bg-warning {
+  color: #78350f;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+}
+
+.diarias-status.bg-secondary {
+  color: #334155;
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+}
+
+.diarias-status.status-danger-soft {
+  color: #842029;
+  background: #f8d7da;
+  border: 1px solid #f5c2c7;
+}
+
+.diarias-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.diarias-summary-card {
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px;
+  min-height: 84px;
+}
+
+.diarias-summary-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #64748b;
+}
+
+.diarias-summary-value {
+  display: block;
+  margin: 0;
+  font-size: 1rem;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.diarias-summary-value--multiline {
+  white-space: normal;
+}
+
+.diarias-table-shell {
+  width: 100%;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+}
+
+.diarias-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.diarias-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #475569;
+  background: #f1f5f9;
+}
+
+.diarias-table th,
+.diarias-table td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.26);
+  padding: 9px 10px;
+  vertical-align: middle;
+}
+
+.diarias-table tbody tr:nth-child(even) {
+  background: #fafafa;
+}
+
+.diarias-table tfoot td {
+  font-weight: 700;
+  background: #f8fafc;
+}
+
+.diarias-cell--number,
+.diarias-col-number {
+  text-align: center;
+}
+
+.diarias-cell--money,
+.diarias-col-money {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.diarias-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+}
+
+.diarias-chip--interior {
+  background: #15803d;
+}
+
+.diarias-chip--capital {
+  background: #1d4ed8;
+}
+
+.diarias-chip--brasilia {
+  background: #7c3aed;
+}
+
+.diarias-alert {
+  margin-top: 12px;
+  border-radius: 10px;
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 10px 12px;
+}
+
+.diarias-alert[hidden] {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .diarias-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .diarias-results-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .diarias-results-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@keyframes diarias-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

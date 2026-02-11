@@ -1,0 +1,171 @@
+.sim-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.sim-card {
+  border-radius: 16px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.sim-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.sim-card-head h3 {
+  margin: 0;
+  font-size: 1.08rem;
+  color: #0f172a;
+}
+
+.sim-card-text {
+  margin: 0 0 14px;
+  color: #475569;
+  font-size: 0.94rem;
+}
+
+.sim-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.sim-periods-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: #334155;
+  font-weight: 600;
+}
+
+.sim-periods-list {
+  display: grid;
+  gap: 10px;
+}
+
+.sim-periodo-card {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.sim-periodo-card.is-invalid {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.24);
+}
+
+.sim-remove-periodo {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: #ffffff;
+  color: #64748b;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.sim-remove-periodo:hover {
+  border-color: #cbd5e1;
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+.sim-remove-periodo:disabled,
+.sim-remove-periodo[hidden] {
+  display: none;
+}
+
+.sim-periodo-error {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.sim-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px);
+  gap: 14px;
+}
+
+.sim-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sim-actions .diarias-primary-button {
+  flex: 1 1 220px;
+  max-width: 340px;
+}
+
+#simResultadoCard {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+#simResultadoCard.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#simResultadoCard .diarias-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+#simResultadoCard .diarias-table td.diarias-cell--money,
+#simResultadoCard .diarias-table th.diarias-col-money {
+  text-align: right;
+}
+
+#simResultadoCard .diarias-chip--brasilia {
+  background: #dc2626;
+}
+
+@media (max-width: 1200px) {
+  .sim-periodo-card {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .sim-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sim-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sim-periodo-card {
+    grid-template-columns: 1fr;
+  }
+
+  .sim-actions .diarias-primary-button {
+    max-width: none;
+  }
+
+  .sim-remove-periodo {
+    width: 100%;
+    justify-content: center;
+  }
+}

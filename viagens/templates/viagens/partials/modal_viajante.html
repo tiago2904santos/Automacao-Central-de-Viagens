@@ -15,7 +15,7 @@
         </label>
         <label>
           RG
-          <input type="text" name="rg" value="{{ values.rg|default_if_none:'' }}" required data-mask="rg" inputmode="numeric" />
+          <input type="text" name="rg" value="{{ values.rg|default_if_none:'' }}" required data-mask="rg" inputmode="text" />
           {% if erros.rg %}<span class="field-errors">{{ erros.rg }}</span>{% endif %}
         </label>
         <label>

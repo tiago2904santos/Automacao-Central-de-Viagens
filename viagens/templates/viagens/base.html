@@ -51,6 +51,12 @@
               </li>
             </ul>
           </li>
+          <li>
+            <a href="{% url 'simulacao_diarias' %}">
+              <i data-lucide="calculator"></i>
+              Simulacao de Diarias
+            </a>
+          </li>
 
           <li class="has-submenu">
             <a href="#" class="submenu-toggle">
@@ -169,6 +175,7 @@
       }
     </script>
 
+    <script src="{% static 'js/masks.js' %}"></script>
     <script src="{% static 'viagens/ui.js' %}"></script>
     <script src="{% static 'viagens/viajante_form.js' %}"></script>
     {% block scripts %}{% endblock %}

@@ -12,7 +12,7 @@ class Step3BackendContractTests(TestCase):
 
         self.viajante = Viajante.objects.create(
             nome="Servidor Teste",
-            rg="123456",
+            rg="12345678X",
             cpf="000.000.000-00",
             cargo="Delegado",
         )
@@ -21,7 +21,7 @@ class Step3BackendContractTests(TestCase):
         session = self.client.session
         session["oficio_wizard"] = {
             "oficio": "123/2024",
-            "protocolo": "456/2024",
+            "protocolo": "121234567",
             "placa": "ABC1234",
             "modelo": "Uno",
             "combustivel": "Gasolina",

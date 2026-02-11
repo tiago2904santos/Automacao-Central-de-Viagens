@@ -48,12 +48,19 @@
         <section class="grid">
           <label>
             Oficio
-            <input type="text" name="oficio" value="{{ oficio }}" data-preview-target="oficio" />
-            <span class="field-help">Use o numero oficial do documento.</span>
+            <input type="text" name="oficio" value="{{ oficio }}" data-preview-target="oficio" readonly />
+            <span class="field-help">Numero gerado automaticamente por ano.</span>
           </label>
           <label>
             Protocolo
-            <input type="text" name="protocolo" value="{{ protocolo }}" data-preview-target="protocolo" />
+            <input
+              type="text"
+              name="protocolo"
+              value="{{ protocolo }}"
+              data-preview-target="protocolo"
+              data-mask="protocolo"
+              inputmode="numeric"
+            />
             <span class="field-help">Informe o protocolo interno.</span>
           </label>
           <label>

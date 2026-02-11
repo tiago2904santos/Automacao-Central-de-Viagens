@@ -7,10 +7,22 @@ urlpatterns = [
     path("", views.dashboard_home, name="dashboard_home"),
     path("dashboard/", views.dashboard_home, name="dashboard_home_alt"),
     path("dashboard/data/", views.dashboard_data_api, name="dashboard_data_api"),
+    path("simulacao-diarias/", views.simulacao_diarias, name="simulacao_diarias"),
+    path(
+        "simulacao-diarias/calcular/",
+        views.simulacao_diarias_calcular,
+        name="simulacao_diarias_calcular",
+    ),
     path("oficios/novo/", views.formulario, name="formulario"),
     path("oficios/etapa-2/", views.oficio_step2, name="oficio_step2"),
     path("oficios/etapa-3/", views.oficio_step3, name="oficio_step3"),
+    path("oficios/calcular-diarias/", views.oficio_calcular_diarias, name="oficio_calcular_diarias"),
     path("oficios/etapa-4/", views.oficio_step4, name="oficio_step4"),
+    path(
+        "oficios/<int:oficio_id>/calcular-diarias/",
+        views.oficio_calcular_diarias,
+        name="oficio_calcular_diarias_oficio",
+    ),
     path(
         "oficios/<int:oficio_id>/rascunho/",
         views.oficio_draft_resume,

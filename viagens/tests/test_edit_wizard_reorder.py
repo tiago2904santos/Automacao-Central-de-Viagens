@@ -15,7 +15,7 @@ class EditWizardReorderTests(TestCase):
 
         self.viajante = Viajante.objects.create(
             nome="Servidor Teste",
-            rg="123456",
+            rg="12345678X",
             cpf="000.000.000-00",
             cargo="Delegado",
         )
@@ -166,4 +166,3 @@ class EditWizardReorderTests(TestCase):
             [t.get("destino_cidade") for t in draft["trechos"]],
             [str(self.d3.id), str(self.d1.id), str(self.d4.id), str(self.d2.id)],
         )
-

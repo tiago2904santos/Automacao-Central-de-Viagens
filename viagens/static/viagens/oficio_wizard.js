@@ -1,5 +1,5 @@
 function updateElementIndex(element, index, prefix) {
-  const regex = new RegExp(`${prefix}-(\d+|__prefix__)-`, "g");
+  const regex = new RegExp(`${prefix}-(\\d+|__prefix__)-`, "g");
   element.querySelectorAll("[name], [id], [for]").forEach((item) => {
     if (item.name) {
       item.name = item.name.replace(regex, `${prefix}-${index}-`);
@@ -29,16 +29,35 @@ function initRoteiroFormset() {
   const retornoSaidaHoraInput = document.getElementById("retornoSaidaHora");
   const retornoChegadaDataInput = document.getElementById("retornoChegadaData");
   const retornoChegadaHoraInput = document.getElementById("retornoChegadaHora");
-  const tipoDestinoSelect = document.getElementById("tipoDestino");
+  const tipoDestinoInput = document.getElementById("tipoDestino");
   const quantidadeDiariasInput = document.getElementById("quantidadeDiarias");
   const valorDiariasInput = document.getElementById("valorDiarias");
+  const valorDiariasExtensoInput = document.getElementById("valorDiariasExtenso");
   const servidoresSelect = document.getElementById("servidoresSelect");
-  const diariasPreviewText = document.getElementById("diariasPreviewText");
-  const diariasPreviewPorServidor = document.getElementById("diariasPreviewPorServidor");
-  const diariasPreviewTotal = document.getElementById("diariasPreviewTotal");
-  const diariasPreviewHoras = document.getElementById("diariasPreviewHoras");
+  const diariasPanel = document.getElementById("diariasPanel");
+  const diariasCta = document.getElementById("diariasCta");
+  const diariasResults = document.getElementById("diariasResults");
+  const calcularDiariasBtn = document.getElementById("calcularDiariasBtn");
+  const recalcularDiariasBtn = document.getElementById("recalcularDiariasBtn");
+  const calcularDiariasBtnLabel = document.getElementById("calcularDiariasBtnLabel");
+  const calculoDiariasMensagem = document.getElementById("calculoDiariasMensagem");
+  const statusEl = document.getElementById("diariasStatus");
+  const diariasTableBody = document.getElementById("diariasTableBody");
+  const diariasTotalCard = document.getElementById("diariasTotal");
+  const diariasExtensoCard = document.getElementById("diariasExtenso");
+  const diariasQtdCard = document.getElementById("diariasQtd");
+  const diariasHorasCard = document.getElementById("diariasHoras");
+  const diariasTotalQtd = document.getElementById("diariasTotalQtd");
+  const diariasTotalHoras = document.getElementById("diariasTotalHoras");
+  const diariasTotalValor = document.getElementById("diariasTotalValor");
+  const diariasCalcError = document.getElementById("diariasCalcError");
   const sedeUfSelect = document.getElementById("sedeUf");
   const sedeCidadeSelect = document.getElementById("sedeCidade");
+  let diariasState = {
+    hasResult: false,
+    isStale: false,
+    isLoading: false,
+  };
 
   if (!trechosList || !totalFormsInput || !destinoList || !destinoTemplate) {
     return;
@@ -77,6 +96,70 @@ function initRoteiroFormset() {
     return cidadeTrim || estadoTrim || "";
   };
 
+  const CAPITAIS = new Set([
+    "ARACAJU",
+    "BELEM",
+    "BELO HORIZONTE",
+    "BOA VISTA",
+    "BRASILIA",
+    "CAMPO GRANDE",
+    "CUIABA",
+    "CURITIBA",
+    "FLORIANOPOLIS",
+    "FORTALEZA",
+    "GOIANIA",
+    "JOAO PESSOA",
+    "MACAPA",
+    "MACEIO",
+    "MANAUS",
+    "NATAL",
+    "PALMAS",
+    "PORTO ALEGRE",
+    "PORTO VELHO",
+    "RECIFE",
+    "RIO BRANCO",
+    "RIO DE JANEIRO",
+    "SALVADOR",
+    "SAO LUIS",
+    "SAO PAULO",
+    "TERESINA",
+    "VITORIA",
+  ]);
+
+  const normalizeCityName = (value) =>
+    (value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .trim();
+
+  const inferTipoDestino = () => {
+    const destinos = collectDestinosData().filter((dest) => dest.uf && dest.cidade);
+    if (!destinos.length) {
+      return "";
+    }
+    let temCapital = false;
+    for (const destino of destinos) {
+      const uf = (destino.uf || "").toUpperCase();
+      const cidadeBase = normalizeCityName((destino.label || "").split("/")[0]);
+      if (uf === "DF" && cidadeBase === "BRASILIA") {
+        return "BRASILIA";
+      }
+      if (CAPITAIS.has(cidadeBase)) {
+        temCapital = true;
+      }
+    }
+    return temCapital ? "CAPITAL" : "INTERIOR";
+  };
+
+  const syncTipoDestino = () => {
+    const tipo = inferTipoDestino();
+    if (tipoDestinoInput) {
+      tipoDestinoInput.value = tipo;
+    }
+    return tipo;
+  };
+
   const getSedeLabel = () => {
     if (!sedeCidadeSelect) {
       return formatLabel("", sedeUfSelect?.value || "");
@@ -100,180 +183,379 @@ function initRoteiroFormset() {
       };
     });
 
-  const parseDateTime = (dateValue, timeValue) => {
-    if (!dateValue) {
-      return null;
+  const setCalculoMensagem = (text) => {
+    if (calculoDiariasMensagem) {
+      calculoDiariasMensagem.textContent = text || "";
     }
-    const time = timeValue || "00:00";
-    const dt = new Date(`${dateValue}T${time}:00`);
-    return Number.isNaN(dt.getTime()) ? null : dt;
   };
 
-  const calcularDiarias = (tipoDestino, saidaDt, chegadaDt, servidores) => {
-    if (!tipoDestino || !saidaDt || !chegadaDt) {
-      return {
-        quantidade: "",
-        valorTotal: "",
-      };
-    }
-    const totalMs = chegadaDt.getTime() - saidaDt.getTime();
-    if (totalMs <= 0) {
-      return { quantidade: "", valorTotal: "" };
-    }
-    const totalHoras = totalMs / (1000 * 60 * 60);
-    let diasInteiros = Math.floor(totalHoras / 24);
-    let restoMs = totalMs - diasInteiros * 24 * 60 * 60 * 1000;
-    let parcial = 0;
-
-    if (
-      saidaDt.toDateString() !== chegadaDt.toDateString() &&
-      totalMs < 24 * 60 * 60 * 1000
-    ) {
-      diasInteiros = 1;
-      restoMs = 0;
-    } else if (restoMs <= 6 * 60 * 60 * 1000) {
-      parcial = 0;
-    } else if (restoMs <= 8 * 60 * 60 * 1000) {
-      parcial = 15;
-    } else {
-      parcial = 30;
-    }
-
-    const tabela = {
-      INTERIOR: { full: 290.55, p15: 43.58, p30: 87.17 },
-      CAPITAL: { full: 371.26, p15: 55.69, p30: 111.38 },
-      BRASILIA: { full: 468.12, p15: 70.22, p30: 140.43 },
-    };
-    const valores = tabela[tipoDestino] || { full: 0, p15: 0, p30: 0 };
-    const valorParcial = parcial === 15 ? valores.p15 : parcial === 30 ? valores.p30 : 0;
-    const valor1 = diasInteiros * valores.full + valorParcial;
-    const total = valor1 * (servidores || 0);
-
-    const partes = [];
-    if (diasInteiros > 0) {
-      partes.push(`${diasInteiros} x 100%`);
-    }
-    if (parcial > 0) {
-      partes.push(`1 x ${parcial}%`);
-    }
-
-    return {
-      quantidade: partes.join(" + "),
-      valorTotal: total.toFixed(2).replace(".", ","),
-    };
-  };
-
-  const formatCurrency = (value) => {
-    return value.toFixed(2);
-  };
-
-  const updateDiarias = () => {
-    if (!tipoDestinoSelect || !quantidadeDiariasInput || !valorDiariasInput) {
+  const setCalculoErro = (text) => {
+    if (!diariasCalcError) {
       return;
     }
-    const first = getCards()[0];
-    const saidaData = first?.querySelector("[data-role='saida-data']")?.value || "";
-    const saidaHora = first?.querySelector("[data-role='saida-hora']")?.value || "";
-    const chegadaData = retornoChegadaDataInput?.value || "";
-    const chegadaHora = retornoChegadaHoraInput?.value || "";
-    const saidaDt = parseDateTime(saidaData, saidaHora);
-    const chegadaDt = parseDateTime(chegadaData, chegadaHora);
-    const servidores = servidoresSelect
-      ? servidoresSelect.selectedOptions.length
-      : Number(roteiroForm?.dataset.servidoresCount || "0");
-    const resultado = calcularDiarias(
-      tipoDestinoSelect.value,
-      saidaDt,
-      chegadaDt,
-      servidores
+    const hasError = Boolean(text);
+    diariasCalcError.hidden = !hasError;
+    diariasCalcError.textContent = hasError ? text : "";
+  };
+
+  const setButtonsLoading = (isLoading) => {
+    [calcularDiariasBtn, recalcularDiariasBtn].forEach((btn) => {
+      if (!btn) {
+        return;
+      }
+      btn.disabled = isLoading;
+      btn.classList.toggle("is-loading", isLoading);
+    });
+    if (calcularDiariasBtnLabel) {
+      calcularDiariasBtnLabel.textContent = isLoading
+        ? "Calculando..."
+        : "Calcular diarias";
+    }
+  };
+
+  const clearDiariasStatus = () => {
+    if (!statusEl) {
+      return;
+    }
+    statusEl.classList.remove(
+      "bg-success",
+      "bg-danger",
+      "bg-warning",
+      "bg-secondary",
+      "bg-info",
+      "status-danger-soft"
     );
-    quantidadeDiariasInput.value = resultado.quantidade || "";
-    valorDiariasInput.value = resultado.valorTotal || "";
+    statusEl.textContent = "";
+    statusEl.hidden = true;
   };
 
-  const updateDiariasPreview = () => {
-    if (
-      !diariasPreviewText ||
-      !diariasPreviewPorServidor ||
-      !diariasPreviewTotal ||
-      !diariasPreviewHoras
-    ) {
+  const updateResultsVisibility = (showResults) => {
+    if (diariasCta) {
+      diariasCta.hidden = showResults;
+    }
+    if (!diariasResults) {
       return;
     }
-    const first = getCards()[0];
-    const saidaData = first?.querySelector("[data-role='saida-data']")?.value || "";
-    const saidaHora = first?.querySelector("[data-role='saida-hora']")?.value || "";
-    const chegadaData = retornoChegadaDataInput?.value || "";
-    const chegadaHora = retornoChegadaHoraInput?.value || "";
-    const saidaDt = parseDateTime(saidaData, saidaHora);
-    const chegadaDt = parseDateTime(chegadaData, chegadaHora);
-    const servidores = servidoresSelect
-      ? servidoresSelect.selectedOptions.length
-      : Number(roteiroForm?.dataset.servidoresCount || "0");
-
-    if (!tipoDestinoSelect?.value || !saidaDt || !chegadaDt || servidores <= 0) {
-      diariasPreviewText.textContent = "Preencha saída/chegada para calcular";
-      diariasPreviewPorServidor.textContent = "-";
-      diariasPreviewTotal.textContent = "-";
-      diariasPreviewHoras.textContent = "-";
+    if (!showResults) {
+      diariasResults.classList.remove("is-visible");
+      diariasResults.hidden = true;
       return;
     }
+    diariasResults.hidden = false;
+    requestAnimationFrame(() => {
+      diariasResults.classList.add("is-visible");
+    });
+  };
 
-    const totalMs = chegadaDt.getTime() - saidaDt.getTime();
-    if (totalMs <= 0) {
-      diariasPreviewText.textContent = "Preencha saída/chegada para calcular";
-      diariasPreviewPorServidor.textContent = "-";
-      diariasPreviewTotal.textContent = "-";
-      diariasPreviewHoras.textContent = "-";
-      return;
+  const formatMoney = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) {
+      return "-";
     }
+    return raw.startsWith("R$") ? raw : `R$ ${raw}`;
+  };
 
-    const totalHoras = totalMs / (1000 * 60 * 60);
-    let diasInteiros = Math.floor(totalHoras / 24);
-    let restoHoras = totalHoras - diasInteiros * 24;
-    let parcial = 0;
-
-    if (
-      saidaDt.toDateString() !== chegadaDt.toDateString() &&
-      totalHoras < 24
-    ) {
-      diasInteiros = 1;
-      restoHoras = 0;
-    } else if (restoHoras <= 6) {
-      parcial = 0;
-    } else if (restoHoras <= 8) {
-      parcial = 15;
-    } else {
-      parcial = 30;
+  const formatHours = (value) => {
+    if (value === undefined || value === null || value === "") {
+      return "-";
     }
+    return `${String(value).replace(".", ",")}h`;
+  };
 
-    const tabela = {
-      INTERIOR: { full: 290.55, p15: 43.58, p30: 87.17 },
-      CAPITAL: { full: 371.26, p15: 55.69, p30: 111.38 },
-      BRASILIA: { full: 468.12, p15: 70.22, p30: 140.43 },
+  const formatTipoLabel = (tipo) => {
+    const normalized = String(tipo || "").toUpperCase();
+    if (normalized === "BRASILIA") {
+      return "BRASILIA";
+    }
+    if (normalized === "CAPITAL") {
+      return "CAPITAL";
+    }
+    return "INTERIOR";
+  };
+
+  const tipoClassName = (tipo) => {
+    const normalized = String(tipo || "").toUpperCase();
+    if (normalized === "BRASILIA") {
+      return "diarias-chip diarias-chip--brasilia";
+    }
+    if (normalized === "CAPITAL") {
+      return "diarias-chip diarias-chip--capital";
+    }
+    return "diarias-chip diarias-chip--interior";
+  };
+
+  const resetDiariasData = (clearHiddenFields) => {
+    if (diariasTableBody) {
+      diariasTableBody.innerHTML = "";
+    }
+    if (diariasTotalCard) {
+      diariasTotalCard.textContent = "-";
+    }
+    if (diariasExtensoCard) {
+      diariasExtensoCard.textContent = "-";
+    }
+    if (diariasQtdCard) {
+      diariasQtdCard.textContent = "-";
+    }
+    if (diariasHorasCard) {
+      diariasHorasCard.textContent = "-";
+    }
+    if (diariasTotalQtd) {
+      diariasTotalQtd.textContent = "-";
+    }
+    if (diariasTotalHoras) {
+      diariasTotalHoras.textContent = "-";
+    }
+    if (diariasTotalValor) {
+      diariasTotalValor.textContent = "-";
+    }
+    if (clearHiddenFields) {
+      if (quantidadeDiariasInput) {
+        quantidadeDiariasInput.value = "";
+      }
+      if (valorDiariasInput) {
+        valorDiariasInput.value = "";
+      }
+      if (valorDiariasExtensoInput) {
+        valorDiariasExtensoInput.value = "";
+      }
+    }
+  };
+
+  const setPanelDatasetState = (stateName) => {
+    if (diariasPanel) {
+      diariasPanel.dataset.state = stateName;
+    }
+  };
+
+  const setDiariasIdle = () => {
+    diariasState = {
+      hasResult: false,
+      isStale: false,
+      isLoading: false,
     };
-    const valores = tabela[tipoDestinoSelect.value] || {
-      full: 0,
-      p15: 0,
-      p30: 0,
+    setButtonsLoading(false);
+    setPanelDatasetState("idle");
+    updateResultsVisibility(false);
+    clearDiariasStatus();
+    setCalculoMensagem("Clique para calcular com base no roteiro.");
+  };
+
+  const setDiariasLoading = () => {
+    diariasState = {
+      hasResult: diariasState.hasResult,
+      isStale: false,
+      isLoading: true,
     };
-    const valorParcial =
-      parcial === 15 ? valores.p15 : parcial === 30 ? valores.p30 : 0;
-    const valorPorServidor = diasInteiros * valores.full + valorParcial;
-    const valorTotal = valorPorServidor * servidores;
-
-    const partes = [];
-    if (diasInteiros > 0) {
-      partes.push(`${diasInteiros} x 100%`);
+    setButtonsLoading(true);
+    setPanelDatasetState("loading");
+    updateResultsVisibility(diariasState.hasResult);
+    clearDiariasStatus();
+    if (statusEl) {
+      statusEl.classList.add("bg-info");
+      statusEl.textContent = "Calculando...";
+      statusEl.hidden = false;
     }
-    if (parcial > 0) {
-      partes.push(`1 x ${parcial}%`);
+    setCalculoMensagem("Calculando diarias...");
+  };
+
+  const setDiariasDone = () => {
+    diariasState = {
+      hasResult: true,
+      isStale: false,
+      isLoading: false,
+    };
+    setButtonsLoading(false);
+    setPanelDatasetState("done");
+    updateResultsVisibility(true);
+    clearDiariasStatus();
+    if (statusEl) {
+      statusEl.classList.add("bg-success");
+      statusEl.textContent = "Calculo atualizado";
+      statusEl.hidden = false;
+    }
+    setCalculoMensagem("Calculo atualizado.");
+  };
+
+  const setDiariasStale = () => {
+    if (!diariasState.hasResult) {
+      setDiariasIdle();
+      return;
+    }
+    diariasState = {
+      hasResult: true,
+      isStale: true,
+      isLoading: false,
+    };
+    setButtonsLoading(false);
+    setPanelDatasetState("stale");
+    updateResultsVisibility(true);
+    clearDiariasStatus();
+    if (statusEl) {
+      statusEl.classList.add("bg-danger");
+      statusEl.textContent = "Calculo desatualizado";
+      statusEl.hidden = false;
+    }
+    setCalculoMensagem("Calculo desatualizado. Clique em Recalcular.");
+  };
+
+  const addCell = (row, value, className = "") => {
+    const cell = document.createElement("td");
+    cell.textContent = value || "-";
+    if (className) {
+      cell.className = className;
+    }
+    row.appendChild(cell);
+  };
+
+  const renderDiariasResultado = (payload) => {
+    const periodos = Array.isArray(payload?.periodos) ? payload.periodos : [];
+    const totais = payload?.totais || {};
+
+    if (diariasTableBody) {
+      diariasTableBody.innerHTML = "";
+      periodos.forEach((periodo) => {
+        const row = document.createElement("tr");
+        const tipoCell = document.createElement("td");
+        const chip = document.createElement("span");
+        chip.className = tipoClassName(periodo.tipo);
+        chip.textContent = formatTipoLabel(periodo.tipo);
+        tipoCell.appendChild(chip);
+        row.appendChild(tipoCell);
+
+        const saidaLabel = [periodo.data_saida, periodo.hora_saida]
+          .filter(Boolean)
+          .join(" ");
+        const chegadaLabel = [periodo.data_chegada, periodo.hora_chegada]
+          .filter(Boolean)
+          .join(" ");
+        addCell(row, saidaLabel);
+        addCell(row, chegadaLabel);
+        addCell(row, String(periodo.n_diarias ?? ""), "diarias-cell--number");
+        addCell(
+          row,
+          formatHours(periodo.horas_adicionais).replace("h", ""),
+          "diarias-cell--number"
+        );
+        addCell(row, formatMoney(periodo.valor_diaria), "diarias-cell--money");
+        addCell(row, formatMoney(periodo.subtotal), "diarias-cell--money");
+        diariasTableBody.appendChild(row);
+      });
     }
 
-    diariasPreviewText.textContent = partes.join(" + ") || "0";
-    diariasPreviewPorServidor.textContent = formatCurrency(valorPorServidor);
-    diariasPreviewTotal.textContent = formatCurrency(valorTotal);
-    diariasPreviewHoras.textContent = `${totalHoras.toFixed(2)}h`;
+    if (diariasTotalCard) {
+      diariasTotalCard.textContent = formatMoney(totais.total_valor);
+    }
+    if (diariasExtensoCard) {
+      diariasExtensoCard.textContent = totais.valor_extenso || "-";
+    }
+    if (diariasQtdCard) {
+      diariasQtdCard.textContent = totais.total_diarias || "-";
+    }
+    if (diariasHorasCard) {
+      diariasHorasCard.textContent = formatHours(totais.total_horas);
+    }
+    if (diariasTotalQtd) {
+      diariasTotalQtd.textContent = totais.total_diarias || "-";
+    }
+    if (diariasTotalHoras) {
+      diariasTotalHoras.textContent = formatHours(totais.total_horas);
+    }
+    if (diariasTotalValor) {
+      diariasTotalValor.textContent = formatMoney(totais.total_valor);
+    }
+    if (quantidadeDiariasInput) {
+      quantidadeDiariasInput.value = totais.total_diarias || "";
+    }
+    if (valorDiariasInput) {
+      valorDiariasInput.value = totais.total_valor || "";
+    }
+    if (valorDiariasExtensoInput && totais.valor_extenso) {
+      valorDiariasExtensoInput.value = totais.valor_extenso;
+    }
+    if (tipoDestinoInput && payload?.tipo_destino) {
+      tipoDestinoInput.value = payload.tipo_destino;
+    }
+    setCalculoErro("");
+    setDiariasDone();
+  };
+
+  const getCsrfToken = () => {
+    const tokenInput = roteiroForm?.querySelector("input[name='csrfmiddlewaretoken']");
+    return tokenInput?.value || "";
+  };
+
+  const getServidoresCount = () => {
+    if (servidoresSelect) {
+      return servidoresSelect.selectedOptions.length;
+    }
+    return Number(roteiroForm?.dataset.servidoresCount || "0");
+  };
+
+  const requestDiariasCalculation = async () => {
+    if (!roteiroForm) {
+      return;
+    }
+    const calcUrl = roteiroForm.dataset.calcDiariasUrl || "";
+    if (!calcUrl) {
+      return;
+    }
+
+    trimTrailingEmptyDestinos();
+    regenerateTrechos();
+    syncTipoDestino();
+    syncDestinosOrder();
+
+    const formData = new FormData(roteiroForm);
+    formData.set("quantidade_servidores", String(getServidoresCount()));
+
+    const hadResultBefore = diariasState.hasResult;
+    setCalculoErro("");
+    setDiariasLoading();
+
+    try {
+      const response = await fetch(calcUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "X-CSRFToken": getCsrfToken(),
+        },
+        body: formData,
+      });
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch (_err) {
+        payload = {};
+      }
+      if (!response.ok) {
+        const message = payload?.error || "Preencha datas e horas para calcular.";
+        throw new Error(message);
+      }
+      renderDiariasResultado(payload);
+    } catch (error) {
+      if (hadResultBefore) {
+        diariasState.hasResult = true;
+        setDiariasStale();
+      } else {
+        resetDiariasData(false);
+        setDiariasIdle();
+      }
+      setCalculoErro(error?.message || "Preencha datas e horas para calcular.");
+    }
+  };
+
+  const invalidateDiarias = () => {
+    syncTipoDestino();
+    setCalculoErro("");
+    if (diariasState.isLoading) {
+      return;
+    }
+    if (diariasState.hasResult) {
+      setDiariasStale();
+      return;
+    }
+    setDiariasIdle();
   };
 
   const syncTrechosTotal = () => {
@@ -317,7 +599,7 @@ function initRoteiroFormset() {
       }
     });
     card.querySelectorAll("[data-trecho-route-preview]").forEach((preview) => {
-      preview.textContent = "Origem → Destino";
+      preview.textContent = "Origem -> Destino";
     });
     card.querySelectorAll("[data-trecho-origem-preview], [data-trecho-destino-preview]").forEach((preview) => {
       preview.textContent = "-";
@@ -328,9 +610,9 @@ function initRoteiroFormset() {
     const preview = card.querySelector("[data-trecho-route-preview]");
     if (preview) {
       if (origemLabel || destinoLabel) {
-        preview.textContent = `${origemLabel || "-"} → ${destinoLabel || "-"}`;
+        preview.textContent = `${origemLabel || "-"} -> ${destinoLabel || "-"}`;
       } else {
-        preview.textContent = "Origem → Destino";
+        preview.textContent = "Origem -> Destino";
       }
     }
     const origemPreview = card.querySelector("[data-trecho-origem-preview]");
@@ -424,8 +706,7 @@ function initRoteiroFormset() {
     });
     syncTrechosTotal();
     updateRetornoFields();
-    updateDiarias();
-    updateDiariasPreview();
+    invalidateDiarias();
   };
 
   const updateRetornoFields = () => {
@@ -502,20 +783,16 @@ function initRoteiroFormset() {
     const chegadaData = card.querySelector("[data-role='chegada-data']");
     const chegadaHora = card.querySelector("[data-role='chegada-hora']");
     if (saidaData) {
-      saidaData.addEventListener("change", updateDiarias);
-      saidaData.addEventListener("change", updateDiariasPreview);
+      saidaData.addEventListener("change", invalidateDiarias);
     }
     if (saidaHora) {
-      saidaHora.addEventListener("change", updateDiarias);
-      saidaHora.addEventListener("change", updateDiariasPreview);
+      saidaHora.addEventListener("change", invalidateDiarias);
     }
     if (chegadaData) {
-      chegadaData.addEventListener("change", updateDiarias);
-      chegadaData.addEventListener("change", updateDiariasPreview);
+      chegadaData.addEventListener("change", invalidateDiarias);
     }
     if (chegadaHora) {
-      chegadaHora.addEventListener("change", updateDiarias);
-      chegadaHora.addEventListener("change", updateDiariasPreview);
+      chegadaHora.addEventListener("change", invalidateDiarias);
     }
   };
 
@@ -640,6 +917,14 @@ function initRoteiroFormset() {
   if (addDestinoBtn) {
     addDestinoBtn.addEventListener("click", addDestinoItem);
   }
+  if (calcularDiariasBtn) {
+    calcularDiariasBtn.addEventListener("click", requestDiariasCalculation);
+  }
+  if (recalcularDiariasBtn) {
+    recalcularDiariasBtn.addEventListener("click", requestDiariasCalculation);
+  }
+  resetDiariasData(false);
+  setDiariasIdle();
 
   if (sedeUfSelect) {
     sedeUfSelect.addEventListener("change", () => {
@@ -651,35 +936,27 @@ function initRoteiroFormset() {
     sedeCidadeSelect.addEventListener("change", regenerateTrechos);
   }
 
-  if (tipoDestinoSelect) {
-    tipoDestinoSelect.addEventListener("change", updateDiarias);
-    tipoDestinoSelect.addEventListener("change", updateDiariasPreview);
-  }
   if (retornoChegadaDataInput) {
-    retornoChegadaDataInput.addEventListener("change", updateDiarias);
-    retornoChegadaDataInput.addEventListener("change", updateDiariasPreview);
+    retornoChegadaDataInput.addEventListener("change", invalidateDiarias);
   }
   if (retornoChegadaHoraInput) {
-    retornoChegadaHoraInput.addEventListener("change", updateDiarias);
-    retornoChegadaHoraInput.addEventListener("change", updateDiariasPreview);
+    retornoChegadaHoraInput.addEventListener("change", invalidateDiarias);
   }
   if (retornoSaidaDataInput) {
-    retornoSaidaDataInput.addEventListener("change", updateDiarias);
-    retornoSaidaDataInput.addEventListener("change", updateDiariasPreview);
+    retornoSaidaDataInput.addEventListener("change", invalidateDiarias);
   }
   if (retornoSaidaHoraInput) {
-    retornoSaidaHoraInput.addEventListener("change", updateDiarias);
-    retornoSaidaHoraInput.addEventListener("change", updateDiariasPreview);
+    retornoSaidaHoraInput.addEventListener("change", invalidateDiarias);
   }
   if (servidoresSelect) {
-    servidoresSelect.addEventListener("change", updateDiarias);
-    servidoresSelect.addEventListener("change", updateDiariasPreview);
+    servidoresSelect.addEventListener("change", invalidateDiarias);
   }
 
   if (roteiroForm) {
     roteiroForm.addEventListener("submit", () => {
       trimTrailingEmptyDestinos();
       regenerateTrechos();
+      syncTipoDestino();
       syncDestinosOrder();
     });
   }

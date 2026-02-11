@@ -8,6 +8,7 @@
 {% endblock %}
 
 {% block content %}
+  <link rel="stylesheet" href="{% static 'css/diarias.css' %}" />
   <nav class="stepper" aria-label="Etapas">
     <button
       class="stepper-step"
@@ -65,7 +66,7 @@
       <p class="page-subtitle">Defina sede, destinos e datas/horas por trecho.</p>
     </div>
     <div class="page-actions">
-      <span class="badge">Editando Oficio #{{ oficio_id }}</span>
+      <span class="badge">Editando Oficio {{ oficio_display }}</span>
       <button class="btn-clear btn-small" type="button" id="addTrechoBtn">Adicionar trecho</button>
     </div>
   </div>
@@ -147,7 +148,7 @@
         justify-content: flex-start;
       }
     </style>
-    <form method="post" id="roteiroForm" data-formset-prefix="trechos" data-servidores-count="{{ quantidade_servidores|default:0 }}" data-mode="edit">
+    <form method="post" id="roteiroForm" data-formset-prefix="trechos" data-servidores-count="{{ quantidade_servidores|default:0 }}" data-mode="edit" data-calc-diarias-url="{{ calcular_diarias_url }}">
       {% csrf_token %}
 
       <div class="sub-card">
@@ -436,76 +437,88 @@
         </div>
       </div>
 
-      <div class="trecho-card" data-diarias-card>
+      <section class="trecho-card diarias-panel" id="diariasPanel" data-diarias-card>
+        <input type="hidden" name="tipo_destino" id="tipoDestino" value="{{ tipo_destino|default:'' }}" />
+        <input type="hidden" name="quantidade_diarias" id="quantidadeDiarias" value="{{ quantidade_diarias|default:'' }}" />
+        <input type="hidden" name="valor_diarias" id="valorDiarias" value="{{ valor_diarias|default:'' }}" />
+        <input type="hidden" name="valor_diarias_extenso" id="valorDiariasExtenso" value="{{ valor_diarias_extenso|default:'' }}" />
+
         <div class="trecho-header">
           <div>
             <span class="badge">Diarias</span>
-            <div class="trecho-subtitle">Calculo automatico conforme tipo de destino.</div>
+            <div class="trecho-subtitle">Calculo detalhado por periodo do roteiro.</div>
           </div>
         </div>
 
         <div class="trecho-body">
-          <div class="sub-card">
-            <div class="grid">
-              <label>
-                Tipo de destino
-                <select name="tipo_destino" id="tipoDestino">
-                  <option value="">Selecione</option>
-                  <option value="INTERIOR" {% if tipo_destino == 'INTERIOR' %}selected{% endif %}>Interior</option>
-                  <option value="CAPITAL" {% if tipo_destino == 'CAPITAL' %}selected{% endif %}>Capital</option>
-                  <option value="BRASILIA" {% if tipo_destino == 'BRASILIA' %}selected{% endif %}>Brasilia</option>
-                </select>
-              </label>
-              <label>
-                Quantidade de diarias
-                <input type="text" name="quantidade_diarias" id="quantidadeDiarias" readonly />
-                <span class="field-help">Gerado automaticamente.</span>
-              </label>
-              <label>
-                Valor total das diarias
-                <input type="text" name="valor_diarias" id="valorDiarias" readonly />
-                <span class="field-help">Considera a quantidade de servidores.</span>
-              </label>
-              <label class="full">
-                Valor por extenso (manual)
-                <input type="text" name="valor_diarias_extenso" id="valorDiariasExtenso" value="{{ valor_diarias_extenso|default:'' }}" />
-                <span class="field-help">Preencha manualmente ate termos conversor automatico.</span>
-              </label>
-            </div>
+          <div class="diarias-cta" id="diariasCta">
+            <p class="diarias-cta-text" id="calculoDiariasMensagem">
+              Clique para calcular com base no roteiro.
+            </p>
+            <button class="btn-primary diarias-primary-button" type="button" id="calcularDiariasBtn">
+              <i data-lucide="calculator"></i>
+              <span id="calcularDiariasBtnLabel">Calcular diarias</span>
+            </button>
           </div>
-        </div>
-      </div>
 
-      <div class="trecho-card" data-diarias-preview>
-        <div class="trecho-header">
-          <div>
-            <span class="badge">Diarias (previa)</span>
-            <div class="trecho-subtitle">Atualiza automaticamente ao preencher os dados.</div>
-          </div>
-        </div>
-        <div class="trecho-body">
-          <div class="sub-card">
-            <div class="grid">
-              <label>
-                Resultado
-                <div class="preview" id="diariasPreviewText">Preencha saída/chegada para calcular</div>
-              </label>
-              <label>
-                Valor por servidor
-                <div class="preview" id="diariasPreviewPorServidor">-</div>
-              </label>
-              <label>
-                Valor total
-                <div class="preview" id="diariasPreviewTotal">-</div>
-              </label>
-              <label>
-                Total de horas
-                <div class="preview" id="diariasPreviewHoras">-</div>
-              </label>
+          <div class="diarias-alert" id="diariasCalcError" hidden></div>
+
+          <div class="diarias-results" id="diariasResults" hidden>
+            <div class="diarias-results-head">
+              <h3 class="diarias-results-title">Resumo e detalhamento</h3>
+              <div class="diarias-results-actions">
+                <span class="diarias-status" id="diariasStatus" hidden></span>
+                <button class="btn-clear btn-small" type="button" id="recalcularDiariasBtn">Recalcular</button>
+              </div>
+            </div>
+
+            <div class="diarias-summary-grid">
+              <article class="diarias-summary-card">
+                <span class="diarias-summary-label">Total</span>
+                <strong class="diarias-summary-value" id="diariasTotal">-</strong>
+              </article>
+              <article class="diarias-summary-card">
+                <span class="diarias-summary-label">Valor por extenso</span>
+                <strong class="diarias-summary-value diarias-summary-value--multiline" id="diariasExtenso">-</strong>
+              </article>
+              <article class="diarias-summary-card">
+                <span class="diarias-summary-label">Quantidade</span>
+                <strong class="diarias-summary-value" id="diariasQtd">-</strong>
+              </article>
+              <article class="diarias-summary-card">
+                <span class="diarias-summary-label">Horas adicionais</span>
+                <strong class="diarias-summary-value" id="diariasHoras">-</strong>
+              </article>
+            </div>
+
+            <div class="diarias-table-shell">
+              <table class="diarias-table">
+                <thead>
+                  <tr>
+                    <th>TIPO</th>
+                    <th>SAIDA</th>
+                    <th>CHEGADA</th>
+                    <th class="diarias-col-number">N DIARIAS</th>
+                    <th class="diarias-col-number">HORAS ADICIONAIS</th>
+                    <th class="diarias-col-money">VALOR DIARIA</th>
+                    <th class="diarias-col-money">SUBTOTAL</th>
+                  </tr>
+                </thead>
+                <tbody id="diariasTableBody"></tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="3">TOTAL</td>
+                    <td id="diariasTotalQtd" class="diarias-cell--number">-</td>
+                    <td id="diariasTotalHoras" class="diarias-cell--number">-</td>
+                    <td></td>
+                    <td id="diariasTotalValor" class="diarias-cell--money">-</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
       <div class="wizard-actions">
         <button class="btn-clear" type="submit" name="goto" value="step2">Voltar</button>

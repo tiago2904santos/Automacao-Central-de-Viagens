@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+import shutil
 import zipfile
 import tempfile
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
+from xml.etree import ElementTree as ET
 
 try:
     import pythoncom
@@ -18,18 +22,21 @@ except ImportError:  # pragma: no cover - optional Windows dependency
     win32client = None  # type: ignore[assignment]
 
 from django.conf import settings
+from django.utils import timezone
 from docx import Document as DocxFactory
 from docx.document import Document as DocxDocument
 from num2words import num2words
 
-from viagens.models import Cidade, ConfiguracaoOficio, Estado, Oficio, Trecho, Viajante
+from viagens.models import Cidade, ConfiguracaoOficio, Estado, Oficio, OficioConfig, Trecho, Viajante
 from viagens.services.oficio_config import get_oficio_config
 from viagens.services.text import title_case_pt
+from viagens.utils.normalize import format_protocolo_num, format_rg
 
 
 logger = logging.getLogger(__name__)
 
-PLACEHOLDER_RE = re.compile(r"{{\s*([^}]+?)\s*}}")
+# Aceita placeholders com espaços irregulares, inclusive casos como "{{chave} }"
+PLACEHOLDER_RE = re.compile(r"{{\s*([^{}]+?)\s*}(?:\s*})")
 
 # “largura” aproximada para estimar quebra em tabela
 NAME_MAX_VISUAL = 35.0
@@ -37,10 +44,37 @@ CARGO_MAX_VISUAL = 35.0
 
 NBSP = "\u00A0"  # não quebra e “segura” linha vazia no Word
 
+SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:!?])")
+OFICIO_NUMERO_RE = re.compile(r"\bN\s*\.\s*º")
+OFICIO_NUMERO_NO_SPACE_AFTER_RE = re.compile(r"\bN\.º(?=\S)")
+OFICIO_NUMERO_GRAU_RE = re.compile(r"\bN\s*°")
+PERCENT_DIARIAS_RE = re.compile(r"%\s*(di[aá]rias)", flags=re.IGNORECASE)
+EMAIL_LABEL_RE = re.compile(r"\be-?mail:\s*", flags=re.IGNORECASE)
+VIATURA_PORTE_RE = re.compile(
+    r"(Viatura\s+[^\n]+?)\s+(Porte/Tr[aâ]nsito de arma:)",
+    flags=re.IGNORECASE,
+)
+
 HEADER_UNIDADE_DEFAULT = "SECRETARIA DE ESTADO DA SEGURANÇA PÚBLICA"
 HEADER_ORIGEM_DEFAULT = "POLÍCIA CIVIL DO PARANÁ ASSESSORIA DE COMUNICAÇÃO SOCIAL"
 FOOTER_ASSINANTE_NOME_DEFAULT = "DR. RIAD BRAGA FARHAT"
 FOOTER_ASSINANTE_CARGO_DEFAULT = "MD. DELEGADO GERAL ADJUNTO"
+CUSTOS_SECTION_TITLE = (
+    "Custos: Informar qual entidade custeara as diarias (hospedagem/alimentacao) e deslocamento:"
+)
+
+
+class AssinaturaObrigatoriaError(ValueError):
+    pass
+
+
+class DocxPdfConversionError(RuntimeError):
+    pass
+
+
+class MotoristaCaronaValidationError(ValueError):
+    pass
+
 FOOTER_ENDERECO_DEFAULT = (
     "Assessoria de Comunicação Social - Avenida Iguaçú, 470- Rebouças – "
     "Curitiba-PR – CEP 80.230-020:  Fone: 41-3235-6476 – e-mail:comunicacaopc.pr.gov.br"
@@ -84,6 +118,111 @@ def _join(parts: Iterable[str], sep=" - ") -> str:
 
 def _title_case(text: str) -> str:
     return " ".join(w.capitalize() for w in (text or "").split())
+
+
+def _clean_inline_text(value: str | None) -> str:
+    if value is None:
+        return ""
+    text = str(value).replace("\r", " ").replace("\n", " ")
+    return " ".join(text.split()).strip()
+
+
+def _sanitize_xml_text(value: str | None) -> str:
+    if value is None:
+        return ""
+    text = str(value)
+    cleaned_chars: list[str] = []
+    for ch in text:
+        codepoint = ord(ch)
+        if ch in ("\t", "\n", "\r"):
+            cleaned_chars.append(ch)
+            continue
+        if (
+            0x20 <= codepoint <= 0xD7FF
+            or 0xE000 <= codepoint <= 0xFFFD
+            or 0x10000 <= codepoint <= 0x10FFFF
+        ):
+            cleaned_chars.append(ch)
+    return "".join(cleaned_chars)
+
+
+def _sanitize_mapping_values(mapping: dict[str, str]) -> dict[str, str]:
+    return {key: _sanitize_xml_text(str(value)) for key, value in mapping.items()}
+
+
+def get_missing_assinatura_fields(oficio_cfg: OficioConfig) -> list[str]:
+    missing: list[str] = []
+    assinante = getattr(oficio_cfg, "assinante", None)
+    if not assinante:
+        return ["assinante"]
+
+    if not _clean_inline_text(getattr(assinante, "nome", "") or ""):
+        missing.append("nome do assinante")
+    if not _clean_inline_text(getattr(assinante, "cargo", "") or ""):
+        missing.append("cargo/função do assinante")
+    return missing
+
+
+def ensure_assinatura_config_valida(oficio_cfg: OficioConfig) -> None:
+    missing = get_missing_assinatura_fields(oficio_cfg)
+    if not missing:
+        return
+    missing_str = ", ".join(missing)
+    raise AssinaturaObrigatoriaError(
+        f"Não foi possível gerar o ofício. Configure a assinatura obrigatória e preencha: {missing_str}."
+    )
+
+
+def ensure_motorista_carona_campos(oficio: Oficio) -> None:
+    if not getattr(oficio, "motorista_carona", False):
+        return
+
+    oficio_motorista = _clean_inline_text(
+        getattr(oficio, "motorista_oficio_formatado", "")
+        or getattr(oficio, "motorista_oficio", "")
+        or ""
+    )
+    protocolo_motorista = _clean_inline_text(
+        getattr(oficio, "motorista_protocolo_formatado", "")
+        or format_protocolo_num(getattr(oficio, "motorista_protocolo", ""))
+        or getattr(oficio, "motorista_protocolo", "")
+        or ""
+    )
+
+    if not oficio_motorista:
+        raise MotoristaCaronaValidationError("Informe o Ofício do motorista (carona).")
+    if not protocolo_motorista:
+        raise MotoristaCaronaValidationError("Informe o Protocolo do motorista (carona).")
+
+
+def _normalize_microformat_line(text: str) -> str:
+    line = _clean_inline_text(text)
+    if not line:
+        return ""
+
+    line = OFICIO_NUMERO_RE.sub("N.º", line)
+    line = OFICIO_NUMERO_NO_SPACE_AFTER_RE.sub("N.º ", line)
+    line = OFICIO_NUMERO_GRAU_RE.sub("N.º", line)
+    line = SPACE_BEFORE_PUNCT_RE.sub(r"\1", line)
+    line = EMAIL_LABEL_RE.sub("e-mail: ", line)
+    line = PERCENT_DIARIAS_RE.sub(r"% \1", line)
+    line = re.sub(r"[ \t]{2,}", " ", line).strip()
+    return line
+
+
+def _normalize_microformat_text(text: str) -> str:
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    normalized = VIATURA_PORTE_RE.sub(r"\1\n\2", normalized)
+    lines = [_normalize_microformat_line(part) for part in normalized.split("\n")]
+    return "\n".join(lines)
+
+
+def _format_diarias_quantidade(value: str | None) -> str:
+    text = _normalize_microformat_line(value or "")
+    if not text:
+        return ""
+    # Template concatena diretamente com "diárias"; garantimos um espaço antes.
+    return f"{text} "
 
 
 def _build_endereco_formatado(cfg: OficioConfig) -> str:
@@ -311,16 +450,36 @@ def _format_carona_ref(oficio: Oficio) -> str:
 
 
 def motorista_para_documento(oficio: Oficio) -> str:
-    # Motorista do of?cio (principal)
     motorista_oficio_obj = oficio.motorista_viajante
     motorista_oficio_nome = (motorista_oficio_obj.nome if motorista_oficio_obj else "") or ""
-
-    # Motorista usado na viagem (o que j? ? exibido hoje no documento)
-    motorista_usado_nome = (oficio.motorista or "").strip() or motorista_oficio_nome
+    motorista_usado_nome = _clean_inline_text((oficio.motorista or "").strip() or motorista_oficio_nome)
 
     if getattr(oficio, "motorista_carona", False):
-        same = False
-    elif not motorista_oficio_nome or not motorista_usado_nome:
+        base = f"{_title_case(motorista_usado_nome)} (carona)"
+        referencia = _format_carona_ref(oficio)
+        if referencia:
+            base = f"{base} ({referencia})"
+
+        oficio_motorista = _clean_inline_text(
+            getattr(oficio, "motorista_oficio_formatado", "")
+            or getattr(oficio, "motorista_oficio", "")
+            or ""
+        )
+        protocolo_motorista = _clean_inline_text(
+            getattr(oficio, "motorista_protocolo_formatado", "")
+            or format_protocolo_num(getattr(oficio, "motorista_protocolo", ""))
+            or getattr(oficio, "motorista_protocolo", "")
+            or ""
+        )
+        return "\n".join(
+            [
+                base,
+                f"Ofício do motorista: {oficio_motorista}",
+                f"Protocolo do motorista: {protocolo_motorista}",
+            ]
+        )
+
+    if not motorista_oficio_nome or not motorista_usado_nome:
         same = True
     elif motorista_oficio_obj:
         same = _normalize_name(motorista_oficio_obj.nome) == _normalize_name(motorista_usado_nome)
@@ -329,35 +488,7 @@ def motorista_para_documento(oficio: Oficio) -> str:
 
     if same:
         return _title_case(motorista_oficio_nome or motorista_usado_nome) or "-"
-
-    base = f"{_title_case(motorista_usado_nome)} (carona)"
-    referencia = _format_carona_ref(oficio)
-    if referencia:
-        base = f"{base} ({referencia})"
-    return base
-
-    motorista_oficio_nome = (motorista_obj.nome if motorista_obj else "") or ""
-    motorista_informado = (oficio.motorista or "").strip()
-
-    if not motorista_oficio_nome or not motorista_informado:
-        same = True
-    elif motorista_obj:
-        same = _normalize_name(motorista_obj.nome) == _normalize_name(motorista_informado)
-    else:
-        same = _normalize_name(motorista_oficio_nome) == _normalize_name(motorista_informado)
-
-    if same:
-        nome = motorista_oficio_nome or motorista_informado
-        return _title_case(nome) if nome else "-"
-
-    nome = motorista_informado or motorista_oficio_nome
-    if not nome:
-        return "-"
-
-    referencia = _format_oficio_ref(oficio)
-    if referencia:
-        return f"{_title_case(nome)} (carona) ({referencia})"
-    return f"{_title_case(nome)} (carona)"
+    return _title_case(motorista_usado_nome) or "-"
 
 
 def build_col_solicitacao(viajantes: list[Viajante], assunto_text: str) -> str:
@@ -414,18 +545,17 @@ def get_config_oficio() -> dict[str, str]:
 
 
 def _remove_paragraph(paragraph) -> None:
-    element = paragraph._element
-    parent = element.getparent()
-    if parent is not None:
-        parent.remove(element)
+    # Desativado por seguranca: nao remover nos/estrutura OOXML.
+    return
 
 
 # Helper para substituir texto preservando o parágrafo (python-docx)
 def _replace_paragraph_text(paragraph, new_text: str) -> None:
+    safe_text = _sanitize_xml_text(new_text or "")
     if not paragraph.runs:
-        paragraph.add_run(new_text or "")
+        paragraph.add_run(safe_text)
         return
-    paragraph.runs[0].text = new_text or ""
+    paragraph.runs[0].text = safe_text
     for run in paragraph.runs[1:]:
         run.text = ""
 
@@ -477,7 +607,7 @@ def _apply_config_header_footer(doc: DocxDocument, cfg: OficioConfig) -> None:
         if telefone:
             contato.append(f"Fone: {telefone}")
         if email:
-            contato.append(f"e-mail:{email}")
+            contato.append(f"e-mail: {email}")
         if contato:
             partes.append(" - ".join(contato))
         rodape_line = " - ".join([parte for parte in partes if parte])
@@ -501,14 +631,14 @@ def _apply_config_header_footer(doc: DocxDocument, cfg: OficioConfig) -> None:
 
 def _sub_placeholders(text: str, mapping: dict[str, str]) -> str:
     if "{{" not in text:
-        return text
+        return _sanitize_xml_text(text)
 
     def repl(m):
         key = m.group(1).strip()
         # se não existir -> vazio (como você pediu)
-        return str(mapping.get(key, ""))
+        return _sanitize_xml_text(str(mapping.get(key, "")))
 
-    return PLACEHOLDER_RE.sub(repl, text)
+    return _sanitize_xml_text(PLACEHOLDER_RE.sub(repl, text))
 
 
 def _iter_paragraphs_from_container(container):
@@ -553,14 +683,19 @@ def replace_only_placeholders(doc: DocxDocument, mapping: dict[str, str]):
     Substitui somente parágrafos que contenham placeholders.
     Não toca em textos fixos (sem "{{").
     """
-    for p in _iter_paragraphs_from_container(doc):
-        replace_placeholders_in_paragraph(p, mapping)
+    safe_replace_placeholders(doc, mapping)
 
-    for section in doc.sections:
-        for p in _iter_paragraphs_from_container(section.header):
-            replace_placeholders_in_paragraph(p, mapping)
-        for p in _iter_paragraphs_from_container(section.footer):
-            replace_placeholders_in_paragraph(p, mapping)
+
+def safe_replace_placeholders(doc: DocxDocument, mapping: dict[str, str]) -> None:
+    """
+    Replace seguro de placeholders:
+    - percorre parágrafos e células (body/header/footer)
+    - altera somente texto dos runs
+    - não remove parágrafos/tabelas/nós
+    """
+    safe_mapping = _sanitize_mapping_values(mapping)
+    for paragraph in _iter_all_paragraphs(doc):
+        replace_placeholders_in_paragraph(paragraph, safe_mapping)
 
 
 def _replace_placeholders_across_runs(paragraph, mapping: dict[str, str]) -> None:
@@ -571,7 +706,7 @@ def _replace_placeholders_across_runs(paragraph, mapping: dict[str, str]) -> Non
     spans: list[tuple[int, int, str]] = []
     for match in PLACEHOLDER_RE.finditer(full_text):
         key = match.group(1).strip()
-        value = str(mapping.get(key, ""))
+        value = _sanitize_xml_text(str(mapping.get(key, "")))
         spans.append((match.start(), match.end(), value))
 
     if not spans:
@@ -602,13 +737,13 @@ def _replace_placeholders_across_runs(paragraph, mapping: dict[str, str]) -> Non
             rs, _ = run_bounds[first_idx]
             left = run.text[: start - rs]
             right = run.text[end - rs :]
-            run.text = f"{left}{value}{right}"
+            run.text = _sanitize_xml_text(f"{left}{value}{right}")
             continue
 
         first_run = paragraph.runs[first_idx]
         rs_first, _ = run_bounds[first_idx]
         prefix = first_run.text[: start - rs_first]
-        first_run.text = f"{prefix}{value}"
+        first_run.text = _sanitize_xml_text(f"{prefix}{value}")
 
         for i in range(first_idx + 1, last_idx):
             paragraph.runs[i].text = ""
@@ -616,7 +751,7 @@ def _replace_placeholders_across_runs(paragraph, mapping: dict[str, str]) -> Non
         last_run = paragraph.runs[last_idx]
         rs_last, _ = run_bounds[last_idx]
         suffix = last_run.text[end - rs_last :]
-        last_run.text = suffix
+        last_run.text = _sanitize_xml_text(suffix)
 
 
 def _visual_length(text: str) -> float:
@@ -654,7 +789,7 @@ def _blank_lines(n: int) -> list[str]:
 def build_col_nomes(viajantes: list[Viajante]) -> str:
     lines: list[str] = []
     for i, v in enumerate(viajantes):
-        nome = _title_case(v.nome or "")
+        nome = _title_case(_clean_inline_text(v.nome or ""))
         lines.append(nome or NBSP)
 
         if i < len(viajantes) - 1:
@@ -668,8 +803,8 @@ def build_col_nomes(viajantes: list[Viajante]) -> str:
 def build_col_rgcpf(viajantes: list[Viajante]) -> str:
     lines: list[str] = []
     for i, v in enumerate(viajantes):
-        rg = (v.rg or "").strip() or "-"
-        cpf = (v.cpf or "").strip() or "-"
+        rg = _clean_inline_text(format_rg(v.rg or "")) or "-"
+        cpf = _clean_inline_text(v.cpf or "") or "-"
         lines.append(f"RG: {rg}")
         lines.append(f"CPF: {cpf}")
 
@@ -682,7 +817,7 @@ def build_col_rgcpf(viajantes: list[Viajante]) -> str:
 def build_col_cargo(viajantes: list[Viajante]) -> str:
     lines: list[str] = []
     for i, v in enumerate(viajantes):
-        cargo = (v.cargo or "").strip()
+        cargo = _clean_inline_text(v.cargo or "")
         lines.append(cargo or NBSP)
 
         if i < len(viajantes) - 1:
@@ -696,14 +831,19 @@ def build_col_cargo(viajantes: list[Viajante]) -> str:
 def _build_custos_block(oficio: Oficio) -> str:
     override = (getattr(oficio, "custeio_texto_override", "") or "").strip()
     if override:
-        return override
+        return f"{CUSTOS_SECTION_TITLE}\n{override}"
 
     options = [
         Oficio.CusteioTipoChoices.UNIDADE,
         Oficio.CusteioTipoChoices.OUTRA_INSTITUICAO,
         Oficio.CusteioTipoChoices.ONUS_LIMITADOS,
     ]
-    selected = (getattr(oficio, "custeio_tipo", "") or "").strip()
+    selected = (
+        (getattr(oficio, "custeio_tipo", "") or "").strip()
+        or (getattr(oficio, "custos", "") or "").strip()
+    )
+    if not selected:
+        return ""
     if selected == "SEM_ONUS":
         selected = Oficio.CusteioTipoChoices.ONUS_LIMITADOS.value
     if selected not in {opt.value for opt in options}:
@@ -728,7 +868,87 @@ def _build_custos_block(oficio: Oficio) -> str:
             label = f"{label}: {instituicao}"
         lines.append(f"{marker} {label}")
 
-    return "\n".join(lines)
+    content = "\n".join(lines).strip()
+    if not content:
+        return ""
+    return f"{CUSTOS_SECTION_TITLE}\n{content}"
+
+
+def _cleanup_motorista_optional_lines(doc: DocxDocument) -> None:
+    labels = (
+        "ofício do motorista",
+        "oficio do motorista",
+        "protocolo do motorista",
+    )
+
+    for paragraph in _iter_paragraphs_from_container(doc):
+        full_text = "".join(run.text for run in paragraph.runs)
+        if "motorista" not in full_text.casefold():
+            continue
+        if not any(label in full_text.casefold() for label in labels):
+            continue
+
+        cleaned_lines: list[str] = []
+        for raw_line in full_text.splitlines():
+            line = _clean_inline_text(raw_line)
+            if not line:
+                continue
+
+            label, sep, value = line.partition(":")
+            normalized_label = label.strip().casefold()
+            if sep and normalized_label in labels:
+                value = _clean_inline_text(value)
+                if not value:
+                    continue
+                line = f"{label.strip()}: {value}"
+
+            cleaned_lines.append(line)
+
+        _replace_paragraph_text(paragraph, "\n".join(cleaned_lines or [NBSP]))
+
+
+def _remove_footer_line_if_unidade_rodape_empty(
+    doc: DocxDocument,
+    mapping: dict[str, str],
+) -> None:
+    # Desativado por seguranca: nao remover estrutura do documento.
+    return
+
+
+def _remove_placeholder_line_if_empty(
+    doc: DocxDocument,
+    mapping: dict[str, str],
+    placeholder_key: str,
+) -> None:
+    # Desativado por seguranca: nao remover estrutura do documento.
+    return
+
+
+def _remove_row(row) -> None:
+    # Desativado por seguranca: nao remover estrutura do documento.
+    return
+
+
+def _remove_custos_section_if_empty(
+    doc: DocxDocument,
+    mapping: dict[str, str],
+) -> None:
+    # Desativado por seguranca: nao remover estrutura do documento.
+    return
+
+
+def _normalize_document_microformatting(doc: DocxDocument) -> None:
+    targets = ("N.º", "N .º", "N°", "Nº", "diárias", "e-mail:", "Viatura", "Porte/Trânsito")
+
+    for paragraph in _iter_all_paragraphs(doc):
+        full_text = "".join(run.text for run in paragraph.runs)
+        if not full_text:
+            continue
+        if not any(token in full_text for token in targets):
+            continue
+        normalized = _normalize_microformat_text(full_text)
+        if normalized != full_text:
+            _replace_paragraph_text(paragraph, normalized)
 
 
 
@@ -782,20 +1002,19 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
 
     config = get_config_oficio()
     oficio_cfg = get_oficio_config()
+    ensure_assinatura_config_valida(oficio_cfg)
+    ensure_motorista_carona_campos(oficio)
     cfg_unidade_nome = (oficio_cfg.unidade_nome or "").strip().upper()
     cfg_origem_nome = (oficio_cfg.origem_nome or "").strip().upper()
     cfg_rodape_unidade_title = title_case_pt(cfg_unidade_nome)
     cfg_endereco_formatado = _build_endereco_formatado(oficio_cfg)
     cfg_telefone = (oficio_cfg.telefone or "").strip()
     cfg_email = (oficio_cfg.email or "").strip()
-    cfg_assinante_nome_title = ""
-    cfg_assinante_cargo_title = ""
-    if oficio_cfg.assinante:
-        cfg_assinante_nome_title = title_case_pt(oficio_cfg.assinante.nome or "")
-        cfg_assinante_cargo_title = title_case_pt(oficio_cfg.assinante.cargo or "")
+    cfg_assinante_nome_title = title_case_pt(oficio_cfg.assinante.nome or "")
+    cfg_assinante_cargo_title = title_case_pt(oficio_cfg.assinante.cargo or "")
 
     default_unidade, default_endereco, default_telefone, default_email = _footer_default_parts()
-    rodape_unidade_value = cfg_rodape_unidade_title or title_case_pt(default_unidade)
+    rodape_unidade_value = cfg_rodape_unidade_title or ""
     endereco_value = cfg_endereco_formatado or default_endereco
     telefone_value = (
         f"Fone: {cfg_telefone}"
@@ -803,9 +1022,9 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         else (f"Fone: {default_telefone}" if default_telefone else "")
     )
     email_value = (
-        f"e-mail:{cfg_email}"
+        f"e-mail: {cfg_email}"
         if cfg_email
-        else (f"e-mail:{default_email}" if default_email else "")
+        else (f"e-mail: {default_email}" if default_email else "")
     )
 
     destinos_text, roteiro_ida_text, roteiro_retorno_text = build_destinos_e_roteiros(oficio, trechos)
@@ -816,15 +1035,16 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     if assunto_linha and "convalida" in assunto_linha.lower():
         assunto_tipo = Oficio.AssuntoTipo.CONVALIDACAO
     assunto_termo = (
-        "CONVALIDAÇÃO"
+        "convalidação"
         if assunto_tipo == Oficio.AssuntoTipo.CONVALIDACAO
-        else "AUTORIZAÇÃO"
+        else "autorização"
     )
     if assunto_tipo == Oficio.AssuntoTipo.CONVALIDACAO:
         assunto_text = "Solicitação de convalidação e concessão de diárias."
+        assunto_oficio_text = "(Convalidação)"
     else:
         assunto_text = "Solicitação de autorização e concessão de diárias."
-    assunto_oficio_text = f"({assunto_termo})"
+        assunto_oficio_text = "(AUTORIZAÇÃO)"
     if not assunto_linha:
         assunto_linha = assunto_text
     motorista_formatado = motorista_para_documento(oficio)
@@ -834,7 +1054,7 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     orgao_origem_value = (cfg_origem_nome or config["orgao_origem"] or "").upper()
     unidade_value = cfg_unidade_nome or cfg_origem_nome or orgao_origem_value or HEADER_UNIDADE_DEFAULT
     origem_value = cfg_origem_nome or cfg_unidade_nome or orgao_origem_value or HEADER_ORIGEM_DEFAULT
-    solicitacao_lines = build_col_solicitacao(viajantes, assunto_text)
+    solicitacao_lines = ""
     retorno_saida_lines, retorno_chegada_lines = build_col_retorno(oficio, trechos)
 
     saida_lines, chegada_lines = build_roteiro_ida(trechos)
@@ -859,10 +1079,10 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
 
     # campos simples
     mapping = {
-        "oficio": oficio.oficio or "",
-        "ano": str(oficio.created_at.year) if oficio.created_at else "",
-        "data_do_oficio": _fmt_date(oficio.created_at.date()) if oficio.created_at else "",
-        "protocolo": oficio.protocolo or "",
+        "oficio": oficio.numero_formatado or oficio.oficio or "",
+        "ano": str(oficio.created_at.year) if oficio.created_at else str(timezone.localdate().year),
+        "data_do_oficio": _fmt_date(oficio.created_at.date()) if oficio.created_at else _fmt_date(timezone.localdate()),
+        "protocolo": oficio.protocolo_formatado or oficio.protocolo or "",
         "destino": destino_principal,
         "destinos_bloco": destinos_text,
         "assunto_linha": assunto_linha,
@@ -878,12 +1098,14 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         "telefone": telefone_value,
         "email": email_value,
         "custo": _build_custos_block(oficio),
+        "nome_chefia": cfg_assinante_nome_title,
+        "cargo_chefia": cfg_assinante_cargo_title,
         "assinante_nome": cfg_assinante_nome_title,
         "assinante_cargo": cfg_assinante_cargo_title,
         "roteiro_ida": roteiro_ida_text,
         "roteiro_retorno": roteiro_retorno_text,
 
-        "diarias_x": (oficio.quantidade_diarias or "").strip(),
+        "diarias_x": _format_diarias_quantidade(oficio.quantidade_diarias or ""),
         "diaria": (oficio.valor_diarias or "").strip(),
         "valor_extenso": valor_extenso_value,
 
@@ -893,8 +1115,12 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         "placa": (oficio.placa or "").strip(),
         "motorista": motorista_formatado,
         "motorista_formatado": motorista_formatado,
-        "motorista_oficio": (oficio.motorista_oficio or "").strip(),
-        "motorista_protocolo": (oficio.motorista_protocolo or "").strip(),
+        "motorista_oficio": _clean_inline_text(
+            oficio.motorista_oficio_formatado or oficio.motorista_oficio or ""
+        ),
+        "motorista_protocolo": _clean_inline_text(
+            oficio.motorista_protocolo_formatado or oficio.motorista_protocolo or ""
+        ),
 
         "caracterizada": caracterizada_text,
         "armamento": armamento_text,
@@ -934,8 +1160,12 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
         if settings.DEBUG:
             logger.debug("[oficio] placeholders sem contexto: %s", sorted(missing))
 
-    # substitui apenas parágrafos com placeholders
-    replace_only_placeholders(doc, mapping)
+    mapping = _sanitize_mapping_values(mapping)
+
+    # substituicao segura: apenas texto de runs/paragrafos/celulas, sem remover estrutura
+    safe_replace_placeholders(doc, mapping)
+    _cleanup_motorista_optional_lines(doc)
+    _normalize_document_microformatting(doc)
 
     buf = BytesIO()
     doc.save(buf)
@@ -966,37 +1196,349 @@ def _ensure_pywin32_available() -> None:
         )
 
 
-def docx_bytes_to_pdf_bytes(docx_bytes: bytes) -> bytes:
+DOCX_MIN_SIZE_BYTES = 5 * 1024
+DOCX_REQUIRED_ZIP_ENTRIES = ("[Content_Types].xml", "word/document.xml")
+
+
+def _docx_head_hex(path: Path, length: int = 16) -> str:
+    if not path.exists():
+        return ""
+    with path.open("rb") as file_obj:
+        return file_obj.read(length).hex(" ")
+
+
+def _docx_diag(path: Path) -> str:
+    size = path.stat().st_size if path.exists() else -1
+    return f"path={path} size={size} head16={_docx_head_hex(path)}"
+
+
+def _save_debug_docx_copy(
+    docx_bytes: bytes,
+    *,
+    oficio_id: int | None,
+    reason: str,
+) -> Path | None:
+    if not settings.DEBUG:
+        return None
+    debug_dir = Path(settings.BASE_DIR) / "_debug_docx"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    oficio_label = str(oficio_id) if oficio_id is not None else "sem_id"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    debug_path = debug_dir / f"oficio_{oficio_label}_{timestamp}_{reason}.docx"
+    with debug_path.open("wb") as file_obj:
+        file_obj.write(docx_bytes)
+        file_obj.flush()
+        os.fsync(file_obj.fileno())
+    logger.error("[oficio-pdf] DOCX salvo para diagnostico: %s", debug_path)
+    return debug_path
+
+
+def _validate_docx_file_for_word(path: Path) -> None:
+    if not path.exists():
+        raise DocxPdfConversionError(
+            f"DOCX temporario nao foi criado. {_docx_diag(path)}"
+        )
+
+    size = path.stat().st_size
+    if size <= DOCX_MIN_SIZE_BYTES:
+        raise DocxPdfConversionError(
+            f"DOCX temporario muito pequeno para conversao ({size} bytes). {_docx_diag(path)}"
+        )
+
+    with path.open("rb") as file_obj:
+        signature = file_obj.read(2)
+    if signature != b"PK":
+        raise DocxPdfConversionError(
+            f"DOCX temporario sem assinatura ZIP 'PK'. {_docx_diag(path)}"
+        )
+
+    try:
+        with zipfile.ZipFile(path, "r") as archive:
+            names = set(archive.namelist())
+            missing_entries = [name for name in DOCX_REQUIRED_ZIP_ENTRIES if name not in names]
+            bad_member = archive.testzip()
+    except zipfile.BadZipFile as exc:
+        raise DocxPdfConversionError(
+            f"DOCX temporario nao e um ZIP valido. {_docx_diag(path)}"
+        ) from exc
+
+    if missing_entries:
+        raise DocxPdfConversionError(
+            f"DOCX temporario sem entradas obrigatorias: {', '.join(missing_entries)}. {_docx_diag(path)}"
+        )
+    if bad_member is not None:
+        raise DocxPdfConversionError(
+            f"DOCX temporario possui entrada ZIP corrompida: {bad_member}. {_docx_diag(path)}"
+        )
+
+
+def _is_word_com_error(exc: Exception) -> bool:
+    if pythoncom is not None and hasattr(pythoncom, "com_error"):
+        try:
+            if isinstance(exc, pythoncom.com_error):
+                return True
+        except Exception:
+            pass
+    return exc.__class__.__name__ == "com_error"
+
+
+def _xml_error_context(xml_bytes: bytes, line: int | None, radius: int = 1) -> str:
+    text = xml_bytes.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    if not lines:
+        return ""
+
+    if line is None:
+        start = 0
+        end = min(len(lines), 3)
+    else:
+        start = max(0, line - 1 - radius)
+        end = min(len(lines), line + radius)
+
+    snippet: list[str] = []
+    for idx in range(start, end):
+        marker = ">>" if line is not None and idx + 1 == line else "  "
+        snippet.append(f"{marker} L{idx + 1}: {lines[idx][:260]}")
+    return "\n".join(snippet)
+
+
+def _collect_ooxml_targets(xml_names: set[str]) -> list[str]:
+    targets: list[str] = []
+    for required in ("word/document.xml",):
+        if required in xml_names:
+            targets.append(required)
+    targets.extend(
+        sorted(
+            name for name in xml_names if name.startswith("word/header") and name.endswith(".xml")
+        )
+    )
+    targets.extend(
+        sorted(
+            name for name in xml_names if name.startswith("word/footer") and name.endswith(".xml")
+        )
+    )
+    for optional in ("word/styles.xml", "word/numbering.xml"):
+        if optional in xml_names:
+            targets.append(optional)
+    return targets
+
+
+def _diagnose_docx_xml_on_open_error(
+    docx_path: Path,
+    *,
+    oficio_id: int | None,
+) -> tuple[Path | None, list[str]]:
+    debug_root = Path(settings.BASE_DIR) / "_debug_docx"
+    debug_root.mkdir(parents=True, exist_ok=True)
+    oficio_label = str(oficio_id) if oficio_id is not None else "sem_id"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    unzip_dir = debug_root / f"oficio_{oficio_label}_{timestamp}_unzipped"
+    failures: list[str] = []
+
+    try:
+        with zipfile.ZipFile(docx_path, "r") as archive:
+            archive.extractall(unzip_dir)
+            xml_names = {
+                name
+                for name in archive.namelist()
+                if name.startswith("word/") and name.endswith(".xml")
+            }
+            targets = _collect_ooxml_targets(xml_names)
+
+            for target in ("word/document.xml", "word/styles.xml", "word/numbering.xml"):
+                if target not in xml_names:
+                    logger.error("[oficio-pdf] XML ausente no DOCX: %s", target)
+
+            if not any(name.startswith("word/header") for name in xml_names):
+                logger.error("[oficio-pdf] Nenhum header XML encontrado no DOCX.")
+            if not any(name.startswith("word/footer") for name in xml_names):
+                logger.error("[oficio-pdf] Nenhum footer XML encontrado no DOCX.")
+
+            for xml_name in targets:
+                raw_xml = archive.read(xml_name)
+                try:
+                    ET.fromstring(raw_xml)
+                except ET.ParseError as parse_exc:
+                    line = None
+                    col = None
+                    if hasattr(parse_exc, "position") and parse_exc.position:
+                        line, col = parse_exc.position
+                    context = _xml_error_context(raw_xml, line, radius=1)
+                    failure = (
+                        f"{xml_name} | erro={parse_exc} | linha={line} | coluna={col}"
+                    )
+                    failures.append(failure)
+                    logger.error("[oficio-pdf] XML quebrado: %s", failure)
+                    if context:
+                        logger.error(
+                            "[oficio-pdf] Contexto XML (%s):\n%s",
+                            xml_name,
+                            context,
+                        )
+    except Exception as exc:
+        logger.exception("[oficio-pdf] Falha no diagnostico XML do DOCX: %s", exc)
+        return None, [f"diagnostico_xml_falhou: {exc}"]
+
+    if failures:
+        logger.error(
+            "[oficio-pdf] Diagnostico XML encontrou %d arquivo(s) com erro. unzip_dir=%s",
+            len(failures),
+            unzip_dir,
+        )
+    else:
+        logger.error(
+            "[oficio-pdf] XMLs OK; suspeita de OOXML semantico invalido. unzip_dir=%s",
+            unzip_dir,
+        )
+    return unzip_dir, failures
+
+
+def docx_bytes_to_pdf_bytes(docx_bytes: bytes, *, oficio_id: int | None = None) -> bytes:
     """
     Converte DOCX em PDF usando Microsoft Word (fidelidade alta).
     Requer Windows + Word instalado.
     """
     _ensure_pywin32_available()
-    pythoncom.CoInitialize()
+    tmp_dir = Path(tempfile.mkdtemp(prefix="cv_pdf_"))
+    docx_path = tmp_dir / "in.docx"
+    pdf_path = tmp_dir / "out.pdf"
+    keep_tmp_dir = False
+    com_initialized = False
+    word = None
+    doc = None
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        docx_path = Path(tmpdir) / "oficio.docx"
-        pdf_path = Path(tmpdir) / "oficio.pdf"
-        docx_path.write_bytes(docx_bytes)
-
-        word = win32client.Dispatch("Word.Application")
-        word.Visible = False
-        word.DisplayAlerts = 0
+    try:
+        with docx_path.open("wb") as file_obj:
+            file_obj.write(docx_bytes)
+            file_obj.flush()
+            os.fsync(file_obj.fileno())
 
         try:
-            doc = word.Documents.Open(str(docx_path))
-            doc.ExportAsFixedFormat(
-                OutputFileName=str(pdf_path),
-                ExportFormat=17,       # PDF
-                OpenAfterExport=False,
-                OptimizeFor=0,
-                Item=0,
+            _validate_docx_file_for_word(docx_path)
+        except Exception as exc:
+            keep_tmp_dir = bool(settings.DEBUG)
+            debug_path = _save_debug_docx_copy(
+                docx_bytes,
+                oficio_id=oficio_id,
+                reason="invalid_before_word",
             )
-            doc.Close(False)
+            message = f"DOCX invalido antes da conversao no Word. {_docx_diag(docx_path)}"
+            if debug_path is not None:
+                message += f" debug_docx={debug_path}"
+            raise DocxPdfConversionError(message) from exc
+
+        pythoncom.CoInitialize()
+        com_initialized = True
+
+        try:
+            word = win32client.DispatchEx("Word.Application")
+            word.Visible = False
+            word.DisplayAlerts = 0
+
+            try:
+                doc = word.Documents.Open(
+                    FileName=str(docx_path),
+                    ReadOnly=True,
+                    AddToRecentFiles=False,
+                    ConfirmConversions=False,
+                    Visible=False,
+                    OpenAndRepair=True,
+                    NoEncodingDialog=True,
+                )
+            except Exception as exc:
+                keep_tmp_dir = bool(settings.DEBUG)
+                debug_path = _save_debug_docx_copy(
+                    docx_bytes,
+                    oficio_id=oficio_id,
+                    reason="word_open_error",
+                )
+                unzip_dir = None
+                xml_failures: list[str] = []
+                if _is_word_com_error(exc):
+                    unzip_dir, xml_failures = _diagnose_docx_xml_on_open_error(
+                        docx_path,
+                        oficio_id=oficio_id,
+                    )
+
+                message = f"Falha ao abrir DOCX no Word COM. {_docx_diag(docx_path)}"
+                if debug_path is not None:
+                    message += f" debug_docx={debug_path}"
+                if unzip_dir is not None:
+                    message += f" unzip_dir={unzip_dir}"
+                if xml_failures:
+                    message += f" xml_primeiro_erro={xml_failures[0]}"
+                elif unzip_dir is not None:
+                    message += " xmls_ok_suspeita_ooxml_semantico_invalido=true"
+                raise DocxPdfConversionError(message) from exc
+
+            try:
+                doc.ExportAsFixedFormat(
+                    OutputFileName=str(pdf_path),
+                    ExportFormat=17,  # PDF
+                    OpenAfterExport=False,
+                    OptimizeFor=0,
+                    Item=0,
+                )
+            except Exception as exc:
+                keep_tmp_dir = bool(settings.DEBUG)
+                debug_path = _save_debug_docx_copy(
+                    docx_bytes,
+                    oficio_id=oficio_id,
+                    reason="word_export_error",
+                )
+                message = f"Falha na exportacao DOCX->PDF via Word COM. {_docx_diag(docx_path)}"
+                if debug_path is not None:
+                    message += f" debug_docx={debug_path}"
+                raise DocxPdfConversionError(message) from exc
+        except DocxPdfConversionError:
+            raise
+        except Exception as exc:
+            keep_tmp_dir = bool(settings.DEBUG)
+            debug_path = _save_debug_docx_copy(
+                docx_bytes,
+                oficio_id=oficio_id,
+                reason="word_com_error",
+            )
+            message = f"Falha na conversao DOCX->PDF via Word COM. {_docx_diag(docx_path)}"
+            if debug_path is not None:
+                message += f" debug_docx={debug_path}"
+            raise DocxPdfConversionError(message) from exc
         finally:
-            word.Quit()
+            if doc is not None:
+                try:
+                    doc.Close(False)
+                except Exception:
+                    logger.exception("[oficio-pdf] Falha ao fechar documento Word.")
+            if word is not None:
+                try:
+                    word.Quit()
+                except Exception:
+                    logger.exception("[oficio-pdf] Falha ao encerrar Word.Application.")
+
+        if not pdf_path.exists() or pdf_path.stat().st_size == 0:
+            keep_tmp_dir = bool(settings.DEBUG)
+            debug_path = _save_debug_docx_copy(
+                docx_bytes,
+                oficio_id=oficio_id,
+                reason="empty_pdf",
+            )
+            message = f"Conversao concluiu sem PDF valido. {_docx_diag(docx_path)}"
+            if debug_path is not None:
+                message += f" debug_docx={debug_path}"
+            raise DocxPdfConversionError(message)
 
         return pdf_path.read_bytes()
+    finally:
+        if com_initialized:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                logger.exception("[oficio-pdf] Falha em CoUninitialize.")
+        if tmp_dir.exists():
+            if settings.DEBUG and keep_tmp_dir:
+                logger.error("[oficio-pdf] Mantendo pasta temporaria para diagnostico: %s", tmp_dir)
+            else:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def build_oficio_docx_and_pdf_bytes(oficio: Oficio) -> tuple[bytes, bytes]:
@@ -1005,7 +1547,7 @@ def build_oficio_docx_and_pdf_bytes(oficio: Oficio) -> tuple[bytes, bytes]:
     """
     docx_buf = build_oficio_docx_bytes(oficio)
     docx_bytes = docx_buf.getvalue()
-    pdf_bytes = docx_bytes_to_pdf_bytes(docx_bytes)
+    pdf_bytes = docx_bytes_to_pdf_bytes(docx_bytes, oficio_id=getattr(oficio, "id", None))
     return docx_bytes, pdf_bytes
 
 

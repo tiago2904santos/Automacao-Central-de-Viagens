@@ -55,9 +55,9 @@
         <tbody>
           {% for oficio in oficios %}
             <tr>
-              <td>{{ oficio.oficio }}</td>
+              <td>{{ oficio.numero_formatado|default:oficio.oficio }}</td>
               <td>{{ oficio.created_at|date:"d/m/Y" }}</td>
-              <td>{{ oficio.protocolo|default:"-" }}</td>
+              <td>{{ oficio.protocolo_formatado|default:oficio.protocolo|default:"-" }}</td>
               <td>
                 {% if oficio.cidade_destino %}
                   {{ oficio.cidade_destino.nome }}/{{ oficio.cidade_destino.estado.sigla }}

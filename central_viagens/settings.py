@@ -41,6 +41,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "viagens.context_processors.mask_settings",
             ],
         },
     }
@@ -86,3 +87,5 @@ OFICIO_CHEFIA = {
     "nome_chefia": os.getenv("OFICIO_CHEFIA_NOME", ""),
     "cargo_chefia": os.getenv("OFICIO_CHEFIA_CARGO", ""),
 }
+
+PROTOCOLO_MASK = None

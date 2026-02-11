@@ -9,9 +9,39 @@ const viajantesList = document.getElementById("viajantesList");
 const motoristaSelect = document.getElementById("motoristaSelect");
 const motoristaChipList = document.getElementById("motoristaChipList");
 const motoristaNome = document.getElementById("motoristaNome");
+const motoristaOficioNumero = document.getElementById("motoristaOficioNumero");
+const motoristaOficioAno = document.getElementById("motoristaOficioAno");
 const motoristaOficio = document.getElementById("motoristaOficio");
 const motoristaProtocolo = document.getElementById("motoristaProtocolo");
 const caronaFields = document.getElementById("caronaFields");
+
+function splitOficioParts(value) {
+  const cleaned = (value || "").replace(/[^\d/]+/g, "");
+  if (!cleaned) {
+    return { numero: "", ano: "" };
+  }
+  const [left, right] = cleaned.split("/", 2);
+  return {
+    numero: (left || "").replace(/\D+/g, ""),
+    ano: (right || "").replace(/\D+/g, "").slice(-4),
+  };
+}
+
+function syncMotoristaOficioFormatted() {
+  if (!motoristaOficio) {
+    return "";
+  }
+  const numero = (motoristaOficioNumero?.value || "").replace(/\D+/g, "");
+  const ano = (motoristaOficioAno?.value || "").replace(/\D+/g, "").slice(-4);
+  if (!numero || !ano) {
+    motoristaOficio.value = "";
+    return "";
+  }
+  const numeroCanonico = String(parseInt(numero, 10)).padStart(2, "0");
+  const formatted = `${numeroCanonico}/${ano}`;
+  motoristaOficio.value = formatted;
+  return formatted;
+}
 
 function debounce(fn, wait = 260) {
   let timer = null;
@@ -152,7 +182,13 @@ function preencherMotoristaReferencia(data) {
     motoristaNome.value = data.motorista_nome;
   }
   if (data.motorista_oficio) {
-    motoristaOficio.value = data.motorista_oficio;
+    const parts = splitOficioParts(data.motorista_oficio);
+    if (motoristaOficioNumero) {
+      motoristaOficioNumero.value = parts.numero;
+    }
+    if (motoristaOficioAno && parts.ano) {
+      motoristaOficioAno.value = parts.ano;
+    }
   }
   if (data.motorista_protocolo) {
     motoristaProtocolo.value = data.motorista_protocolo;
@@ -676,11 +712,12 @@ function updateMotoristaPreview() {
   const isCarona = isMotoristaCarona();
   const nome = manual || currentMotorista?.nome || currentMotorista?.label || "";
   const suffix = nome && isCarona ? " (Carona)" : "";
+  const oficioFormatado = syncMotoristaOficioFormatted();
   setPreviewValue("motorista_nome", nome ? `${nome}${suffix}` : "-");
   setPreviewValue("motorista_cpf", currentMotorista?.cpf || "-");
   setPreviewValue("motorista_rg", currentMotorista?.rg || "-");
   setPreviewValue("motorista_cargo", currentMotorista?.cargo || "-");
-  setPreviewValue("motorista_oficio", motoristaOficio?.value || "-");
+  setPreviewValue("motorista_oficio", oficioFormatado || "-");
   setPreviewValue("motorista_protocolo", motoristaProtocolo?.value || "-");
   updateCaronaVisibility();
 }
@@ -724,7 +761,8 @@ function initBindings() {
       updateMotoristaPreview();
     });
   }
-  motoristaOficio?.addEventListener("input", updateMotoristaPreview);
+  motoristaOficioNumero?.addEventListener("input", updateMotoristaPreview);
+  motoristaOficioAno?.addEventListener("input", updateMotoristaPreview);
   motoristaProtocolo?.addEventListener("input", updateMotoristaPreview);
   updateMotoristaPreview();
 

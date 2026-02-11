@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import unicodedata
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.utils import timezone
 
 from viagens.models import Oficio, Trecho, Viajante
+from viagens.utils.normalize import format_protocolo_num
 
 CAPITAIS = {
     "ARACAJU",
@@ -96,11 +98,23 @@ def build_destinos(trechos: list[Trecho]) -> list[str]:
 
 
 def infer_tipo_destino(trechos: list[Trecho]) -> str:
-    destinos = [trecho.destino_cidade.nome for trecho in trechos if trecho.destino_cidade]
-    destinos_upper = [dest.upper() for dest in destinos]
-    if any(dest == "BRASILIA" for dest in destinos_upper):
+    def _normalize_city(value: str) -> str:
+        raw = unicodedata.normalize("NFKD", value or "")
+        return "".join(ch for ch in raw if not unicodedata.combining(ch)).upper().strip()
+
+    destinos_upper: list[tuple[str, str]] = []
+    for trecho in trechos:
+        cidade_nome = (trecho.destino_cidade.nome if trecho.destino_cidade else "") or ""
+        cidade_upper = _normalize_city(cidade_nome)
+        estado_obj = trecho.destino_estado or (
+            trecho.destino_cidade.estado if trecho.destino_cidade else None
+        )
+        estado_sigla = ((estado_obj.sigla if estado_obj else "") or "").upper().strip()
+        destinos_upper.append((cidade_upper, estado_sigla))
+
+    if any(cidade == "BRASILIA" and estado == "DF" for cidade, estado in destinos_upper):
         return "BRASILIA"
-    if any(dest in CAPITAIS for dest in destinos_upper):
+    if any(cidade in CAPITAIS for cidade, _ in destinos_upper):
         return "CAPITAL"
     return "INTERIOR"
 
@@ -116,7 +130,11 @@ def format_motorista(oficio: Oficio, viajantes: list[Viajante]) -> str:
     if not motorista_carona:
         return motorista_nome
     oficio_motorista = (oficio.motorista_oficio or "-").strip() or "-"
-    protocolo_motorista = (oficio.motorista_protocolo or "-").strip() or "-"
+    protocolo_motorista = (
+        format_protocolo_num(oficio.motorista_protocolo)
+        or (oficio.motorista_protocolo or "-").strip()
+        or "-"
+    )
     return f"{motorista_nome} (carona) – Ofício {oficio_motorista} – Protocolo {protocolo_motorista}"
 
 

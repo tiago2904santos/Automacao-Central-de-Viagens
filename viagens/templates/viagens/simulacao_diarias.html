@@ -1,0 +1,152 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Simulacao de Diarias{% endblock %}
+
+{% block breadcrumb %}
+  Diarias <span class="breadcrumb-sep">/</span> Simulacao
+{% endblock %}
+
+{% block content %}
+  <link rel="stylesheet" href="{% static 'css/diarias.css' %}" />
+  <link rel="stylesheet" href="{% static 'css/simulacao_diarias.css' %}" />
+  {{ simulacao_initial_periods_json|json_script:"simInitialPeriods" }}
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Simulacao de Diarias</h2>
+      <p class="page-subtitle">Calculadora isolada sem criar oficio e sem salvar no banco.</p>
+    </div>
+  </div>
+
+  <div class="sim-layout">
+    <section class="card sim-card sim-card--input">
+      <div class="sim-card-head">
+        <h3>Simulacao de diarias</h3>
+      </div>
+      <p class="sim-card-text">Adicione um ou mais periodos e calcule o total.</p>
+
+      <form id="simulacaoDiariasForm" data-calc-url="{{ simulacao_calcular_url }}">
+        {% csrf_token %}
+        <div class="sim-fields">
+          <div class="sim-periods-head">
+            <span>Periodos de simulacao</span>
+            <button type="button" class="btn-clear btn-small" id="addPeriodoBtn">+ Adicionar periodo</button>
+          </div>
+          <div id="simPeriodosList" class="sim-periods-list"></div>
+          <template id="simPeriodoTemplate">
+            <article class="sim-periodo-card" data-periodo-item>
+              <label>
+                Tipo
+                <select data-period-field="tipo" required>
+                  <option value="INTERIOR">INTERIOR</option>
+                  <option value="CAPITAL">CAPITAL</option>
+                  <option value="BRASILIA">BRASILIA</option>
+                </select>
+              </label>
+              <label>
+                Data inicio
+                <input type="date" data-period-field="start_date" required />
+              </label>
+              <label>
+                Hora inicio
+                <input type="time" data-period-field="start_time" required />
+              </label>
+              <label>
+                Data fim
+                <input type="date" data-period-field="end_date" required />
+              </label>
+              <label>
+                Hora fim
+                <input type="time" data-period-field="end_time" required />
+              </label>
+              <button
+                type="button"
+                class="sim-remove-periodo"
+                data-remove-periodo
+                title="Remover periodo"
+                aria-label="Remover periodo"
+              >
+                <i data-lucide="trash-2"></i>
+              </button>
+              <p class="sim-periodo-error" data-period-error hidden></p>
+            </article>
+          </template>
+        </div>
+
+        <div class="sim-grid sim-grid--meta">
+          <label>
+            Quantidade de servidores
+            <input type="number" name="quantidade_servidores" min="1" step="1" value="{{ simulacao_last.quantidade_servidores|default:1 }}" required />
+          </label>
+        </div>
+
+        <input type="hidden" name="periods_payload" id="simPeriodsPayload" />
+
+        <div class="sim-actions">
+          <button class="btn-primary diarias-primary-button" id="simCalcularBtn" type="submit">
+            <i data-lucide="calculator"></i>
+            <span id="simCalcularBtnLabel">Calcular</span>
+          </button>
+          <button class="btn-clear" id="simNovaBtn" type="button">Nova simulacao</button>
+        </div>
+        <div class="diarias-alert" id="simCalcError" hidden></div>
+      </form>
+    </section>
+
+    <section id="simResultadoCard" class="card sim-card sim-card--result" hidden>
+      <div class="sim-card-head">
+        <h3>Resultado</h3>
+      </div>
+
+      <div class="diarias-summary-grid">
+        <article class="diarias-summary-card">
+          <span class="diarias-summary-label">Total</span>
+          <strong class="diarias-summary-value" id="simTotal">-</strong>
+        </article>
+        <article class="diarias-summary-card">
+          <span class="diarias-summary-label">Valor por extenso</span>
+          <strong class="diarias-summary-value diarias-summary-value--multiline" id="simValorExtenso">-</strong>
+        </article>
+        <article class="diarias-summary-card">
+          <span class="diarias-summary-label">Quantidade</span>
+          <strong class="diarias-summary-value" id="simQtd">-</strong>
+        </article>
+        <article class="diarias-summary-card">
+          <span class="diarias-summary-label">Horas adicionais</span>
+          <strong class="diarias-summary-value" id="simHoras">-</strong>
+        </article>
+      </div>
+
+      <div class="diarias-table-shell">
+        <table class="diarias-table">
+          <thead>
+            <tr>
+              <th>TIPO</th>
+              <th>DATA SAIDA</th>
+              <th>HORA SAIDA</th>
+              <th>DATA CHEGADA</th>
+              <th>HORA CHEGADA</th>
+              <th class="diarias-col-number">N DIARIAS</th>
+              <th class="diarias-col-number">HORAS ADICIONAIS</th>
+              <th class="diarias-col-money">VALOR DIARIA</th>
+              <th class="diarias-col-money">SUBTOTAL</th>
+            </tr>
+          </thead>
+          <tbody id="simTableBody"></tbody>
+          <tfoot>
+            <tr>
+              <td colspan="7">TOTAL</td>
+              <td></td>
+              <td class="diarias-cell--money" id="simTotalValor">-</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/simulacao_diarias.js' %}"></script>
+{% endblock %}

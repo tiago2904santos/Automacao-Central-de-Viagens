@@ -1,5 +1,20 @@
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
+from django.utils import timezone
+
+from .utils.normalize import (
+    format_cpf,
+    format_oficio_num,
+    format_phone,
+    format_protocolo_num,
+    format_rg,
+    normalize_digits,
+    normalize_oficio_num,
+    normalize_protocolo_num,
+    normalize_rg,
+    normalize_upper_text,
+    split_oficio_num,
+)
 
 
 class Viajante(models.Model):
@@ -11,6 +26,43 @@ class Viajante(models.Model):
 
     def __str__(self) -> str:
         return self.nome
+
+    @property
+    def cpf_formatado(self) -> str:
+        return format_cpf(self.cpf)
+
+    @property
+    def telefone_formatado(self) -> str:
+        return format_phone(self.telefone)
+
+    @property
+    def rg_formatado(self) -> str:
+        return format_rg(self.rg)
+
+    def clean(self) -> None:
+        super().clean()
+        self.nome = normalize_upper_text(self.nome)
+        self.rg = normalize_rg(self.rg)
+        self.cpf = normalize_digits(self.cpf)
+        self.telefone = normalize_digits(self.telefone)
+
+        errors: dict[str, str] = {}
+        if self.rg and len(self.rg) not in {9, 10}:
+            errors["rg"] = "RG deve conter 9 ou 10 caracteres (digitos + DV)."
+        if self.cpf and len(self.cpf) != 11:
+            errors["cpf"] = "CPF deve conter 11 digitos."
+        if self.telefone and len(self.telefone) not in {10, 11}:
+            errors["telefone"] = "Telefone deve conter 10 ou 11 digitos."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.nome = normalize_upper_text(self.nome)
+        self.rg = normalize_rg(self.rg)
+        self.cpf = normalize_digits(self.cpf)
+        self.telefone = normalize_digits(self.telefone)
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class Cargo(models.Model):
@@ -153,6 +205,15 @@ class OficioConfig(models.Model):
         super().save(*args, **kwargs)
 
 
+class OficioCounter(models.Model):
+    ano = models.IntegerField(unique=True)
+    last_numero = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.ano}: {self.last_numero}"
+
+
 class Oficio(models.Model):
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Rascunho"
@@ -178,6 +239,8 @@ class Oficio(models.Model):
         SESP = "SESP", "SESP"
 
     oficio = models.CharField(max_length=50, blank=True, default="")
+    numero = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    ano = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     protocolo = models.CharField(max_length=80, blank=True, default="")
     destino = models.CharField(
         max_length=40,
@@ -292,6 +355,8 @@ class Oficio(models.Model):
     combustivel = models.CharField(max_length=80, blank=True)
     motorista = models.CharField(max_length=120, blank=True)
     motorista_oficio = models.CharField(max_length=80, blank=True)
+    motorista_oficio_numero = models.PositiveIntegerField(null=True, blank=True)
+    motorista_oficio_ano = models.PositiveIntegerField(null=True, blank=True)
     motorista_protocolo = models.CharField(max_length=80, blank=True)
     motorista_carona = models.BooleanField(default=False)
     motorista_viajante = models.ForeignKey(
@@ -317,16 +382,40 @@ class Oficio(models.Model):
         related_name="oficios",
     )
     viajantes = models.ManyToManyField(Viajante, related_name="oficios", blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ano", "numero"],
+                name="uniq_oficio_numero_por_ano",
+            )
+        ]
 
     @property
     def is_draft(self) -> bool:
         return self.status == self.Status.DRAFT
 
+    @property
+    def numero_formatado(self) -> str:
+        return format_oficio_num(self.numero, self.ano)
+
+    @property
+    def motorista_oficio_formatado(self) -> str:
+        return format_oficio_num(self.motorista_oficio_numero, self.motorista_oficio_ano)
+
+    @property
+    def protocolo_formatado(self) -> str:
+        return format_protocolo_num(self.protocolo)
+
+    @property
+    def motorista_protocolo_formatado(self) -> str:
+        return format_protocolo_num(self.motorista_protocolo)
+
     def __str__(self) -> str:
         destino = self.cidade_destino or self.get_destino_display() or self.destino
-        return f"Oficio {self.oficio} - {destino}"
+        return f"Oficio {self.numero_formatado or self.oficio} - {destino}"
 
     def calcular_destino_automatico(self) -> str:
         if not self.pk:
@@ -340,8 +429,86 @@ class Oficio(models.Model):
                 return self.DestinoChoices.SESP
         return self.DestinoChoices.GAB
 
+    def _sync_numero_from_legacy(self) -> None:
+        self.oficio = normalize_oficio_num(self.oficio)
+        legacy_numero, legacy_ano = split_oficio_num(self.oficio)
+        if self.numero is None and legacy_numero is not None:
+            self.numero = legacy_numero
+        if self.ano is None and legacy_ano is not None:
+            self.ano = legacy_ano
+        if self.numero is not None and int(self.numero) <= 0:
+            self.numero = None
+        if self.ano is not None and int(self.ano) <= 0:
+            self.ano = None
+
+    def _sync_motorista_oficio_from_legacy(self) -> None:
+        self.motorista_oficio = normalize_oficio_num(self.motorista_oficio)
+        legacy_numero, legacy_ano = split_oficio_num(self.motorista_oficio)
+        if self.motorista_oficio_numero is None and legacy_numero is not None:
+            self.motorista_oficio_numero = legacy_numero
+        if self.motorista_oficio_ano is None and legacy_ano is not None:
+            self.motorista_oficio_ano = legacy_ano
+        if (
+            self.motorista_oficio_numero is not None
+            and int(self.motorista_oficio_numero) > 0
+            and not self.motorista_oficio_ano
+        ):
+            self.motorista_oficio_ano = timezone.localdate().year
+        if not self.motorista_oficio_numero:
+            self.motorista_oficio_ano = None
+        if self.motorista_oficio_numero is not None and int(self.motorista_oficio_numero) <= 0:
+            self.motorista_oficio_numero = None
+        if self.motorista_oficio_ano is not None and int(self.motorista_oficio_ano) <= 0:
+            self.motorista_oficio_ano = None
+
+    def _sync_legacy_from_parts(self) -> None:
+        self.oficio = self.numero_formatado or ""
+        self.motorista_oficio = self.motorista_oficio_formatado or ""
+
+    @staticmethod
+    def _reserve_next_numero_for_year(ano: int) -> int:
+        counter, _ = OficioCounter.objects.select_for_update().get_or_create(
+            ano=ano,
+            defaults={"last_numero": 0},
+        )
+        counter.last_numero += 1
+        counter.save(update_fields=["last_numero", "updated_at"])
+        return counter.last_numero
+
+    @classmethod
+    def reserve_next_oficio_number(cls, ano: int) -> int:
+        with transaction.atomic():
+            return cls._reserve_next_numero_for_year(ano)
+
+    @staticmethod
+    def _ensure_counter_floor(ano: int, numero: int) -> None:
+        counter, _ = OficioCounter.objects.select_for_update().get_or_create(
+            ano=ano,
+            defaults={"last_numero": 0},
+        )
+        if numero > counter.last_numero:
+            counter.last_numero = numero
+            counter.save(update_fields=["last_numero", "updated_at"])
+
     def clean(self) -> None:
         super().clean()
+        self._sync_numero_from_legacy()
+        if self.numero is not None and self.ano is None:
+            self.ano = timezone.localdate().year
+        self._sync_motorista_oficio_from_legacy()
+        self._sync_legacy_from_parts()
+        self.protocolo = normalize_protocolo_num(self.protocolo)
+        self.motorista_protocolo = normalize_protocolo_num(self.motorista_protocolo)
+        self.motorista = normalize_upper_text(self.motorista)
+        protocol_errors: dict[str, str] = {}
+        if self.protocolo and len(self.protocolo) != 9:
+            protocol_errors["protocolo"] = "Protocolo deve conter 9 digitos."
+        if self.motorista_protocolo and len(self.motorista_protocolo) != 9:
+            protocol_errors["motorista_protocolo"] = (
+                "Protocolo do motorista deve conter 9 digitos."
+            )
+        if protocol_errors:
+            raise ValidationError(protocol_errors)
         custeio_tipo = (self.custeio_tipo or self.custos or "").strip()
         if custeio_tipo == "SEM_ONUS":
             custeio_tipo = "ONUS_LIMITADOS"
@@ -352,8 +519,28 @@ class Oficio(models.Model):
             raise ValidationError(
                 {"nome_instituicao_custeio": "Informe a instituicao de custeio."}
             )
+        if self.motorista_carona:
+            errors: dict[str, str] = {}
+            if not self.motorista_oficio_numero:
+                errors["motorista_oficio"] = "Informe o numero do oficio do motorista."
+            if not self.motorista_oficio_ano:
+                errors["motorista_oficio"] = "Informe o ano do oficio do motorista."
+            if not self.motorista_protocolo:
+                errors["motorista_protocolo"] = "Informe o protocolo do motorista."
+            if errors:
+                raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        self._sync_numero_from_legacy()
+        if self.numero is not None and self.ano is None:
+            self.ano = timezone.localdate().year
+        if self.numero is None:
+            self.ano = self.ano or timezone.localdate().year
+        self._sync_motorista_oficio_from_legacy()
+        self._sync_legacy_from_parts()
+        self.protocolo = normalize_protocolo_num(self.protocolo)
+        self.motorista_protocolo = normalize_protocolo_num(self.motorista_protocolo)
+        self.motorista = normalize_upper_text(self.motorista)
         if not (self.custeio_tipo or "").strip():
             custos_value = (self.custos or "").strip()
             if custos_value == "SEM_ONUS":
@@ -366,6 +553,44 @@ class Oficio(models.Model):
             if (self.nome_instituicao_custeio or "").strip():
                 self.nome_instituicao_custeio = ""
         self.destino = self.calcular_destino_automatico()
+
+        creating = self.pk is None
+        if creating and self.numero is None:
+            with transaction.atomic():
+                self.numero = self._reserve_next_numero_for_year(int(self.ano or timezone.localdate().year))
+                self._sync_legacy_from_parts()
+                super().save(*args, **kwargs)
+            return
+
+        if self.numero is not None and self.ano is not None:
+            with transaction.atomic():
+                self._ensure_counter_floor(int(self.ano), int(self.numero))
+                self._sync_legacy_from_parts()
+                update_fields = kwargs.get("update_fields")
+                if update_fields is not None:
+                    update_fields = set(update_fields)
+                    update_fields.update(
+                        {
+                            "destino",
+                            "oficio",
+                            "numero",
+                            "ano",
+                            "protocolo",
+                            "motorista",
+                            "motorista_oficio",
+                            "motorista_oficio_numero",
+                            "motorista_oficio_ano",
+                            "motorista_protocolo",
+                        }
+                    )
+                    if "nome_instituicao_custeio" not in update_fields and not (
+                        self.nome_instituicao_custeio or ""
+                    ):
+                        update_fields.add("nome_instituicao_custeio")
+                    kwargs["update_fields"] = list(update_fields)
+                super().save(*args, **kwargs)
+            return
+
         update_fields = kwargs.get("update_fields")
         if update_fields is not None:
             update_fields = set(update_fields)

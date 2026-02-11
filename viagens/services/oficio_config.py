@@ -10,4 +10,4 @@ def get_oficio_config() -> OficioConfig:
         return OficioConfig()
     if config:
         return config
-    return OficioConfig.objects.create()
+    return OficioConfig()

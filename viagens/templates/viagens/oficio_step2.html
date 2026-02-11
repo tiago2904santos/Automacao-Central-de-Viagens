@@ -124,18 +124,31 @@
           </label>
           <label class="full">
             Motorista (nome manual)
-            <input type="text" name="motorista_nome" id="motoristaNome" value="{{ motorista_nome }}" placeholder="Digite caso nao esteja na lista" data-preview-target="motorista_nome" />
+            <input type="text" name="motorista_nome" id="motoristaNome" value="{{ motorista_nome }}" placeholder="Digite caso nao esteja na lista" data-preview-target="motorista_nome" data-uppercase="true" />
           </label>
         </section>
 
         <section class="grid carona-fields{% if motorista_carona %} is-visible{% endif %}" id="caronaFields" data-carona-fields>
           <label>
             Numero do oficio do motorista
-            <input type="text" name="motorista_oficio" id="motoristaOficio" value="{{ motorista_oficio }}" data-preview-target="motorista_oficio" />
+            <input type="text" name="motorista_oficio_numero" id="motoristaOficioNumero" value="{{ motorista_oficio_numero }}" data-preview-target="motorista_oficio" data-mask="oficio-num" inputmode="numeric" />
+            <input type="hidden" name="motorista_oficio" id="motoristaOficio" value="{{ motorista_oficio }}" />
+          </label>
+          <label>
+            Ano
+            <input type="text" name="motorista_oficio_ano" id="motoristaOficioAno" value="{{ motorista_oficio_ano }}" data-mask="digits" inputmode="numeric" readonly />
           </label>
           <label>
             Protocolo do motorista
-            <input type="text" name="motorista_protocolo" id="motoristaProtocolo" value="{{ motorista_protocolo }}" data-preview-target="motorista_protocolo" />
+            <input
+              type="text"
+              name="motorista_protocolo"
+              id="motoristaProtocolo"
+              value="{{ motorista_protocolo }}"
+              data-preview-target="motorista_protocolo"
+              data-mask="protocolo"
+              inputmode="numeric"
+            />
           </label>
         </section>
 

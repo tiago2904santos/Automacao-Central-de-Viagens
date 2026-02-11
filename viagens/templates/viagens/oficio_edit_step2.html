@@ -65,7 +65,7 @@
       <p class="page-subtitle">Informe veiculo e motorista. O motorista pode ser um viajante.</p>
     </div>
     <div class="page-actions">
-      <span class="badge">Editando Oficio #{{ oficio_id }}</span>
+      <span class="badge">Editando Oficio {{ oficio_display }}</span>
     </div>
   </div>
 
@@ -157,7 +157,7 @@
           </label>
           <label class="full">
             Motorista (nome manual)
-            <input type="text" name="motorista_nome" id="motoristaNome" value="{{ motorista_nome }}" placeholder="Digite caso nao esteja na lista" data-preview-target="motorista_nome" />
+            <input type="text" name="motorista_nome" id="motoristaNome" value="{{ motorista_nome }}" placeholder="Digite caso nao esteja na lista" data-preview-target="motorista_nome" data-uppercase="true" />
             <span class="field-help">Use este campo somente quando o motorista nao estiver cadastrado.</span>
           </label>
         </section>
@@ -165,11 +165,27 @@
         <section class="grid carona-fields{% if motorista_carona %} is-visible{% endif %}" id="caronaFields" data-carona-fields>
           <label>
             Numero do oficio do motorista
-            <input type="text" name="motorista_oficio" id="motoristaOficio" value="{{ motorista_oficio }}" data-preview-target="motorista_oficio" />
+            <input type="text" name="motorista_oficio_numero" id="motoristaOficioNumero" value="{{ motorista_oficio_numero }}" data-preview-target="motorista_oficio" data-mask="oficio-num" inputmode="numeric" />
+            <input type="hidden" name="motorista_oficio" id="motoristaOficio" value="{{ motorista_oficio }}" />
           </label>
           <label>
-            Protocolo do motorista
-            <input type="text" name="motorista_protocolo" id="motoristaProtocolo" value="{{ motorista_protocolo }}" data-preview-target="motorista_protocolo" />
+            Ano
+            <input type="text" name="motorista_oficio_ano" id="motoristaOficioAno" value="{{ motorista_oficio_ano }}" data-mask="digits" inputmode="numeric" readonly />
+          </label>
+
+          <label>
+
+            Protocolo do motorista
+
+            <input
+              type="text"
+              name="motorista_protocolo"
+              id="motoristaProtocolo"
+              value="{{ motorista_protocolo }}"
+              data-preview-target="motorista_protocolo"
+              data-mask="protocolo"
+              inputmode="numeric"
+            />
           </label>
           <label class="full">
             OfÃ­cio de referÃªncia da carona
@@ -180,11 +196,11 @@
               {% if not motorista_carona %}disabled{% endif %}
             >
               <option value="">Selecione</option>
-              {% for item in oficios_referencia %}
-                <option value="{{ item.id }}" {% if carona_oficio_referencia_id == item.id %}selected{% endif %}>
-                  {{ item.oficio|default:item.id }}{% if item.protocolo %} - {{ item.protocolo }}{% endif %}
-                </option>
-              {% endfor %}
+              {% for item in oficios_referencia %}
+                <option value="{{ item.id }}" {% if carona_oficio_referencia_id == item.id %}selected{% endif %}>
+                  {{ item.numero_formatado|default:item.oficio|default:item.id }}{% if item.protocolo %} - {{ item.protocolo_formatado|default:item.protocolo }}{% endif %}
+                </option>
+              {% endfor %}
             </select>
             {% if erro_carona_ref %}<span class="field-errors">{{ erro_carona_ref }}</span>{% endif %}
           </label>

@@ -3,8 +3,18 @@ from __future__ import annotations
 from datetime import datetime, time
 
 from django import forms
+from django.utils import timezone
 
 from .models import Cidade, Estado, Trecho, Viajante
+from .utils.normalize import (
+    format_oficio_num,
+    normalize_digits,
+    normalize_oficio_num,
+    normalize_protocolo_num,
+    normalize_rg,
+    normalize_upper_text,
+    split_oficio_num,
+)
 
 
 class TrechoForm(forms.ModelForm):
@@ -230,3 +240,118 @@ class MotoristaSelectForm(forms.Form):
             }
         ),
     )
+
+
+class ViajanteNormalizeForm(forms.ModelForm):
+    cargo_novo = forms.CharField(required=False)
+
+    class Meta:
+        model = Viajante
+        fields = ["nome", "rg", "cpf", "cargo", "telefone"]
+
+    def clean_nome(self):
+        nome = normalize_upper_text(self.cleaned_data.get("nome"))
+        partes = [item for item in nome.split(" ") if item]
+        if len(partes) < 2:
+            raise forms.ValidationError("Informe nome e sobrenome.")
+        return nome
+
+    def clean_rg(self):
+        rg = normalize_rg(self.cleaned_data.get("rg"))
+        if not rg:
+            raise forms.ValidationError("Informe o RG.")
+        if len(rg) not in {9, 10}:
+            raise forms.ValidationError("RG deve conter 9 ou 10 caracteres (digitos + DV).")
+        return rg
+
+    def clean_cpf(self):
+        cpf = normalize_digits(self.cleaned_data.get("cpf"))
+        if len(cpf) != 11:
+            raise forms.ValidationError("CPF deve conter 11 digitos.")
+        return cpf
+
+    def clean_telefone(self):
+        telefone = normalize_digits(self.cleaned_data.get("telefone"))
+        if telefone and len(telefone) not in {10, 11}:
+            raise forms.ValidationError("Telefone deve conter 10 ou 11 digitos.")
+        return telefone
+
+    def clean(self):
+        cleaned_data = super().clean()
+        cargo_novo = (cleaned_data.get("cargo_novo") or "").strip()
+        cargo = (cleaned_data.get("cargo") or "").strip()
+        cargo_final = cargo_novo or cargo
+        cargo_final = " ".join(cargo_final.split())
+        if not cargo_final:
+            self.add_error("cargo", "Informe o cargo.")
+        else:
+            cleaned_data["cargo"] = cargo_final
+        return cleaned_data
+
+
+class OficioNumeracaoForm(forms.Form):
+    oficio = forms.CharField(required=False)
+    protocolo = forms.CharField(required=False)
+
+    def clean_oficio(self):
+        return normalize_oficio_num(self.cleaned_data.get("oficio"))
+
+    def clean_protocolo(self):
+        protocolo = normalize_protocolo_num(self.cleaned_data.get("protocolo"))
+        if protocolo and len(protocolo) != 9:
+            raise forms.ValidationError("Protocolo deve conter 9 digitos.")
+        return protocolo
+
+
+class MotoristaTransporteForm(forms.Form):
+    motorista_nome = forms.CharField(required=False)
+    motorista_oficio_numero = forms.CharField(required=False)
+    motorista_oficio_ano = forms.CharField(required=False)
+    motorista_oficio = forms.CharField(required=False)
+    motorista_protocolo = forms.CharField(required=False)
+
+    def clean_motorista_nome(self):
+        return normalize_upper_text(self.cleaned_data.get("motorista_nome"))
+
+    def clean_motorista_oficio_numero(self):
+        digits = normalize_digits(self.cleaned_data.get("motorista_oficio_numero"))
+        return str(int(digits)) if digits else ""
+
+    def clean_motorista_oficio_ano(self):
+        digits = normalize_digits(self.cleaned_data.get("motorista_oficio_ano"))
+        if not digits:
+            return ""
+        return digits[-4:]
+
+    def clean_motorista_oficio(self):
+        return normalize_oficio_num(self.cleaned_data.get("motorista_oficio"))
+
+    def clean_motorista_protocolo(self):
+        protocolo = normalize_protocolo_num(self.cleaned_data.get("motorista_protocolo"))
+        if protocolo and len(protocolo) != 9:
+            raise forms.ValidationError("Protocolo do motorista deve conter 9 digitos.")
+        return protocolo
+
+    def clean(self):
+        cleaned_data = super().clean()
+        oficio_raw = cleaned_data.get("motorista_oficio") or ""
+        numero = cleaned_data.get("motorista_oficio_numero") or ""
+        ano = cleaned_data.get("motorista_oficio_ano") or ""
+
+        if oficio_raw and not numero:
+            parsed_num, parsed_ano = split_oficio_num(oficio_raw)
+            if parsed_num is not None:
+                numero = str(parsed_num)
+            if parsed_ano is not None:
+                ano = str(parsed_ano)
+
+        if numero and not ano:
+            ano = str(timezone.localdate().year)
+
+        if ano and not numero:
+            ano = ""
+
+        cleaned_data["motorista_oficio_numero"] = numero
+        cleaned_data["motorista_oficio_ano"] = ano
+        cleaned_data["motorista_oficio"] = format_oficio_num(numero, ano)
+        return cleaned_data

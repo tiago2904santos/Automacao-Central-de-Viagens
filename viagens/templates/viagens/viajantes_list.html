@@ -1,4 +1,5 @@
 {% extends "viagens/base.html" %}
+{% load viagens_extras %}
 
 {% block title %}Lista de viajantes{% endblock %}
 
@@ -52,9 +53,9 @@
           {% for viajante in viajantes %}
             <tr>
               <td>{{ viajante.nome }}</td>
-              <td>{{ viajante.rg }}</td>
-              <td>{{ viajante.cpf }}</td>
-              <td>{{ viajante.telefone }}</td>
+              <td>{{ viajante.rg|format_rg }}</td>
+              <td>{{ viajante.cpf|format_cpf }}</td>
+              <td>{{ viajante.telefone|format_phone }}</td>
               <td>{{ viajante.cargo }}</td>
               <td>
                 <a href="{% url 'viajante_editar' viajante.id %}" class="btn-edit">Editar</a>

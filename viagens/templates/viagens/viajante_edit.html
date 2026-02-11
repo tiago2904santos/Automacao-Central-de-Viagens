@@ -26,7 +26,7 @@
           </label>
           <label>
             RG
-            <input type="text" name="rg" value="{{ viajante.rg }}" required data-mask="rg" inputmode="numeric" />
+            <input type="text" name="rg" value="{{ viajante.rg }}" required data-mask="rg" inputmode="text" />
             {% if erros.rg %}<span class="field-errors">{{ erros.rg }}</span>{% endif %}
           </label>
           <label>
@@ -86,6 +86,3 @@
   </div>
 {% endblock %}
 
-{% block scripts %}
-  <script src="{% static 'viagens/viajante_form.js' %}"></script>
-{% endblock %}
