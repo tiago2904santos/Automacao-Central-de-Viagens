@@ -18,8 +18,8 @@
   const assinanteSelect = form.querySelector("#id_assinante");
   const cepStatus = document.getElementById("cepStatus");
 
+  const previewDivisao = document.getElementById("previewDivisao");
   const previewUnidade = document.getElementById("previewUnidade");
-  const previewOrigem = document.getElementById("previewOrigem");
   const previewRodapeUnidade = document.getElementById("previewRodapeUnidade");
   const previewEndereco = document.getElementById("previewEndereco");
   const previewTelefone = document.getElementById("previewTelefone");
@@ -88,9 +88,9 @@
 
   const updatePreview = () => {
     const unidade = (unidadeInput?.value || "").trim().toUpperCase();
-    const origem = (origemInput?.value || "").trim().toUpperCase();
+    const divisao = (origemInput?.value || "").trim().toUpperCase();
+    setPreview(previewDivisao, divisao);
     setPreview(previewUnidade, unidade);
-    setPreview(previewOrigem, origem);
     setPreview(previewRodapeUnidade, titleCasePt(unidade));
     setPreview(previewEndereco, formatEndereco());
     setPreview(previewTelefone, (telefoneInput?.value || "").trim());

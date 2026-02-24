@@ -9,8 +9,8 @@ class OficioConfigForm(forms.ModelForm):
     class Meta:
         model = OficioConfig
         fields = [
-            "unidade_nome",
             "origem_nome",
+            "unidade_nome",
             "cep",
             "logradouro",
             "bairro",
@@ -30,6 +30,8 @@ class OficioConfigForm(forms.ModelForm):
         for field in self.fields.values():
             existing = field.widget.attrs.get("class", "")
             field.widget.attrs["class"] = f"{existing} {base_class}".strip()
+        self.fields["origem_nome"].label = "Divisao"
+        self.fields["unidade_nome"].label = "Unidade"
 
         self.fields["assinante"].queryset = Viajante.objects.order_by("nome")
         self.fields["assinante"].empty_label = "Selecione"
@@ -77,7 +79,7 @@ class OficioConfigForm(forms.ModelForm):
     def clean_origem_nome(self):
         value = (self.cleaned_data.get("origem_nome") or "").strip()
         if not value:
-            raise forms.ValidationError("Informe o nome da origem.")
+            raise forms.ValidationError("Informe o nome da divisao.")
         return value.upper()
 
     def clean_cep(self):

@@ -11,6 +11,8 @@ from viagens.documents.document import (
     AssinaturaObrigatoriaError,
     MotoristaCaronaValidationError,
     build_oficio_docx_bytes,
+    build_termo_autorizacao_payload_docx_bytes,
+    build_termo_autorizacao_docx_bytes,
 )
 from viagens.models import Cidade, Estado, Oficio, OficioConfig, Trecho, Viajante
 
@@ -20,6 +22,8 @@ class OficioDocumentGenerationTests(TestCase):
         self.estado_pr = Estado.objects.create(sigla="PR", nome="Parana")
         self.cidade_sede = Cidade.objects.create(nome="Curitiba", estado=self.estado_pr)
         self.cidade_destino = Cidade.objects.create(nome="Maringa", estado=self.estado_pr)
+        self.cidade_destino_2 = Cidade.objects.create(nome="Londrina", estado=self.estado_pr)
+        self.cidade_destino_3 = Cidade.objects.create(nome="Ponta Grossa", estado=self.estado_pr)
         self.viajante = Viajante.objects.create(
             nome="Servidor Teste",
             rg="12345678X",
@@ -307,3 +311,62 @@ class OficioDocumentGenerationTests(TestCase):
         self.assertNotIn("{{unidade_rodape}", text)
         self.assertNotIn("{{unidade_rodape} }", text)
         self.assertIn("e-mail:", text)
+
+    def test_termo_autorizacao_formata_data_extenso_e_destinos_multiplos(self) -> None:
+        oficio = self._build_oficio(Oficio.AssuntoTipo.AUTORIZACAO)
+        Trecho.objects.create(
+            oficio=oficio,
+            ordem=2,
+            origem_estado=self.estado_pr,
+            origem_cidade=self.cidade_destino,
+            destino_estado=self.estado_pr,
+            destino_cidade=self.cidade_destino_2,
+            saida_data=date(2026, 2, 1),
+            saida_hora=time(13, 0),
+            chegada_data=date(2026, 2, 1),
+            chegada_hora=time(16, 0),
+        )
+        Trecho.objects.create(
+            oficio=oficio,
+            ordem=3,
+            origem_estado=self.estado_pr,
+            origem_cidade=self.cidade_destino_2,
+            destino_estado=self.estado_pr,
+            destino_cidade=self.cidade_destino_3,
+            saida_data=date(2026, 2, 2),
+            saida_hora=time(8, 0),
+            chegada_data=date(2026, 2, 2),
+            chegada_hora=time(11, 0),
+        )
+
+        with self._mock_oficio_config(
+            self.assinante,
+            unidade_nome="POLICIA CIVIL DO PARANA",
+            origem_nome="ASCOM",
+            telefone="(41) 3235-6476",
+            email="ascom@pc.pr.gov.br",
+        ):
+            docx_bytes = build_termo_autorizacao_docx_bytes(oficio).getvalue()
+
+        text = self._doc_text(docx_bytes)
+        self.assertIn("dia 1 a 2 de fevereiro de 2026", text)
+        self.assertIn("Maringa/PR, Londrina/PR e Ponta Grossa/PR", text)
+        self.assertIn("ASCOM", text)
+        self.assertIn("POLICIA CIVIL DO PARANA", text)
+        self.assertNotIn("{{data_do_evento}}", text)
+        self.assertNotIn("{{destino}}", text)
+
+    def test_termo_payload_formata_datas_multiplas(self) -> None:
+        with self._mock_oficio_config(
+            self.assinante,
+            unidade_nome="POLICIA CIVIL DO PARANA",
+            origem_nome="ASCOM",
+        ):
+            docx_bytes = build_termo_autorizacao_payload_docx_bytes(
+                datas=[date(2026, 2, 13), date(2026, 2, 15), date(2026, 2, 16)],
+                destinos=["Curitiba/PR", "Maringa/PR"],
+            ).getvalue()
+
+        text = self._doc_text(docx_bytes)
+        self.assertIn("dias 13, 15 e 16 de fevereiro de 2026", text)
+        self.assertIn("Curitiba/PR e Maringa/PR", text)

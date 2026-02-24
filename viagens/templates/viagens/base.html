@@ -51,6 +51,27 @@
               </li>
             </ul>
           </li>
+          <li class="has-submenu">
+            <a href="#" class="submenu-toggle">
+              <i data-lucide="file-check"></i>
+              Termos de autorizacao
+              <i data-lucide="chevron-down" class="chevron"></i>
+            </a>
+            <ul class="submenu">
+              <li>
+                <a href="{% url 'termo_autorizacao_cadastro' %}">
+                  <i data-lucide="plus-circle"></i>
+                  Cadastrar termo
+                </a>
+              </li>
+              <li>
+                <a href="{% url 'termos_autorizacao_lista' %}">
+                  <i data-lucide="list"></i>
+                  Lista de termos
+                </a>
+              </li>
+            </ul>
+          </li>
           <li>
             <a href="{% url 'simulacao_diarias' %}">
               <i data-lucide="calculator"></i>

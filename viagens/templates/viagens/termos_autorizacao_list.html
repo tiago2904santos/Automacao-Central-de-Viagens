@@ -1,0 +1,95 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Lista de termos{% endblock %}
+
+{% block breadcrumb %}
+  Termos de autorizacao <span class="breadcrumb-sep">/</span> Lista
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Termos cadastrados</h2>
+      <p class="page-subtitle">Baixe cada termo em DOCX ou PDF.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-primary" href="{% url 'termo_autorizacao_cadastro' %}">+ Cadastrar termo</a>
+    </div>
+  </div>
+
+  <div class="list-card">
+    <div class="filter-bar">
+      <form method="get" class="filter-form">
+        <div class="filter-left">
+          <div class="filter-group">
+            <label>Buscar termo</label>
+            <input type="text" name="q" value="{{ q }}" placeholder="Informe o ID do termo..." />
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn-primary" data-loading="false">
+            <span class="btn-label">Filtrar</span>
+            <span class="btn-loading">Carregando...</span>
+          </button>
+          <a href="{% url 'termos_autorizacao_lista' %}" class="btn-clear">Limpar</a>
+        </div>
+      </form>
+    </div>
+
+    {% if termos_rows %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>ID</th>
+            <th>Periodo</th>
+            <th>Destinos</th>
+            <th>Criado em</th>
+            <th class="table-actions-header">Acoes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in termos_rows %}
+            <tr>
+              <td>{{ row.nome }}</td>
+              <td>#{{ row.termo.id }}</td>
+              <td>{{ row.periodo }}</td>
+              <td>{{ row.destinos }}</td>
+              <td>{{ row.termo.created_at|date:"d/m/Y H:i" }}</td>
+              <td class="table-actions-cell">
+                <div class="table-actions table-actions--right">
+                  <a class="btn-icon btn-icon--docx" href="{% url 'termo_autorizacao_download_docx' row.termo.id %}" aria-label="Baixar DOCX">W</a>
+                  <a class="btn-icon btn-icon--pdf" href="{% url 'termo_autorizacao_download_pdf' row.termo.id %}" aria-label="Baixar PDF">PDF</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% if page_obj.paginator.num_pages > 1 %}
+        <div class="pagination">
+          {% if page_obj.has_previous %}
+            <a class="btn-clear btn-small" href="?{% if q %}q={{ q }}&{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>
+          {% else %}
+            <span class="btn-clear btn-small is-disabled">Anterior</span>
+          {% endif %}
+          <span class="pagination-info">Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a class="btn-clear btn-small" href="?{% if q %}q={{ q }}&{% endif %}page={{ page_obj.next_page_number }}">Proxima</a>
+          {% else %}
+            <span class="btn-clear btn-small is-disabled">Proxima</span>
+          {% endif %}
+        </div>
+      {% endif %}
+    {% else %}
+      <div class="empty-state">
+        <div>
+          <strong>Nenhum termo encontrado</strong>
+          <p>Cadastre um termo para aparecer nesta lista.</p>
+        </div>
+        <a class="btn-primary" href="{% url 'termo_autorizacao_cadastro' %}">Cadastrar termo</a>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

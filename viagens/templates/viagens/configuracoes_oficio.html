@@ -11,7 +11,7 @@
   <div class="page-header">
     <div>
       <h2 class="page-title">Configuracoes do Oficio</h2>
-      <p class="page-subtitle">Defina unidade, origem, endereco e assinatura padrao.</p>
+      <p class="page-subtitle">Defina divisao, unidade, endereco e assinatura padrao.</p>
     </div>
   </div>
 
@@ -30,15 +30,15 @@
           <div class="sub-card-title">Cabecalho</div>
           <div class="grid">
             <label class="full">
-              Unidade
-              {{ form.unidade_nome }}
-              {{ form.unidade_nome.errors }}
+              Divisao
+              {{ form.origem_nome }}
+              {{ form.origem_nome.errors }}
               <span class="field-help">Salvo sempre em maiusculo.</span>
             </label>
             <label class="full">
-              Origem
-              {{ form.origem_nome }}
-              {{ form.origem_nome.errors }}
+              Unidade
+              {{ form.unidade_nome }}
+              {{ form.unidade_nome.errors }}
               <span class="field-help">Salvo sempre em maiusculo.</span>
             </label>
           </div>
@@ -144,12 +144,12 @@
       <div class="preview-doc">
         <div class="sub-card-title">Cabecalho</div>
         <div class="preview-line">
-          <span class="preview-label">Unidade</span>
-          <span class="preview-value" id="previewUnidade">-</span>
+          <span class="preview-label">Divisao</span>
+          <span class="preview-value" id="previewDivisao">-</span>
         </div>
         <div class="preview-line">
-          <span class="preview-label">Origem</span>
-          <span class="preview-value" id="previewOrigem">-</span>
+          <span class="preview-label">Unidade</span>
+          <span class="preview-value" id="previewUnidade">-</span>
         </div>
       </div>
 

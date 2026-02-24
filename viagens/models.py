@@ -214,6 +214,23 @@ class OficioCounter(models.Model):
         return f"{self.ano}: {self.last_numero}"
 
 
+class TermoAutorizacao(models.Model):
+    data_inicio = models.DateField()
+    data_fim = models.DateField(null=True, blank=True)
+    data_unica = models.BooleanField(default=False)
+    destinos = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Termo de autorizacao"
+        verbose_name_plural = "Termos de autorizacao"
+        ordering = ("-created_at", "-id")
+
+    def __str__(self) -> str:
+        return f"Termo #{self.id}"
+
+
 class Oficio(models.Model):
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Rascunho"

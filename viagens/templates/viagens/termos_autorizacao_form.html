@@ -1,0 +1,422 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Cadastrar termo{% endblock %}
+
+{% block breadcrumb %}
+  Termos de autorizacao <span class="breadcrumb-sep">/</span> Cadastrar
+{% endblock %}
+
+{% block content %}
+  <style>
+    .termo-form-shell {
+      display: grid;
+      gap: 16px;
+    }
+    .termo-date-panel {
+      background: linear-gradient(135deg, #f6fbff 0%, #eef6ff 100%);
+      border: 1px solid #d8e8ff;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 8px 20px rgba(32, 78, 140, 0.08);
+    }
+    .termo-date-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
+      margin-top: 12px;
+    }
+    .termo-date-card {
+      background: #fff;
+      border: 1px solid #d7e5f8;
+      border-radius: 12px;
+      padding: 12px;
+      transition: all 0.2s ease;
+    }
+    .termo-date-card.is-hidden {
+      opacity: 0;
+      transform: translateY(-6px);
+      max-height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      overflow: hidden;
+      border-width: 0;
+      margin: 0;
+      pointer-events: none;
+    }
+    .termo-date-label {
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #3b5f8a;
+      margin-bottom: 6px;
+      display: inline-block;
+    }
+    .termo-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      user-select: none;
+      cursor: pointer;
+    }
+    .termo-switch-input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .termo-switch-track {
+      width: 44px;
+      height: 24px;
+      border-radius: 999px;
+      background: #c8d6eb;
+      position: relative;
+      transition: background 0.2s ease;
+      box-shadow: inset 0 0 0 1px rgba(12, 39, 74, 0.15);
+    }
+    .termo-switch-track::after {
+      content: "";
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      transition: transform 0.2s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.18);
+    }
+    .termo-switch-input:checked + .termo-switch-track {
+      background: #2f7de0;
+    }
+    .termo-switch-input:checked + .termo-switch-track::after {
+      transform: translateX(20px);
+    }
+    .termo-switch-text {
+      font-weight: 600;
+      color: #21476f;
+    }
+  </style>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Cadastrar termo</h2>
+      <p class="page-subtitle">Preencha datas e destinos para gerar documentos depois.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear" href="{% url 'termos_autorizacao_lista' %}">Lista de termos</a>
+    </div>
+  </div>
+
+  <div class="card termo-form-shell">
+    <form method="post" id="termoForm">
+      {% csrf_token %}
+
+      {% if erros.geral %}
+        <div class="error">
+          <p>{{ erros.geral }}</p>
+        </div>
+      {% endif %}
+
+      <section class="termo-date-panel">
+        <div class="sub-card-title">Periodo do evento</div>
+        <p class="field-help">Informe duas datas ou marque data unica.</p>
+        <label class="termo-switch">
+          <input id="id_data_unica" class="termo-switch-input" type="checkbox" name="data_unica" value="1" {% if data_unica %}checked{% endif %} />
+          <span class="termo-switch-track" aria-hidden="true"></span>
+          <span class="termo-switch-text">Data unica</span>
+        </label>
+
+        <div class="termo-date-grid">
+          <div class="termo-date-card" id="dataInicioWrap">
+            <label class="termo-date-label" for="id_data_inicio">Primeira data</label>
+            <input id="id_data_inicio" type="date" name="data_inicio" value="{{ data_inicio }}" required />
+            {% if erros.data_inicio %}
+              <p class="field-errors">{{ erros.data_inicio }}</p>
+            {% endif %}
+          </div>
+          <div class="termo-date-card" id="dataFimWrap">
+            <label class="termo-date-label" for="id_data_fim">Segunda data</label>
+            <input id="id_data_fim" type="date" name="data_fim" value="{{ data_fim }}" {% if not data_unica %}required{% endif %} />
+            {% if erros.data_fim %}
+              <p class="field-errors">{{ erros.data_fim }}</p>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      <div class="sub-card">
+        <div class="sub-card-title">Destinos</div>
+        <p class="field-help destinos-intro">Mesma experiencia do oficio: UF + cidade e reordenacao por arraste.</p>
+        {% if erros.destinos %}
+          <p class="field-errors">{{ erros.destinos }}</p>
+        {% endif %}
+        <div class="destinos-list" id="destinosList">
+          {% for destino in destinos %}
+            <div class="destino-item" data-index="{{ forloop.counter0 }}">
+              <div class="trecho-header destino-header">
+                <div class="destino-info">
+                  <span class="badge">Destino</span>
+                  <div class="trecho-subtitle">UF + cidade</div>
+                </div>
+                <div class="destino-actions">
+                  <span class="drag-handle" draggable="true" title="Arraste para reordenar destino" aria-label="Arraste para reordenar destino">&#9776;</span>
+                  <button class="btn-danger destino-remove" type="button" data-action="remove-destino">Remover</button>
+                </div>
+              </div>
+              <div class="grid">
+                <label>
+                  UF
+                  <select
+                    name="destinos-{{ forloop.counter0 }}-uf"
+                    class="input-field"
+                    data-role="destino-estado"
+                    data-autocomplete-url="/api/ufs/"
+                    data-autocomplete-type="uf"
+                  >
+                    <option value="">Selecione</option>
+                    {% for estado in estados %}
+                      <option value="{{ estado.sigla }}" {% if estado.sigla == destino.uf %}selected{% endif %}>
+                        {{ estado.sigla }} - {{ estado.nome }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>
+                  Cidade
+                  <select
+                    name="destinos-{{ forloop.counter0 }}-cidade"
+                    class="input-field"
+                    data-role="destino-cidade"
+                    data-autocomplete-url="/api/cidades-busca/"
+                    data-autocomplete-type="cidade"
+                  >
+                    <option value="">Selecione</option>
+                    {% if destino.cidade and destino.cidade_label %}
+                      <option value="{{ destino.cidade }}" selected>{{ destino.cidade_label }}</option>
+                    {% endif %}
+                  </select>
+                </label>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="destinos-actions">
+          <button type="button" class="btn-clear btn-small" id="addDestinoBtn">+ Adicionar destino</button>
+        </div>
+        <input type="hidden" name="destinos-TOTAL_FORMS" id="destinosTotalForms" value="{{ destinos_total_forms }}" />
+        <input type="hidden" name="destinos-order" id="destinosOrder" value="{{ destinos_order }}" />
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Salvar termo</button>
+      </div>
+    </form>
+  </div>
+
+  <template id="destinoTemplate">
+    <div class="destino-item" data-index="__prefix__">
+      <div class="trecho-header destino-header">
+        <div class="destino-info">
+          <span class="badge">Destino</span>
+          <div class="trecho-subtitle">UF + cidade</div>
+        </div>
+        <div class="destino-actions">
+          <span class="drag-handle" draggable="true" title="Arraste para reordenar destino" aria-label="Arraste para reordenar destino">&#9776;</span>
+          <button class="btn-danger destino-remove" type="button" data-action="remove-destino">Remover</button>
+        </div>
+      </div>
+      <div class="grid">
+        <label>
+          UF
+          <select
+            name="destinos-__prefix__-uf"
+            class="input-field"
+            data-role="destino-estado"
+            data-autocomplete-url="/api/ufs/"
+            data-autocomplete-type="uf"
+          >
+            <option value="">Selecione</option>
+            {% for estado in estados %}
+              <option value="{{ estado.sigla }}" {% if estado.sigla == "PR" %}selected{% endif %}>
+                {{ estado.sigla }} - {{ estado.nome }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Cidade
+          <select
+            name="destinos-__prefix__-cidade"
+            class="input-field"
+            data-role="destino-cidade"
+            data-autocomplete-url="/api/cidades-busca/"
+            data-autocomplete-type="cidade"
+          >
+            <option value="">Selecione</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </template>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (function () {
+      const form = document.getElementById("termoForm");
+      const dataUnica = document.getElementById("id_data_unica");
+      const dataFimWrap = document.getElementById("dataFimWrap");
+      const dataFimInput = document.getElementById("id_data_fim");
+
+      const destinoList = document.getElementById("destinosList");
+      const destinoTemplate = document.getElementById("destinoTemplate");
+      const addDestinoBtn = document.getElementById("addDestinoBtn");
+      const destinosTotalForms = document.getElementById("destinosTotalForms");
+      const destinosOrder = document.getElementById("destinosOrder");
+
+      if (!form || !destinoList || !destinoTemplate) {
+        return;
+      }
+
+      const syncDataFim = () => {
+        const isSingle = Boolean(dataUnica?.checked);
+        if (!dataFimWrap || !dataFimInput) {
+          return;
+        }
+        dataFimWrap.classList.toggle("is-hidden", isSingle);
+        dataFimInput.required = !isSingle;
+        if (isSingle) {
+          dataFimInput.value = "";
+        }
+      };
+
+      const updateElementIndex = (element, index, prefix) => {
+        const regex = new RegExp(`${prefix}-(\\d+|__prefix__)-`, "g");
+        element.querySelectorAll("[name], [id], [for]").forEach((item) => {
+          if (item.name) {
+            item.name = item.name.replace(regex, `${prefix}-${index}-`);
+          }
+          if (item.id) {
+            item.id = item.id.replace(regex, `${prefix}-${index}-`);
+          }
+          if (item.htmlFor) {
+            item.htmlFor = item.htmlFor.replace(regex, `${prefix}-${index}-`);
+          }
+        });
+        element.dataset.index = String(index);
+      };
+
+      const getDestinoItems = () => Array.from(destinoList.querySelectorAll(".destino-item"));
+
+      const syncDestinos = () => {
+        const items = getDestinoItems();
+        items.forEach((item, index) => updateElementIndex(item, index, "destinos"));
+        if (destinosTotalForms) {
+          destinosTotalForms.value = String(items.length);
+        }
+        if (destinosOrder) {
+          destinosOrder.value = items.map((_, index) => String(index)).join(",");
+        }
+      };
+
+      const addDestinoItem = () => {
+        const html = destinoTemplate.innerHTML.replace(/__prefix__/g, String(getDestinoItems().length));
+        destinoList.insertAdjacentHTML("beforeend", html);
+        const newItem = getDestinoItems()[getDestinoItems().length - 1];
+        if (newItem && window.initializeAutocompleteSelects) {
+          window.initializeAutocompleteSelects(newItem);
+        }
+        syncDestinos();
+      };
+
+      if (addDestinoBtn) {
+        addDestinoBtn.addEventListener("click", addDestinoItem);
+      }
+
+      destinoList.addEventListener("click", (event) => {
+        const removeBtn = event.target.closest("[data-action='remove-destino']");
+        if (!removeBtn) {
+          return;
+        }
+        const item = removeBtn.closest(".destino-item");
+        if (!item) {
+          return;
+        }
+        if (getDestinoItems().length <= 1) {
+          const ufSelect = item.querySelector("[data-role='destino-estado']");
+          const cidadeSelect = item.querySelector("[data-role='destino-cidade']");
+          if (ufSelect) {
+            ufSelect.value = "PR";
+            window.syncAutocompleteDisplay?.(ufSelect);
+          }
+          if (cidadeSelect) {
+            cidadeSelect.value = "";
+            window.syncAutocompleteDisplay?.(cidadeSelect);
+          }
+          return;
+        }
+        item.remove();
+        syncDestinos();
+      });
+
+      destinoList.addEventListener("change", (event) => {
+        const ufSelect = event.target.closest("[data-role='destino-estado']");
+        if (!ufSelect) {
+          return;
+        }
+        const item = ufSelect.closest(".destino-item");
+        const cidadeSelect = item?.querySelector("[data-role='destino-cidade']");
+        if (cidadeSelect) {
+          cidadeSelect.value = "";
+          window.syncAutocompleteDisplay?.(cidadeSelect);
+        }
+      });
+
+      let dragItem = null;
+      destinoList.addEventListener("dragstart", (event) => {
+        const handle = event.target.closest(".drag-handle");
+        if (!handle) {
+          return;
+        }
+        dragItem = handle.closest(".destino-item");
+        if (!dragItem) {
+          return;
+        }
+        dragItem.classList.add("is-dragging");
+        event.dataTransfer.effectAllowed = "move";
+      });
+
+      destinoList.addEventListener("dragover", (event) => {
+        if (!dragItem) {
+          return;
+        }
+        event.preventDefault();
+        const overItem = event.target.closest(".destino-item");
+        if (!overItem || overItem === dragItem) {
+          return;
+        }
+        const rect = overItem.getBoundingClientRect();
+        const after = event.clientY - rect.top > rect.height / 2;
+        if (after) {
+          overItem.after(dragItem);
+        } else {
+          overItem.before(dragItem);
+        }
+      });
+
+      destinoList.addEventListener("dragend", () => {
+        if (dragItem) {
+          dragItem.classList.remove("is-dragging");
+        }
+        dragItem = null;
+        syncDestinos();
+      });
+
+      dataUnica?.addEventListener("change", syncDataFim);
+      syncDataFim();
+      syncDestinos();
+      window.initializeAutocompleteSelects?.(document);
+    })();
+  </script>
+{% endblock %}

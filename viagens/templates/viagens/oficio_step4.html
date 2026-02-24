@@ -34,6 +34,9 @@
     </div>
     <div class="page-actions">
       <span class="{{ status_class }}">Status: {{ status_label }}</span>
+      {% if oficio_id %}
+        <a class="btn-clear btn-small" href="{% url 'oficio_download_termo_autorizacao' oficio_id %}">Termo</a>
+      {% endif %}
     </div>
   </div>
 

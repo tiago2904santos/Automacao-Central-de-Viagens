@@ -7,7 +7,7 @@ import re
 import shutil
 import zipfile
 import tempfile
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
@@ -80,6 +80,21 @@ FOOTER_ENDERECO_DEFAULT = (
     "Curitiba-PR – CEP 80.230-020:  Fone: 41-3235-6476 – e-mail:comunicacaopc.pr.gov.br"
 )
 
+MESES_PTBR = {
+    1: "janeiro",
+    2: "fevereiro",
+    3: "marco",
+    4: "abril",
+    5: "maio",
+    6: "junho",
+    7: "julho",
+    8: "agosto",
+    9: "setembro",
+    10: "outubro",
+    11: "novembro",
+    12: "dezembro",
+}
+
 
 # =========================
 # FORMATADORES
@@ -114,6 +129,85 @@ def _fmt_local(cidade: Cidade | None, estado: Estado | None) -> str:
 
 def _join(parts: Iterable[str], sep=" - ") -> str:
     return sep.join([p for p in parts if p])
+
+
+def _format_data_evento_extenso(
+    data_inicio: date | None,
+    data_fim: date | None,
+) -> str:
+    if not data_inicio and not data_fim:
+        return ""
+    inicio = data_inicio or data_fim
+    fim = data_fim or data_inicio
+    if not inicio or not fim:
+        return ""
+
+    if inicio == fim:
+        mes_inicio = MESES_PTBR.get(inicio.month, str(inicio.month))
+        return f"dia {inicio.day} de {mes_inicio} de {inicio.year}"
+
+    if inicio.year == fim.year and inicio.month == fim.month:
+        mes = MESES_PTBR.get(inicio.month, str(inicio.month))
+        return f"dia {inicio.day} a {fim.day} de {mes} de {inicio.year}"
+
+    if inicio.year == fim.year:
+        mes_inicio = MESES_PTBR.get(inicio.month, str(inicio.month))
+        mes_fim = MESES_PTBR.get(fim.month, str(fim.month))
+        return (
+            f"dia {inicio.day} de {mes_inicio} a {fim.day} de {mes_fim} de {inicio.year}"
+        )
+
+    mes_inicio = MESES_PTBR.get(inicio.month, str(inicio.month))
+    mes_fim = MESES_PTBR.get(fim.month, str(fim.month))
+    return (
+        f"dia {inicio.day} de {mes_inicio} de {inicio.year} "
+        f"a {fim.day} de {mes_fim} de {fim.year}"
+    )
+
+
+def _format_data_evento_datas_extenso(datas: list[date]) -> str:
+    datas_ordenadas = sorted(set(datas))
+    if not datas_ordenadas:
+        return ""
+    if len(datas_ordenadas) == 1:
+        unico = datas_ordenadas[0]
+        return _format_data_evento_extenso(unico, unico)
+
+    is_contiguo = all(
+        (datas_ordenadas[index] - datas_ordenadas[index - 1]).days == 1
+        for index in range(1, len(datas_ordenadas))
+    )
+    if is_contiguo:
+        return _format_data_evento_extenso(datas_ordenadas[0], datas_ordenadas[-1])
+
+    primeira = datas_ordenadas[0]
+    mesmo_mes_ano = all(
+        data_item.year == primeira.year and data_item.month == primeira.month
+        for data_item in datas_ordenadas
+    )
+    if mesmo_mes_ano:
+        dias = _format_destinos_texto([str(data_item.day) for data_item in datas_ordenadas])
+        mes = MESES_PTBR.get(primeira.month, str(primeira.month))
+        return f"dias {dias} de {mes} de {primeira.year}"
+
+    datas_texto = _format_destinos_texto(
+        [
+            f"{data_item.day} de {MESES_PTBR.get(data_item.month, str(data_item.month))} de {data_item.year}"
+            for data_item in datas_ordenadas
+        ]
+    )
+    return f"dias {datas_texto}"
+
+
+def _format_destinos_texto(destinos: list[str]) -> str:
+    normalized = [item.strip() for item in destinos if item and item.strip()]
+    if not normalized:
+        return ""
+    if len(normalized) == 1:
+        return normalized[0]
+    if len(normalized) == 2:
+        return f"{normalized[0]} e {normalized[1]}"
+    return f"{', '.join(normalized[:-1])} e {normalized[-1]}"
 
 
 def _title_case(text: str) -> str:
@@ -408,6 +502,53 @@ def build_destinos_e_roteiros(oficio: Oficio, trechos: list[Trecho]) -> tuple[st
     ida = " > ".join([sede] + destinos)
     volta = f"{destinos[-1]} > {sede}"
     return destinos_str, ida, volta
+
+
+def _collect_termo_destinos(oficio: Oficio, trechos: list[Trecho]) -> list[str]:
+    seen: set[str] = set()
+    destinos: list[str] = []
+
+    for trecho in trechos:
+        destino = _fmt_local(trecho.destino_cidade, trecho.destino_estado)
+        if not destino or destino in seen:
+            continue
+        seen.add(destino)
+        destinos.append(destino)
+
+    if destinos:
+        return destinos
+
+    fallback = _fmt_local(oficio.cidade_destino, oficio.estado_destino)
+    if fallback:
+        return [fallback]
+    return []
+
+
+def _build_data_evento_range(oficio: Oficio, trechos: list[Trecho]) -> tuple[date | None, date | None]:
+    datas: list[date] = []
+
+    for trecho in trechos:
+        if trecho.saida_data:
+            datas.append(trecho.saida_data)
+        if trecho.chegada_data:
+            datas.append(trecho.chegada_data)
+
+    if oficio.retorno_saida_data:
+        datas.append(oficio.retorno_saida_data)
+    if oficio.retorno_chegada_data:
+        datas.append(oficio.retorno_chegada_data)
+
+    if not datas:
+        return (None, None)
+    return (min(datas), max(datas))
+
+
+def _resolve_termo_template_path() -> Path:
+    base_dir = Path(settings.BASE_DIR) / "viagens" / "documents"
+    candidates = sorted(base_dir.glob("Termo_de_autoriz*ASCOM.docx"))
+    if candidates:
+        return candidates[0]
+    raise FileNotFoundError("Template de termo de autorizacao nao encontrado em viagens/documents.")
 
 
 def format_tipo_viatura(tipo: str | None) -> str:
@@ -1181,6 +1322,82 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
             raise ValueError(message)
 
     return buf
+
+
+def _render_termo_autorizacao_docx(
+    *,
+    data_evento: str,
+    destinos: list[str],
+) -> BytesIO:
+    template_path = _resolve_termo_template_path()
+    doc = DocxFactory(str(template_path))
+
+    oficio_cfg = get_oficio_config()
+
+    destino = _format_destinos_texto(destinos)
+
+    mapping = {
+        "divisao": (oficio_cfg.origem_nome or "").strip(),
+        "unidade": (oficio_cfg.unidade_nome or "").strip(),
+        "data_do_evento": data_evento,
+        "destino": destino,
+        "unidade_rodape": title_case_pt((oficio_cfg.unidade_nome or "").strip()),
+        "endereco": _build_endereco_formatado(oficio_cfg),
+        "telefone": (oficio_cfg.telefone or "").strip(),
+        "email": (oficio_cfg.email or "").strip(),
+    }
+
+    template_placeholders = _extract_placeholders(
+        _iter_docx_xml_parts_from_path(str(template_path))
+    )
+    missing = template_placeholders - set(mapping.keys())
+    for key in missing:
+        mapping[key] = ""
+
+    mapping = _sanitize_mapping_values(mapping)
+    safe_replace_placeholders(doc, mapping)
+
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    if settings.DEBUG:
+        leftovers = _find_unresolved_placeholders(buf.getvalue())
+        if leftovers:
+            raw = ", ".join(sorted(leftovers))
+            message = "Placeholders nao substituidos no termo DOCX."
+            if raw:
+                message += f" Encontrados: {raw}."
+            raise ValueError(message)
+
+    return buf
+
+
+def build_termo_autorizacao_docx_bytes(oficio: Oficio) -> BytesIO:
+    trechos = list(oficio.trechos.order_by("ordem"))  # type: ignore
+    data_inicio, data_fim = _build_data_evento_range(oficio, trechos)
+    destinos = _collect_termo_destinos(oficio, trechos)
+    return _render_termo_autorizacao_docx(
+        data_evento=_format_data_evento_extenso(data_inicio, data_fim),
+        destinos=destinos,
+    )
+
+
+def build_termo_autorizacao_payload_docx_bytes(
+    *,
+    datas: list[date] | None = None,
+    data_inicio: date | None = None,
+    data_fim: date | None = None,
+    destinos: list[str],
+) -> BytesIO:
+    data_evento = _format_data_evento_datas_extenso(datas or [])
+    if not data_evento:
+        data_evento = _format_data_evento_extenso(data_inicio, data_fim)
+
+    return _render_termo_autorizacao_docx(
+        data_evento=data_evento,
+        destinos=destinos,
+    )
 
 
 # =========================

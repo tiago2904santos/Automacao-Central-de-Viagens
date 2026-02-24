@@ -60,6 +60,11 @@ urlpatterns = [
     ),
 
     path("oficios/<int:oficio_id>/download-docx/",views.oficio_download_docx,name="oficio_download_docx"),
+    path(
+        "oficios/<int:oficio_id>/download-termo-autorizacao/",
+        views.oficio_download_termo_autorizacao,
+        name="oficio_download_termo_autorizacao",
+    ),
     path("oficios/<int:oficio_id>/download-pdf/", views.oficio_download_pdf, name="oficio_download_pdf"),
     path("api/validacoes/resultado/", views.validacao_resultado, name="validacao_resultado"),
 
@@ -71,6 +76,26 @@ urlpatterns = [
     path("veiculos/<int:veiculo_id>/editar/", views.veiculo_editar, name="veiculo_editar"),
     path("veiculos/", views.veiculos_lista, name="veiculos_lista"),
     path("oficios/", views.oficios_lista, name="oficios_lista"),
+    path(
+        "termos-autorizacao/",
+        views.termos_autorizacao_lista,
+        name="termos_autorizacao_lista",
+    ),
+    path(
+        "termos-autorizacao/novo/",
+        views.termo_autorizacao_cadastro,
+        name="termo_autorizacao_cadastro",
+    ),
+    path(
+        "termos-autorizacao/<int:termo_id>/download-docx/",
+        views.termo_autorizacao_download_docx,
+        name="termo_autorizacao_download_docx",
+    ),
+    path(
+        "termos-autorizacao/<int:termo_id>/download-pdf/",
+        views.termo_autorizacao_download_pdf,
+        name="termo_autorizacao_download_pdf",
+    ),
     path("oficios/<int:oficio_id>/excluir/", views.oficio_excluir, name="oficio_excluir"),
     path("configuracoes/oficio/", views.configuracoes_oficio, name="config_oficio"),
     path("api/viajantes/", views.viajantes_api, name="viajantes_api"),

@@ -34,7 +34,17 @@ from .forms import (
     TrechoForm,
     ViajanteNormalizeForm,
 )
-from .models import Cargo, Cidade, Estado, Oficio, OficioCounter, Trecho, Viajante, Veiculo
+from .models import (
+    Cargo,
+    Cidade,
+    Estado,
+    Oficio,
+    OficioCounter,
+    TermoAutorizacao,
+    Trecho,
+    Viajante,
+    Veiculo,
+)
 from .diarias import PeriodMarker, calculate_periodized_diarias
 from .simulacao import calculate_periods_from_payload
 from .services.oficio_helpers import build_assunto, infer_tipo_destino, valor_por_extenso_ptbr
@@ -60,6 +70,9 @@ from .documents.document import (
     MotoristaCaronaValidationError,
     build_oficio_docx_and_pdf_bytes,
     build_oficio_docx_bytes,
+    build_termo_autorizacao_payload_docx_bytes,
+    build_termo_autorizacao_docx_bytes,
+    docx_bytes_to_pdf_bytes,
 )
 
 
@@ -216,6 +229,10 @@ def _format_time(time_value: str | time | None) -> str:
     if isinstance(time_value, time):
         return time_value.strftime("%H:%M")
     return str(time_value).strip()
+
+
+def _is_truthy_post(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "on", "yes", "sim"}
 
 
 def _format_date_time(
@@ -838,6 +855,47 @@ def _build_destinos_display(destinos_data) -> list[dict[str, str]]:
             }
         )
     return display
+
+
+def _resolve_termo_destinos_labels(destinos_data) -> list[str]:
+    labels: list[str] = []
+    seen: set[str] = set()
+    for destino in destinos_data or []:
+        uf = (destino.get("uf") or "").strip().upper()
+        cidade = (destino.get("cidade") or "").strip()
+        estado_obj = _resolve_estado(uf)
+        cidade_obj = _resolve_cidade(cidade, estado=estado_obj)
+        label = _format_trecho_local(cidade_obj, estado_obj)
+        if not label:
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        labels.append(label)
+    return labels
+
+
+def _sanitize_termo_destino_label(value: str) -> str:
+    cleaned = (value or "").replace("/", " - ")
+    cleaned = re.sub(r'[\\:*?"<>|]+', " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _build_termo_nome(destinos_labels: list[str]) -> str:
+    destino = _sanitize_termo_destino_label(destinos_labels[0] if destinos_labels else "")
+    if not destino:
+        destino = "sem destino"
+    return f"termo de autorização {destino}"
+
+
+def _format_periodo_termo(data_inicio: date | None, data_fim: date | None, data_unica: bool) -> str:
+    if not data_inicio:
+        return "-"
+    if data_unica or not data_fim or data_fim == data_inicio:
+        return _format_date(data_inicio)
+    return f"{_format_date(data_inicio)} a {_format_date(data_fim)}"
 
 
 def _build_trechos_from_sede_destinos(
@@ -2731,6 +2789,7 @@ def oficio_step4(request):
             "erros": erros,
             "status_label": status_context["status_label"],
             "status_class": status_context["status_class"],
+            "oficio_id": oficio_obj.id if oficio_obj else None,
         }
     )
     return render(request, "viagens/oficio_step4.html", context)
@@ -3665,6 +3724,209 @@ def oficios_lista(request):
     )
 
 
+def _termo_form_context(
+    *,
+    erros: dict[str, str] | None = None,
+    data_unica: bool = False,
+    data_inicio_raw: str | None = None,
+    data_fim_raw: str | None = None,
+    destinos_data: list[dict[str, str]] | None = None,
+) -> dict:
+    hoje = timezone.localdate()
+    estados = Estado.objects.order_by("sigla")
+    sede_default = _get_sede_cidade_default_id()
+
+    data_inicio_value = data_inicio_raw if data_inicio_raw is not None else hoje.isoformat()
+    data_fim_value = data_fim_raw if data_fim_raw is not None else hoje.isoformat()
+    destinos_value = destinos_data if destinos_data is not None else [{"uf": "PR", "cidade": sede_default}]
+
+    destinos_normalizados = _normalize_destinos_for_wizard(destinos_value)
+    destinos_display = _build_destinos_display(destinos_normalizados)
+    destinos_order = ",".join(str(idx) for idx in range(len(destinos_display)))
+
+    return {
+        "erros": erros or {},
+        "estados": estados,
+        "data_unica": data_unica,
+        "data_inicio": data_inicio_value,
+        "data_fim": data_fim_value,
+        "destinos": destinos_display,
+        "destinos_total_forms": len(destinos_display),
+        "destinos_order": destinos_order,
+    }
+
+
+@require_http_methods(["GET", "POST"])
+def termo_autorizacao_cadastro(request):
+    erros: dict[str, str] = {}
+    hoje = timezone.localdate()
+    data_unica = False
+    data_inicio_raw = hoje.isoformat()
+    data_fim_raw = hoje.isoformat()
+    destinos_data: list[dict[str, str]] = [{"uf": "PR", "cidade": _get_sede_cidade_default_id()}]
+
+    if request.method != "POST":
+        return render(
+            request,
+            "viagens/termos_autorizacao_form.html",
+            _termo_form_context(
+                erros=erros,
+                data_unica=data_unica,
+                data_inicio_raw=data_inicio_raw,
+                data_fim_raw=data_fim_raw,
+                destinos_data=destinos_data,
+            ),
+        )
+
+    data_unica = _is_truthy_post(request.POST.get("data_unica"))
+    data_inicio_raw = (request.POST.get("data_inicio") or "").strip()
+    data_fim_raw = (request.POST.get("data_fim") or "").strip()
+    _, _, destinos_post = _serialize_sede_destinos_from_post(request.POST)
+    destinos_data = destinos_post or [{}]
+
+    data_inicio = parse_date(data_inicio_raw) if data_inicio_raw else None
+    data_fim = parse_date(data_fim_raw) if data_fim_raw else None
+    if not data_inicio:
+        erros["data_inicio"] = "Informe a primeira data."
+    if data_unica:
+        data_fim = data_inicio
+        data_fim_raw = ""
+    else:
+        if not data_fim:
+            erros["data_fim"] = "Informe a segunda data."
+        if data_inicio and data_fim and data_fim < data_inicio:
+            erros["data_fim"] = "A segunda data deve ser maior ou igual a primeira."
+
+    destinos_validos = [
+        destino
+        for destino in destinos_post
+        if (destino.get("uf") or "").strip() and (destino.get("cidade") or "").strip()
+    ]
+    destinos_resolvidos = _resolve_termo_destinos_labels(destinos_validos)
+    if not destinos_resolvidos:
+        erros["destinos"] = "Informe ao menos um destino."
+
+    if erros:
+        return render(
+            request,
+            "viagens/termos_autorizacao_form.html",
+            _termo_form_context(
+                erros=erros,
+                data_unica=data_unica,
+                data_inicio_raw=data_inicio_raw,
+                data_fim_raw=data_fim_raw,
+                destinos_data=destinos_data,
+            ),
+        )
+
+    termo_nome = _build_termo_nome(destinos_resolvidos)
+    TermoAutorizacao.objects.create(
+        data_inicio=data_inicio or hoje,
+        data_fim=data_fim,
+        data_unica=data_unica,
+        destinos=destinos_validos,
+    )
+    messages.success(request, f'Termo salvo como "{termo_nome}".')
+    return redirect("termos_autorizacao_lista")
+
+
+@require_http_methods(["GET"])
+def termos_autorizacao_lista(request):
+    q = (request.GET.get("q") or "").strip()
+    termos_qs = TermoAutorizacao.objects.all()
+    if q:
+        if q.isdigit():
+            termos_qs = termos_qs.filter(id=int(q))
+        else:
+            termos_qs = termos_qs.none()
+
+    paginator = Paginator(termos_qs, 10)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    termos_rows: list[dict[str, object]] = []
+    for termo in page_obj:
+        destinos_labels = _resolve_termo_destinos_labels(termo.destinos or [])
+        termos_rows.append(
+            {
+                "termo": termo,
+                "nome": _build_termo_nome(destinos_labels),
+                "periodo": _format_periodo_termo(
+                    termo.data_inicio,
+                    termo.data_fim,
+                    termo.data_unica,
+                ),
+                "destinos": ", ".join(destinos_labels) if destinos_labels else "-",
+            }
+        )
+
+    return render(
+        request,
+        "viagens/termos_autorizacao_list.html",
+        {
+            "q": q,
+            "termos_rows": termos_rows,
+            "page_obj": page_obj,
+        },
+    )
+
+
+@require_GET
+def termo_autorizacao_download_docx(request, termo_id: int):
+    termo = get_object_or_404(TermoAutorizacao, id=termo_id)
+    destinos_labels = _resolve_termo_destinos_labels(termo.destinos or [])
+    if not destinos_labels:
+        messages.error(request, "Termo sem destinos validos para gerar documento.")
+        return redirect("termos_autorizacao_lista")
+
+    try:
+        buf = build_termo_autorizacao_payload_docx_bytes(
+            data_inicio=termo.data_inicio,
+            data_fim=termo.data_fim or termo.data_inicio,
+            destinos=destinos_labels,
+        )
+    except Exception as exc:
+        logger.exception("[termo-docx] falha na geracao do termo: termo_id=%s", termo.id)
+        messages.error(request, f"Falha ao gerar termo DOCX. Detalhe: {exc}")
+        return redirect("termos_autorizacao_lista")
+
+    filename = f"{_build_termo_nome(destinos_labels)}.docx"
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
+@require_GET
+def termo_autorizacao_download_pdf(request, termo_id: int):
+    termo = get_object_or_404(TermoAutorizacao, id=termo_id)
+    destinos_labels = _resolve_termo_destinos_labels(termo.destinos or [])
+    if not destinos_labels:
+        messages.error(request, "Termo sem destinos validos para gerar PDF.")
+        return redirect("termos_autorizacao_lista")
+
+    try:
+        docx_buf = build_termo_autorizacao_payload_docx_bytes(
+            data_inicio=termo.data_inicio,
+            data_fim=termo.data_fim or termo.data_inicio,
+            destinos=destinos_labels,
+        )
+        pdf_bytes = docx_bytes_to_pdf_bytes(docx_buf.getvalue(), oficio_id=None)
+    except DocxPdfConversionError as exc:
+        messages.error(request, f"Falha ao gerar PDF. Baixe o DOCX. Detalhe: {exc}")
+        return redirect("termo_autorizacao_download_docx", termo_id=termo.id)
+    except Exception as exc:
+        logger.exception("[termo-pdf] falha inesperada: termo_id=%s", termo.id)
+        messages.error(request, f"Falha ao gerar PDF. Baixe o DOCX. Detalhe: {exc}")
+        return redirect("termo_autorizacao_download_docx", termo_id=termo.id)
+
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="{_build_termo_nome(destinos_labels)}.pdf"'
+    )
+    return response
+
+
 @require_http_methods(["POST"])
 def oficio_excluir(request, oficio_id: int):
     oficio = get_object_or_404(Oficio, id=oficio_id)
@@ -4197,6 +4459,35 @@ def oficio_download_docx(request, oficio_id: int):
         return redirect("config_oficio")
 
     filename = f"oficio_{oficio.numero_formatado or oficio.oficio or oficio.id}.docx"
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
+@require_GET
+def oficio_download_termo_autorizacao(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos"),
+        id=oficio_id,
+    )
+
+    try:
+        buf = build_termo_autorizacao_docx_bytes(oficio)
+    except Exception as exc:
+        logger.exception(
+            "[oficio-termo] falha na geracao do termo de autorizacao: oficio_id=%s",
+            oficio.id,
+        )
+        messages.error(
+            request,
+            f"Falha ao gerar termo de autorizacao. Detalhe: {exc}",
+        )
+        return redirect("oficio_edit_step4", oficio_id=oficio.id)
+
+    filename = f"termo_autorizacao_{oficio.numero_formatado or oficio.oficio or oficio.id}.docx"
     resp = HttpResponse(
         buf.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

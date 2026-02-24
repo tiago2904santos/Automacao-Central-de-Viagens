@@ -10,7 +10,16 @@ from django.urls import reverse
 from django.utils import timezone
 
 from viagens.documents.document import MotoristaCaronaValidationError
-from viagens.models import Cidade, Estado, Oficio, OficioConfig, Trecho, Viajante, Veiculo
+from viagens.models import (
+    Cidade,
+    Estado,
+    Oficio,
+    OficioConfig,
+    TermoAutorizacao,
+    Trecho,
+    Viajante,
+    Veiculo,
+)
 
 
 class OficioFlowTests(TestCase):
@@ -530,6 +539,152 @@ class OficioFlowTests(TestCase):
         self.assertEqual(
             response["Content-Type"],
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+    def test_download_termo_autorizacao_gera_arquivo(self) -> None:
+        oficio = Oficio.objects.create(
+            oficio="780/2026",
+            protocolo="781/2026",
+            assunto="Teste termo autorizacao",
+            placa="ABC1234",
+            modelo="Uno",
+            combustivel="Gasolina",
+            motorista=self.viajante.nome,
+            tipo_destino="INTERIOR",
+            motivo="Teste",
+            retorno_chegada_data="2026-02-11",
+            retorno_chegada_hora="18:00",
+        )
+        oficio.viajantes.add(self.viajante)
+        Trecho.objects.create(
+            oficio=oficio,
+            ordem=1,
+            origem_estado=self.estado_pr,
+            origem_cidade=self.cidade_sede,
+            destino_estado=self.estado_pr,
+            destino_cidade=self.cidade_intermediaria,
+            saida_data="2026-02-10",
+            saida_hora="08:00",
+            chegada_data="2026-02-10",
+            chegada_hora="12:00",
+        )
+        cfg = OficioConfig()
+        cfg.unidade_nome = "POLICIA CIVIL DO PARANA"
+        cfg.origem_nome = "ASCOM"
+        cfg.telefone = "(41) 3235-6476"
+        cfg.email = "ascom@pc.pr.gov.br"
+
+        with patch("viagens.documents.document.get_oficio_config", return_value=cfg):
+            response = self.client.get(
+                reverse("oficio_download_termo_autorizacao", args=[oficio.id])
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        self.assertIn("termo_autorizacao_", response["Content-Disposition"])
+
+    def test_aba_termos_autorizacao_exibe_formulario_simples(self) -> None:
+        response = self.client.get(reverse("termo_autorizacao_cadastro"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Cadastrar termo")
+        self.assertContains(response, "name=\"data_inicio\"")
+        self.assertContains(response, "name=\"data_fim\"")
+        self.assertContains(response, "name=\"data_unica\"")
+        self.assertContains(response, "name=\"destinos-0-uf\"")
+        self.assertContains(response, "name=\"destinos-0-cidade\"")
+
+    def test_aba_termos_autorizacao_salva_termo_e_lista(self) -> None:
+        payload = {
+            "data_inicio": "2026-02-13",
+            "data_fim": "2026-02-16",
+            "data_unica": "",
+            "destinos-TOTAL_FORMS": "3",
+            "destinos-order": "0,1,2",
+            "destinos-0-uf": "PR",
+            "destinos-0-cidade": str(self.cidade_sede.id),
+            "destinos-1-uf": "PR",
+            "destinos-1-cidade": str(self.cidade_intermediaria.id),
+            "destinos-2-uf": "PR",
+            "destinos-2-cidade": str(self.cidade_sede.id),
+        }
+        response = self.client.post(reverse("termo_autorizacao_cadastro"), payload)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("termos_autorizacao_lista"))
+        self.assertEqual(TermoAutorizacao.objects.count(), 1)
+
+        termo = TermoAutorizacao.objects.first()
+        self.assertIsNotNone(termo)
+        assert termo is not None
+        self.assertEqual(str(termo.data_inicio), "2026-02-13")
+        self.assertEqual(str(termo.data_fim), "2026-02-16")
+        self.assertFalse(termo.data_unica)
+
+    def test_lista_termos_exibe_registro_e_links_download(self) -> None:
+        termo = TermoAutorizacao.objects.create(
+            data_inicio="2026-02-13",
+            data_fim="2026-02-16",
+            data_unica=False,
+            destinos=[{"uf": "PR", "cidade": str(self.cidade_sede.id)}],
+        )
+
+        response = self.client.get(reverse("termos_autorizacao_lista"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Termos cadastrados")
+        self.assertContains(response, "termo de autorização Curitiba - PR")
+        self.assertContains(
+            response,
+            reverse("termo_autorizacao_download_docx", args=[termo.id]),
+        )
+        self.assertContains(
+            response,
+            reverse("termo_autorizacao_download_pdf", args=[termo.id]),
+        )
+
+    def test_termo_lista_download_docx_e_pdf(self) -> None:
+        termo = TermoAutorizacao.objects.create(
+            data_inicio="2026-02-13",
+            data_fim="2026-02-16",
+            data_unica=False,
+            destinos=[
+                {"uf": "PR", "cidade": str(self.cidade_sede.id)},
+                {"uf": "PR", "cidade": str(self.cidade_intermediaria.id)},
+            ],
+        )
+        cfg = OficioConfig()
+        cfg.unidade_nome = "POLICIA CIVIL DO PARANA"
+        cfg.origem_nome = "ASCOM"
+        cfg.telefone = "(41) 3235-6476"
+        cfg.email = "ascom@pc.pr.gov.br"
+
+        with patch("viagens.documents.document.get_oficio_config", return_value=cfg):
+            response_docx = self.client.get(
+                reverse("termo_autorizacao_download_docx", args=[termo.id])
+            )
+        self.assertEqual(response_docx.status_code, 200)
+        self.assertEqual(
+            response_docx["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        self.assertIn(
+            'filename="termo de autorização Curitiba - PR.docx"',
+            response_docx["Content-Disposition"],
+        )
+
+        with patch("viagens.documents.document.get_oficio_config", return_value=cfg), patch(
+            "viagens.views.docx_bytes_to_pdf_bytes",
+            return_value=b"%PDF-1.4 fake",
+        ):
+            response_pdf = self.client.get(
+                reverse("termo_autorizacao_download_pdf", args=[termo.id])
+            )
+        self.assertEqual(response_pdf.status_code, 200)
+        self.assertEqual(response_pdf["Content-Type"], "application/pdf")
+        self.assertIn(
+            'filename="termo de autorização Curitiba - PR.pdf"',
+            response_pdf["Content-Disposition"],
         )
 
     def test_download_pdf_fallback_redireciona_para_docx_sem_500(self) -> None:
