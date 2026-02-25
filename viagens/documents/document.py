@@ -25,6 +25,8 @@ from django.conf import settings
 from django.utils import timezone
 from docx import Document as DocxFactory
 from docx.document import Document as DocxDocument
+from docx.enum.section import WD_SECTION_START
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from num2words import num2words
 
 from viagens.models import Cidade, ConfiguracaoOficio, Estado, Oficio, OficioConfig, Trecho, Viajante
@@ -61,6 +63,10 @@ FOOTER_ASSINANTE_NOME_DEFAULT = "DR. RIAD BRAGA FARHAT"
 FOOTER_ASSINANTE_CARGO_DEFAULT = "MD. DELEGADO GERAL ADJUNTO"
 CUSTOS_SECTION_TITLE = (
     "Custos: Informar qual entidade custeara as diarias (hospedagem/alimentacao) e deslocamento:"
+)
+JUSTIFICATIVA_DESTINATARIO_RE = re.compile(
+    r"\bEXMO\.?\s*SR\.?:?|\bDR\.|\bMD\.|CURITIBA\s*[-\u2013\u2014]\s*PR\.?",
+    flags=re.IGNORECASE,
 )
 
 
@@ -1092,6 +1098,95 @@ def _normalize_document_microformatting(doc: DocxDocument) -> None:
             _replace_paragraph_text(paragraph, normalized)
 
 
+def _clear_container_text(container) -> None:
+    for paragraph in _iter_paragraphs_from_container(container):
+        _replace_paragraph_text(paragraph, "")
+
+
+def _strip_destinatario_from_container(container) -> None:
+    for paragraph in _iter_paragraphs_from_container(container):
+        text = "".join(run.text for run in paragraph.runs)
+        if JUSTIFICATIVA_DESTINATARIO_RE.search(text):
+            _replace_paragraph_text(paragraph, "")
+
+
+def _container_text(container) -> str:
+    chunks: list[str] = []
+    for paragraph in _iter_paragraphs_from_container(container):
+        text = "".join(run.text for run in paragraph.runs).strip()
+        if text:
+            chunks.append(text)
+    return "\n".join(chunks)
+
+
+def _validate_justificativa_no_destinatario(section) -> None:
+    header_footer_text = f"{_container_text(section.header)}\n{_container_text(section.footer)}"
+    if JUSTIFICATIVA_DESTINATARIO_RE.search(header_footer_text):
+        raise ValueError(
+            "Secao JUSTIFICATIVA contem bloco de destinatario no header/footer."
+        )
+
+
+def _write_institutional_header(
+    header,
+    *,
+    unidade: str,
+    origem: str,
+) -> None:
+    _clear_container_text(header)
+    linhas: list[str] = []
+    for valor in (unidade, origem):
+        line = _clean_inline_text(valor).upper()
+        if line and line not in linhas:
+            linhas.append(line)
+    if not linhas:
+        return
+
+    for index, line in enumerate(linhas):
+        paragraph = header.paragraphs[0] if index == 0 and header.paragraphs else header.add_paragraph()
+        _replace_paragraph_text(paragraph, line)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if paragraph.runs:
+            paragraph.runs[0].bold = True
+
+
+def _append_justificativa_section(
+    doc: DocxDocument,
+    oficio: Oficio,
+    *,
+    header_unidade: str,
+    header_origem: str,
+) -> None:
+    justificativa = (oficio.justificativa_texto or "").strip()
+    if not justificativa:
+        return
+
+    justificativa_section = doc.add_section(WD_SECTION_START.NEW_PAGE)
+    justificativa_section.header.is_linked_to_previous = False
+    justificativa_section.footer.is_linked_to_previous = False
+
+    _write_institutional_header(
+        justificativa_section.header,
+        unidade=header_unidade,
+        origem=header_origem,
+    )
+    _clear_container_text(justificativa_section.footer)
+    _strip_destinatario_from_container(justificativa_section.header)
+    _strip_destinatario_from_container(justificativa_section.footer)
+    if settings.DEBUG:
+        _validate_justificativa_no_destinatario(justificativa_section)
+
+    titulo = doc.add_paragraph()
+    titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    titulo_run = titulo.add_run("JUSTIFICATIVA")
+    titulo_run.bold = True
+
+    linhas = justificativa.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    for linha in linhas:
+        paragraph = doc.add_paragraph(linha)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+
 
 # =========================
 # BLOCOS: DESTINOS + ROTEIRO
@@ -1307,6 +1402,12 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     safe_replace_placeholders(doc, mapping)
     _cleanup_motorista_optional_lines(doc)
     _normalize_document_microformatting(doc)
+    _append_justificativa_section(
+        doc,
+        oficio,
+        header_unidade=unidade_value,
+        header_origem=origem_value,
+    )
 
     buf = BytesIO()
     doc.save(buf)

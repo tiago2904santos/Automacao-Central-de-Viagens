@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import date, time
 from io import BytesIO
+import re
 from unittest.mock import patch
 
 from django.test import TestCase
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from viagens.documents.document import (
     AssinaturaObrigatoriaError,
@@ -102,6 +104,17 @@ class OficioDocumentGenerationTests(TestCase):
                     for cell in row.cells:
                         for paragraph in cell.paragraphs:
                             chunks.append("".join(run.text for run in paragraph.runs))
+        return "\n".join(chunks)
+
+    def _container_text(self, container) -> str:
+        chunks: list[str] = []
+        for paragraph in container.paragraphs:
+            chunks.append("".join(run.text for run in paragraph.runs))
+        for table in container.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        chunks.append("".join(run.text for run in paragraph.runs))
         return "\n".join(chunks)
 
     def _mock_oficio_config(
@@ -311,6 +324,47 @@ class OficioDocumentGenerationTests(TestCase):
         self.assertNotIn("{{unidade_rodape}", text)
         self.assertNotIn("{{unidade_rodape} }", text)
         self.assertIn("e-mail:", text)
+
+    def test_docx_inclui_secao_justificativa_quando_preenchida(self) -> None:
+        oficio = self._build_oficio(Oficio.AssuntoTipo.AUTORIZACAO)
+        oficio.justificativa_texto = "Primeira linha da justificativa.\nSegunda linha."
+        oficio.save(update_fields=["justificativa_texto"])
+
+        with self._mock_oficio_config(self.assinante):
+            docx_bytes = build_oficio_docx_bytes(oficio).getvalue()
+
+        text = self._doc_text(docx_bytes)
+        doc = Document(BytesIO(docx_bytes))
+        self.assertIn("JUSTIFICATIVA", text)
+        self.assertIn("Primeira linha da justificativa.", text)
+        self.assertIn("Segunda linha.", text)
+        self.assertGreaterEqual(len(doc.sections), 2)
+
+        justificativa_section = doc.sections[-1]
+        justificativa_header_footer = (
+            f"{self._container_text(justificativa_section.header)}\n"
+            f"{self._container_text(justificativa_section.footer)}"
+        ).upper()
+
+        self.assertNotIn("EXMO", justificativa_header_footer)
+        self.assertNotIn("EXMO. SR:", justificativa_header_footer)
+        self.assertNotIn("DR.", justificativa_header_footer)
+        self.assertNotIn("MD.", justificativa_header_footer)
+        self.assertIsNone(
+            re.search(r"CURITIBA\s*[-\u2013\u2014]\s*PR\.?", justificativa_header_footer)
+        )
+
+        titulo = next((p for p in doc.paragraphs if p.text.strip() == "JUSTIFICATIVA"), None)
+        self.assertIsNotNone(titulo)
+        self.assertEqual(titulo.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+        self.assertTrue(any(run.bold for run in titulo.runs if run.text.strip()))
+
+        for paragraph in doc.paragraphs:
+            if paragraph.text.strip() in {
+                "Primeira linha da justificativa.",
+                "Segunda linha.",
+            }:
+                self.assertEqual(paragraph.alignment, WD_ALIGN_PARAGRAPH.JUSTIFY)
 
     def test_termo_autorizacao_formata_data_extenso_e_destinos_multiplos(self) -> None:
         oficio = self._build_oficio(Oficio.AssuntoTipo.AUTORIZACAO)

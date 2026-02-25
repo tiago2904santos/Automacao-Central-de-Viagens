@@ -391,6 +391,8 @@ class Oficio(models.Model):
         related_name="oficios_que_usam_como_carona",
     )
     motivo = models.TextField(blank=True)
+    justificativa_texto = models.TextField(blank=True, default="")
+    justificativa_modelo = models.CharField(max_length=50, blank=True, default="")
     veiculo = models.ForeignKey(
         Veiculo,
         on_delete=models.SET_NULL,

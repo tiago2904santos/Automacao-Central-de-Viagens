@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from viagens.models import Cidade, Estado, Oficio, Viajante, Veiculo
 
@@ -50,6 +53,9 @@ class DiariasPeriodizadasTests(TestCase):
     def test_step3_salva_calculo_periodizado_sem_regra_de_maior_valor(self) -> None:
         self._step1()
         self._step2()
+        saida_data_1 = timezone.localdate() + timedelta(days=20)
+        saida_data_2 = saida_data_1 + timedelta(days=2)
+        retorno_data = saida_data_1 + timedelta(days=4)
 
         response = self.client.post(
             reverse("oficio_step3"),
@@ -62,17 +68,17 @@ class DiariasPeriodizadasTests(TestCase):
                 "trechos-0-origem_cidade": str(self.cidade_curitiba.id),
                 "trechos-0-destino_estado": self.estado_pr.sigla,
                 "trechos-0-destino_cidade": str(self.cidade_paranagua.id),
-                "trechos-0-saida_data": "2026-02-10",
+                "trechos-0-saida_data": saida_data_1.isoformat(),
                 "trechos-0-saida_hora": "08:00",
                 "trechos-1-origem_estado": self.estado_pr.sigla,
                 "trechos-1-origem_cidade": str(self.cidade_paranagua.id),
                 "trechos-1-destino_estado": self.estado_sp.sigla,
                 "trechos-1-destino_cidade": str(self.cidade_sao_paulo.id),
-                "trechos-1-saida_data": "2026-02-12",
+                "trechos-1-saida_data": saida_data_2.isoformat(),
                 "trechos-1-saida_hora": "08:00",
-                "retorno_saida_data": "2026-02-14",
+                "retorno_saida_data": retorno_data.isoformat(),
                 "retorno_saida_hora": "09:00",
-                "retorno_chegada_data": "2026-02-14",
+                "retorno_chegada_data": retorno_data.isoformat(),
                 "retorno_chegada_hora": "18:00",
                 "motivo": "Teste calculo periodizado.",
             },

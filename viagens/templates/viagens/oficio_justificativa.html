@@ -1,0 +1,123 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Oficio - Justificativa{% endblock %}
+
+{% block breadcrumb %}
+  Oficios <span class="breadcrumb-sep">/</span> Justificativa
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">JUSTIFICATIVA</h2>
+      <p class="page-subtitle">Oficio {{ oficio_display }}.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    {% if requires_justificativa %}
+      <div class="error">
+        <p>Preencha a justificativa para oficios com antecedencia inferior a 10 dias.</p>
+      </div>
+    {% endif %}
+    {% if erros.justificativa_texto %}
+      <div class="error">
+        <p>{{ erros.justificativa_texto }}</p>
+      </div>
+    {% endif %}
+
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next_url }}" />
+
+      <section class="sub-card">
+        <div class="sub-card-title">Modelo sugerido</div>
+        <div class="grid">
+          <label>
+            Modelo
+            <select class="input-field" name="justificativa_modelo" id="justificativaModelo">
+              <option value="">Selecione</option>
+              {% for key, item in justificativa_templates.items %}
+                <option value="{{ key }}" {% if key == selected_model %}selected{% endif %}>
+                  {{ item.label }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+          <label style="align-self: end;">
+            <button class="btn-clear" type="button" id="aplicarModeloBtn">
+              Aplicar modelo
+            </button>
+          </label>
+        </div>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Texto da justificativa</div>
+        <label>
+          JUSTIFICATIVA
+          <textarea
+            class="input-field"
+            name="justificativa_texto"
+            id="justificativaTexto"
+            rows="12"
+            placeholder="Descreva a justificativa."
+          >{{ justificativa_texto }}</textarea>
+        </label>
+      </section>
+
+      <div class="wizard-actions">
+        <a class="btn-clear" href="{{ next_url }}">Voltar</a>
+        <button class="btn-primary" type="submit">Salvar e continuar</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (() => {
+      const templates = {{ justificativa_templates_json|safe }};
+      const selectEl = document.getElementById("justificativaModelo");
+      const textEl = document.getElementById("justificativaTexto");
+      const applyBtn = document.getElementById("aplicarModeloBtn");
+
+      if (!selectEl || !textEl || !applyBtn) {
+        return;
+      }
+
+      function getTemplateText() {
+        const selectedKey = selectEl.value;
+        if (!selectedKey || !templates[selectedKey]) {
+          return "";
+        }
+        return templates[selectedKey].texto || "";
+      }
+
+      function applyTemplate() {
+        const templateText = getTemplateText();
+        if (!templateText) {
+          return;
+        }
+        const currentText = (textEl.value || "").trim();
+        if (currentText && currentText !== templateText.trim()) {
+          const confirmed = window.confirm(
+            "A aplicacao do modelo vai substituir o texto atual. Deseja continuar?"
+          );
+          if (!confirmed) {
+            return;
+          }
+        }
+        textEl.value = templateText;
+      }
+
+      applyBtn.addEventListener("click", applyTemplate);
+      selectEl.addEventListener("change", () => {
+        if (!(textEl.value || "").trim()) {
+          applyTemplate();
+        }
+      });
+    })();
+  </script>
+{% endblock %}

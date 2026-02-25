@@ -1,5 +1,6 @@
 import re
 import shutil
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -65,6 +66,8 @@ class OficioFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
 
     def _post_step3(self) -> None:
+        saida_data = timezone.localdate() + timedelta(days=15)
+        retorno_data = saida_data + timedelta(days=1)
         payload = {
             "trechos-TOTAL_FORMS": "2",
             "trechos-INITIAL_FORMS": "0",
@@ -74,13 +77,13 @@ class OficioFlowTests(TestCase):
             "trechos-0-origem_cidade": str(self.cidade_sede.id),
             "trechos-0-destino_estado": self.estado_pr.sigla,
             "trechos-0-destino_cidade": str(self.cidade_intermediaria.id),
-            "trechos-0-saida_data": "2024-01-01",
+            "trechos-0-saida_data": saida_data.isoformat(),
             "trechos-0-saida_hora": "08:00",
             "trechos-1-origem_estado": self.estado_pr.sigla,
             "trechos-1-origem_cidade": str(self.cidade_intermediaria.id),
-            "retorno_saida_data": "2024-01-02",
+            "retorno_saida_data": retorno_data.isoformat(),
             "retorno_saida_hora": "08:00",
-            "retorno_chegada_data": "2024-01-02",
+            "retorno_chegada_data": retorno_data.isoformat(),
             "retorno_chegada_hora": "18:00",
             "tipo_destino": "INTERIOR",
             "motivo": "Retorno a sede.",
@@ -475,6 +478,7 @@ class OficioFlowTests(TestCase):
             motorista=self.viajante.nome,
             tipo_destino="INTERIOR",
             motivo="Teste",
+            justificativa_texto="Teste justificativa",
         )
         oficio.viajantes.add(self.viajante)
         Trecho.objects.create(
@@ -513,6 +517,7 @@ class OficioFlowTests(TestCase):
             motorista=self.viajante.nome,
             tipo_destino="INTERIOR",
             motivo="Teste",
+            justificativa_texto="Teste justificativa",
         )
         oficio.viajantes.add(self.viajante)
         Trecho.objects.create(
@@ -554,6 +559,7 @@ class OficioFlowTests(TestCase):
             motivo="Teste",
             retorno_chegada_data="2026-02-11",
             retorno_chegada_hora="18:00",
+            justificativa_texto="Teste justificativa",
         )
         oficio.viajantes.add(self.viajante)
         Trecho.objects.create(
@@ -698,6 +704,7 @@ class OficioFlowTests(TestCase):
             motorista=self.viajante.nome,
             tipo_destino="INTERIOR",
             motivo="Teste",
+            justificativa_texto="Teste justificativa",
         )
         oficio.viajantes.add(self.viajante)
         Trecho.objects.create(

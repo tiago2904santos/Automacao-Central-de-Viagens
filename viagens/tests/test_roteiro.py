@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from viagens.models import Cidade, Estado, Oficio, Trecho, Viajante
 
@@ -37,6 +40,8 @@ class RoteiroFormsetTests(TestCase):
 
     def test_rota_sede_intermediaria_sede_salva_trechos(self) -> None:
         self._set_wizard_session()
+        saida_data = timezone.localdate() + timedelta(days=15)
+        retorno_data = saida_data + timedelta(days=1)
         payload = {
             "trechos-TOTAL_FORMS": "2",
             "trechos-INITIAL_FORMS": "0",
@@ -46,13 +51,13 @@ class RoteiroFormsetTests(TestCase):
             "trechos-0-origem_cidade": str(self.cidade_sede.id),
             "trechos-0-destino_estado": self.estado_pr.sigla,
             "trechos-0-destino_cidade": str(self.cidade_intermediaria.id),
-            "trechos-0-saida_data": "2024-01-01",
+            "trechos-0-saida_data": saida_data.isoformat(),
             "trechos-0-saida_hora": "07:00",
             "trechos-1-origem_estado": self.estado_pr.sigla,
             "trechos-1-origem_cidade": str(self.cidade_intermediaria.id),
-            "retorno_saida_data": "2024-01-02",
+            "retorno_saida_data": retorno_data.isoformat(),
             "retorno_saida_hora": "08:00",
-            "retorno_chegada_data": "2024-01-02",
+            "retorno_chegada_data": retorno_data.isoformat(),
             "retorno_chegada_hora": "18:00",
             "tipo_destino": "INTERIOR",
             "motivo": "Retorno a sede.",
@@ -80,6 +85,8 @@ class RoteiroFormsetTests(TestCase):
 
     def test_rota_com_dois_trechos_salva(self) -> None:
         self._set_wizard_session()
+        saida_data = timezone.localdate() + timedelta(days=15)
+        retorno_data = saida_data + timedelta(days=1)
         payload = {
             "trechos-TOTAL_FORMS": "2",
             "trechos-INITIAL_FORMS": "0",
@@ -89,15 +96,15 @@ class RoteiroFormsetTests(TestCase):
             "trechos-0-origem_cidade": str(self.cidade_sede.id),
             "trechos-0-destino_estado": self.estado_pr.sigla,
             "trechos-0-destino_cidade": str(self.cidade_intermediaria.id),
-            "trechos-0-saida_data": "2024-01-02",
+            "trechos-0-saida_data": saida_data.isoformat(),
             "trechos-0-saida_hora": "06:30",
             "trechos-1-origem_estado": self.estado_pr.sigla,
             "trechos-1-origem_cidade": str(self.cidade_intermediaria.id),
             "trechos-1-destino_estado": self.estado_pr.sigla,
             "trechos-1-destino_cidade": str(self.cidade_final.id),
-            "retorno_saida_data": "2024-01-03",
+            "retorno_saida_data": retorno_data.isoformat(),
             "retorno_saida_hora": "08:00",
-            "retorno_chegada_data": "2024-01-03",
+            "retorno_chegada_data": retorno_data.isoformat(),
             "retorno_chegada_hora": "20:00",
             "tipo_destino": "INTERIOR",
             "motivo": "Retorno a sede.",
@@ -119,6 +126,8 @@ class RoteiroFormsetTests(TestCase):
 
     def test_rota_sede_intermediaria_sede_sem_placeholder(self) -> None:
         self._set_wizard_session()
+        saida_data = timezone.localdate() + timedelta(days=15)
+        retorno_data = saida_data + timedelta(days=1)
         payload = {
             "trechos-TOTAL_FORMS": "2",
             "trechos-INITIAL_FORMS": "0",
@@ -128,13 +137,13 @@ class RoteiroFormsetTests(TestCase):
             "trechos-0-origem_cidade": str(self.cidade_sede.id),
             "trechos-0-destino_estado": self.estado_pr.sigla,
             "trechos-0-destino_cidade": str(self.cidade_intermediaria.id),
-            "trechos-0-saida_data": "2024-01-03",
+            "trechos-0-saida_data": saida_data.isoformat(),
             "trechos-0-saida_hora": "07:15",
             "trechos-1-origem_estado": self.estado_pr.sigla,
             "trechos-1-origem_cidade": str(self.cidade_intermediaria.id),
-            "retorno_saida_data": "2024-01-04",
+            "retorno_saida_data": retorno_data.isoformat(),
             "retorno_saida_hora": "07:30",
-            "retorno_chegada_data": "2024-01-04",
+            "retorno_chegada_data": retorno_data.isoformat(),
             "retorno_chegada_hora": "18:00",
             "tipo_destino": "INTERIOR",
             "motivo": "Retorno a sede.",

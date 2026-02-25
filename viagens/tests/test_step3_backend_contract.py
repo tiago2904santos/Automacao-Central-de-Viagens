@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import timedelta
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from viagens.models import Cidade, Estado, Oficio, Trecho, Viajante
 
 
@@ -35,6 +36,8 @@ class Step3BackendContractTests(TestCase):
         Com apenas 1 trecho de ida, backend salva 1 Trecho e seta retorno (destino = sede).
         """
         self._set_wizard_session()
+        saida_data = timezone.localdate() + timedelta(days=15)
+        retorno_data = saida_data + timedelta(days=1)
 
         payload = {
             "trechos-TOTAL_FORMS": "1",
@@ -45,12 +48,12 @@ class Step3BackendContractTests(TestCase):
             "trechos-0-origem_cidade": str(self.cidade_sede.id),
             "trechos-0-destino_estado": self.estado_pr.sigla,
             "trechos-0-destino_cidade": str(self.cidade_destino.id),
-            "trechos-0-saida_data": "2024-01-01",
+            "trechos-0-saida_data": saida_data.isoformat(),
             "trechos-0-saida_hora": "08:00",
             # retorno (1 trecho único)
-            "retorno_saida_data": "2024-01-02",
+            "retorno_saida_data": retorno_data.isoformat(),
             "retorno_saida_hora": "09:00",
-            "retorno_chegada_data": "2024-01-02",
+            "retorno_chegada_data": retorno_data.isoformat(),
             "retorno_chegada_hora": "18:00",
             "tipo_destino": "INTERIOR",
             "motivo": "Teste retorno.",

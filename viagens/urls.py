@@ -19,6 +19,11 @@ urlpatterns = [
     path("oficios/calcular-diarias/", views.oficio_calcular_diarias, name="oficio_calcular_diarias"),
     path("oficios/etapa-4/", views.oficio_step4, name="oficio_step4"),
     path(
+        "oficios/<int:oficio_id>/justificativa/",
+        views.oficio_justificativa,
+        name="oficio_justificativa",
+    ),
+    path(
         "oficios/<int:oficio_id>/calcular-diarias/",
         views.oficio_calcular_diarias,
         name="oficio_calcular_diarias_oficio",
