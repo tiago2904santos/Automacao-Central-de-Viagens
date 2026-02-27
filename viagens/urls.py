@@ -40,6 +40,11 @@ urlpatterns = [
         name="plano_trabalho_step3",
     ),
     path(
+        "planos-trabalho/oficio/<int:oficio_id>/etapa-3/calcular-diarias/",
+        views.plano_trabalho_calcular_diarias,
+        name="plano_trabalho_calcular_diarias",
+    ),
+    path(
         "planos-trabalho/oficio/<int:oficio_id>/resumo/",
         views.plano_trabalho_resumo,
         name="plano_trabalho_resumo",

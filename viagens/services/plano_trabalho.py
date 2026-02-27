@@ -780,6 +780,11 @@ def build_plano_placeholders(
     elif not efetivo and quantidade_label:
         efetivo = quantidade_label
     quantidade_servidores = str(quantidade_int)
+    valor_por_servidor_decimal: Decimal | None = None
+    if valor_total_decimal is not None and quantidade_int > 0:
+        valor_por_servidor_decimal = (
+            (valor_total_decimal / Decimal(quantidade_int)).quantize(Decimal("0.01"))
+        )
 
     locais_pagina_01 = destinos_json_labels or _locais_para_pagina_01(plano, oficio)
     locais_formatado = format_lista_portugues(locais_pagina_01) or destino
@@ -815,7 +820,10 @@ def build_plano_placeholders(
         "valor_total": format_monetario_br(valor_total_decimal),
         "valor_total_extenso": format_valor_extenso(valor_total_decimal),
         "composicao_diarias": composicao_diarias,
+        "quantidade_diarias_por_servidor": composicao_diarias,
         "valor_unitario": format_monetario_br(valor_unitario_decimal),
+        "valor_por_servidor": format_monetario_br(valor_por_servidor_decimal),
+        "total_geral": format_monetario_br(valor_total_decimal),
         "valor_unitario_extenso": format_valor_extenso(valor_unitario_decimal),
         "recursos_formatados": format_lista_bullets(recursos),
         "coordenacao_formatada": build_coordenacao_formatada(plano),
@@ -840,6 +848,9 @@ def build_plano_placeholders(
             "recursos_formatado": placeholders["recursos_formatados"],
             "valor_total_por_extenso": placeholders["valor_total_extenso"],
             "valor_unitario_por_extenso": placeholders["valor_unitario_extenso"],
+            "valor_total_geral": placeholders["total_geral"],
+            "valor_total_diarias": placeholders["total_geral"],
+            "qtd_diarias_por_servidor": placeholders["quantidade_diarias_por_servidor"],
             "diarias_x": placeholders["composicao_diarias"],
             "unidade_movel": placeholders["estrutura_formatada"],
             "coordenação formatada": placeholders["coordenacao_formatada"],

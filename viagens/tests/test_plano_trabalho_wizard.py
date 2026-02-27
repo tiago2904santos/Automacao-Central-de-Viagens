@@ -11,6 +11,7 @@ from docx import Document
 from viagens.documents.plano_trabalho import build_plano_trabalho_docx_bytes
 from viagens.forms import PlanoTrabalhoStep1Form
 from viagens.models import Cargo, Cidade, Estado, Oficio, PlanoTrabalho, Trecho, Viajante
+from viagens.services.diarias_unified import parse_decimal_br
 from viagens.services.plano_trabalho import (
     efetivo_total_servidores,
     format_horario_atendimento,
@@ -323,3 +324,69 @@ class PlanoTrabalhoWizardTests(TestCase):
                 },
             ],
         )
+
+    def test_step3_endpoint_calculo_diarias_retorna_valor_por_servidor(self) -> None:
+        self._post_step1(solicitantes=["PCPR na Comunidade"], nome_pcpr="Prefeitura")
+        response_step2 = self.client.post(
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
+            {
+                "efetivo_json": json.dumps(
+                    [{"cargo_id": self.cargo_delegado.id, "quantidade": 3}]
+                ),
+                "unidade_movel": "nao",
+                "coordenador_plano": str(self.servidor.id),
+                "coordenador_plano_nome": self.servidor.nome,
+                "coordenador_plano_cargo": self.servidor.cargo,
+                "coordenador_municipal": "",
+                "coordenador_municipal_nome": "",
+                "coordenador_municipal_cargo": "",
+                "coordenador_municipal_cidade": "",
+            },
+        )
+        self.assertEqual(response_step2.status_code, 302)
+
+        response = self.client.get(
+            reverse("plano_trabalho_calcular_diarias", args=[self.oficio.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        totais = payload["totais"]
+        self.assertIn("valor_por_servidor", totais)
+        self.assertIn("valor_unitario", totais)
+        self.assertIn("total_geral", totais)
+        self.assertTrue(totais["valor_por_servidor"])
+        self.assertTrue(totais["total_geral"])
+
+    def test_docx_deriva_financeiro_mesmo_sem_campos_manuais(self) -> None:
+        self._post_step1(solicitantes=["PCPR na Comunidade"], nome_pcpr="Prefeitura")
+        response_step2 = self.client.post(
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
+            {
+                "efetivo_json": json.dumps(
+                    [{"cargo_id": self.cargo_delegado.id, "quantidade": 2}]
+                ),
+                "unidade_movel": "sim",
+                "coordenador_plano": str(self.servidor.id),
+                "coordenador_plano_nome": self.servidor.nome,
+                "coordenador_plano_cargo": self.servidor.cargo,
+                "coordenador_municipal": "",
+                "coordenador_municipal_nome": "",
+                "coordenador_municipal_cargo": "",
+                "coordenador_municipal_cidade": "",
+            },
+        )
+        self.assertEqual(response_step2.status_code, 302)
+
+        plano = PlanoTrabalho.objects.get(oficio=self.oficio)
+        plano.composicao_diarias = ""
+        plano.valor_unitario = None
+        plano.valor_total_calculado = None
+        plano.save(update_fields=["composicao_diarias", "valor_unitario", "valor_total_calculado", "updated_at"])
+
+        payload = build_plano_trabalho_docx_bytes(self.oficio).getvalue()
+        self.assertTrue(payload)
+        plano.refresh_from_db()
+        self.assertTrue(plano.composicao_diarias)
+        self.assertIsNotNone(plano.valor_total_calculado)
+        self.assertIsNotNone(plano.valor_unitario)
+        self.assertGreater(parse_decimal_br(str(plano.valor_total_calculado)) or 0, 0)

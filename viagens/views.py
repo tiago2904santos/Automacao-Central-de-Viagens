@@ -62,8 +62,13 @@ from .models import (
     Viajante,
     Veiculo,
 )
-from .diarias import PeriodMarker, calculate_periodized_diarias
-from .simulacao import calculate_periods_from_payload
+from .diarias import PeriodMarker
+from .services.diarias_unified import (
+    calculate_diarias_from_markers,
+    calculate_diarias_from_periods_payload,
+    derive_financeiro_diarias,
+    parse_decimal_br,
+)
 from .services.oficio_helpers import build_assunto, infer_tipo_destino, valor_por_extenso_ptbr
 from .services.plano_trabalho import (
     ATIVIDADE_META_PAIRS,
@@ -398,12 +403,11 @@ def _calculate_periodized_diarias_for_serialized_trechos(
         raise ValueError("Preencha datas e horas para calcular.")
 
     markers = _build_period_markers_from_serialized_trechos(trechos_data)
-    servidores = max(0, int(quantidade_servidores or 0))
-    return calculate_periodized_diarias(
-        markers,
-        chegada_final,
-        quantidade_servidores=servidores,
-        valor_extenso_fn=valor_por_extenso_ptbr,
+    servidores = int(quantidade_servidores or 0)
+    return calculate_diarias_from_markers(
+        markers=markers,
+        chegada_final_sede=chegada_final,
+        total_servidores=servidores,
     )
 
 
@@ -421,12 +425,11 @@ def _calculate_periodized_diarias_for_trechos(
         raise ValueError("Preencha datas e horas para calcular.")
 
     markers = _build_period_markers_from_trechos(trechos)
-    servidores = max(0, int(quantidade_servidores or 0))
-    return calculate_periodized_diarias(
-        markers,
-        chegada_final,
-        quantidade_servidores=servidores,
-        valor_extenso_fn=valor_por_extenso_ptbr,
+    servidores = int(quantidade_servidores or 0)
+    return calculate_diarias_from_markers(
+        markers=markers,
+        chegada_final_sede=chegada_final,
+        total_servidores=servidores,
     )
 
 
@@ -2340,9 +2343,9 @@ def simulacao_diarias_calcular(request):
         periods_payload = []
 
     try:
-        resultado = calculate_periods_from_payload(
-            periods_payload,
-            quantidade_servidores=quantidade_servidores,
+        resultado = calculate_diarias_from_periods_payload(
+            periods_payload=periods_payload,
+            total_servidores=quantidade_servidores,
         )
     except ValueError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
@@ -5049,19 +5052,23 @@ def _plano_destinos_initial(plano: PlanoTrabalho, oficio: Oficio) -> list[dict[s
     return _build_destinos_display(_normalize_destinos_for_wizard(normalized))
 
 
-def _plano_diarias_resultado(plano: PlanoTrabalho, oficio: Oficio) -> dict | None:
+def _plano_diarias_resultado_or_error(plano: PlanoTrabalho, oficio: Oficio) -> dict:
     trechos = _oficio_trechos(oficio)
     if not trechos:
-        return None
+        raise ValueError("Nao ha trechos validos para calcular as diarias do plano.")
     retorno_data = oficio.retorno_chegada_data or plano.data_fim
     retorno_hora = oficio.retorno_chegada_hora or parse_time("18:00")
+    return _calculate_periodized_diarias_for_trechos(
+        trechos,
+        retorno_data,
+        retorno_hora,
+        quantidade_servidores=int(plano.quantidade_servidores or 0),
+    )
+
+
+def _plano_diarias_resultado(plano: PlanoTrabalho, oficio: Oficio) -> dict | None:
     try:
-        return _calculate_periodized_diarias_for_trechos(
-            trechos,
-            retorno_data,
-            retorno_hora,
-            quantidade_servidores=max(1, int(plano.quantidade_servidores or 0)),
-        )
+        return _plano_diarias_resultado_or_error(plano, oficio)
     except ValueError:
         return None
 
@@ -5599,24 +5606,23 @@ def plano_trabalho_step3(request, oficio_id: int):
     )
     plano = _ensure_plano_wizard_instance(oficio)
     diarias_resultado = _plano_diarias_resultado(plano, oficio) or {}
-    totais_diarias = diarias_resultado.get("totais", {}) if isinstance(diarias_resultado, dict) else {}
+    financeiro_diarias = derive_financeiro_diarias(diarias_resultado)
 
     recursos = [item.descricao for item in plano.recursos.all().order_by("ordem", "id")]
     if not recursos:
         recursos = ["Unidade movel da PCPR."]
-    valor_unitario_inicial = ""
-    if plano.valor_unitario:
-        valor_unitario_inicial = f"{plano.valor_unitario:.2f}".replace(".", ",")
-    elif totais_diarias.get("valor_por_servidor"):
-        valor_unitario_inicial = str(totais_diarias.get("valor_por_servidor", ""))
 
     initial = {
-        "composicao_diarias": plano.composicao_diarias or totais_diarias.get("total_diarias", ""),
-        "valor_unitario": valor_unitario_inicial,
+        "composicao_diarias": plano.composicao_diarias or financeiro_diarias.get("diarias_por_servidor", ""),
+        "valor_unitario": (
+            f"{plano.valor_unitario:.2f}".replace(".", ",")
+            if plano.valor_unitario
+            else financeiro_diarias.get("valor_unitario", "")
+        ),
         "valor_total_calculado": (
             f"{plano.valor_total_calculado:.2f}".replace(".", ",")
             if plano.valor_total_calculado
-            else str(totais_diarias.get("total_valor", ""))
+            else financeiro_diarias.get("total_geral", "")
         ),
         "recursos_json": json.dumps([{"descricao": item} for item in recursos], ensure_ascii=False),
     }
@@ -5624,25 +5630,28 @@ def plano_trabalho_step3(request, oficio_id: int):
     if request.method == "POST":
         form = PlanoTrabalhoStep3Form(request.POST, initial=initial)
         if form.is_valid():
-            with transaction.atomic():
-                plano.composicao_diarias = form.cleaned_data["composicao_diarias"]
-                plano.valor_unitario = form.cleaned_data["valor_unitario"]
-                total_raw = (request.POST.get("valor_total_calculado") or "").strip()
-                if total_raw:
-                    total_val = PlanoTrabalhoStep3Form._parse_decimal_input(total_raw)
-                    plano.valor_total_calculado = total_val
-                elif totais_diarias.get("total_valor"):
-                    total_val = PlanoTrabalhoStep3Form._parse_decimal_input(
-                        str(totais_diarias.get("total_valor"))
-                    )
-                    plano.valor_total_calculado = total_val
-                plano.save()
-                _sync_plano_ordered_text_items(
-                    plano,
-                    model_cls=PlanoTrabalhoRecurso,
-                    values=form.parsed_recursos,
+            try:
+                diarias_resultado = _plano_diarias_resultado_or_error(plano, oficio)
+            except ValueError as exc:
+                form.add_error(None, str(exc))
+            else:
+                financeiro_diarias = derive_financeiro_diarias(diarias_resultado)
+                valor_unitario_decimal = (
+                    parse_decimal_br(financeiro_diarias.get("valor_unitario"))
+                    or parse_decimal_br(financeiro_diarias.get("valor_por_servidor"))
                 )
-            return redirect("plano_trabalho_resumo", oficio_id=oficio.id)
+                total_decimal = parse_decimal_br(financeiro_diarias.get("total_geral"))
+                with transaction.atomic():
+                    plano.composicao_diarias = financeiro_diarias.get("diarias_por_servidor", "")
+                    plano.valor_unitario = valor_unitario_decimal
+                    plano.valor_total_calculado = total_decimal
+                    plano.save()
+                    _sync_plano_ordered_text_items(
+                        plano,
+                        model_cls=PlanoTrabalhoRecurso,
+                        values=form.parsed_recursos,
+                    )
+                return redirect("plano_trabalho_resumo", oficio_id=oficio.id)
     else:
         form = PlanoTrabalhoStep3Form(initial=initial)
 
@@ -5654,8 +5663,33 @@ def plano_trabalho_step3(request, oficio_id: int):
             "plano": plano,
             "form": form,
             "diarias_resultado": diarias_resultado,
+            "financeiro_diarias": financeiro_diarias,
+            "plano_diarias_calcular_url": reverse(
+                "plano_trabalho_calcular_diarias",
+                args=[oficio.id],
+            ),
             "numero_plano_formatado": f"{int(plano.numero or 0):02d}/{int(plano.ano or timezone.localdate().year)}",
         },
+    )
+
+
+@require_GET
+def plano_trabalho_calcular_diarias(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos", "viajantes"),
+        id=oficio_id,
+    )
+    plano = _ensure_plano_wizard_instance(oficio)
+    try:
+        resultado = _plano_diarias_resultado_or_error(plano, oficio)
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    return JsonResponse(
+        {
+            "periodos": resultado.get("periodos", []),
+            "totais": resultado.get("totais", {}),
+            "financeiro": derive_financeiro_diarias(resultado),
+        }
     )
 
 

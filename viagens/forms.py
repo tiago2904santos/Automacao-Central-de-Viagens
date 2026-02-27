@@ -1008,9 +1008,9 @@ class PlanoTrabalhoStep2Form(forms.Form):
 
 
 class PlanoTrabalhoStep3Form(forms.Form):
-    composicao_diarias = forms.CharField(required=True)
-    valor_unitario = forms.CharField(required=True)
-    valor_total_calculado = forms.CharField(required=False)
+    composicao_diarias = forms.CharField(required=False, widget=forms.HiddenInput())
+    valor_unitario = forms.CharField(required=False, widget=forms.HiddenInput())
+    valor_total_calculado = forms.CharField(required=False, widget=forms.HiddenInput())
     recursos_json = forms.CharField(required=True, widget=forms.HiddenInput())
 
     def __init__(self, *args, **kwargs):
@@ -1041,18 +1041,9 @@ class PlanoTrabalhoStep3Form(forms.Form):
         except (InvalidOperation, TypeError, ValueError):
             return None
 
-    def clean_valor_unitario(self):
-        raw = (self.data.get(self.add_prefix("valor_unitario")) or "").strip()
-        value = self._parse_decimal_input(raw)
-        if value is None or value <= 0:
-            raise forms.ValidationError("Informe um valor unitario valido.")
-        return value.quantize(Decimal("0.01"))
-
     def clean(self):
         cleaned_data = super().clean()
         composicao = " ".join((cleaned_data.get("composicao_diarias") or "").split())
-        if not composicao:
-            self.add_error("composicao_diarias", "Informe a composicao de diarias.")
         cleaned_data["composicao_diarias"] = composicao
 
         raw_payload = (cleaned_data.get("recursos_json") or "").strip()

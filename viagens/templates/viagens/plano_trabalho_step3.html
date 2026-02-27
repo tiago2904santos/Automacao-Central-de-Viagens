@@ -20,55 +20,46 @@
   </div>
 
   <div class="card plano-wizard-card">
-    <form method="post" id="planoStep3Form">
+    <form method="post" id="planoStep3Form" data-diarias-url="{{ plano_diarias_calcular_url }}">
       {% csrf_token %}
+      {{ form.composicao_diarias }}
+      {{ form.valor_unitario }}
+      {{ form.valor_total_calculado }}
       {{ form.recursos_json }}
       {% include "viagens/partials/plano_form_errors.html" with form=form %}
 
       <section class="sub-card">
         <div class="sub-card-title">Integracao com diarias</div>
+        <p class="field-help">O calculo usa os trechos do oficio e o total de servidores da etapa de efetivo.</p>
+        <div class="field-actions" style="margin-top:0; margin-bottom:0.75rem;">
+          <button class="btn-clear btn-small" type="button" id="recalcularDiariasPlanoBtn">Recalcular diarias</button>
+        </div>
+        <div class="diarias-alert" id="planoDiariasError" hidden></div>
+
         {% with totais=diarias_resultado.totais %}
-          <div class="diarias-summary-grid">
+          <div class="diarias-summary-grid" id="planoDiariasGrid">
             <article class="diarias-summary-card">
               <span class="diarias-summary-label">Total geral</span>
-              <strong class="diarias-summary-value">{{ totais.total_valor|default:"-" }}</strong>
+              <strong class="diarias-summary-value" id="planoDiariasTotalGeral">{{ totais.total_geral|default:totais.total_valor|default:"-" }}</strong>
             </article>
             <article class="diarias-summary-card">
               <span class="diarias-summary-label">Valor por servidor</span>
-              <strong class="diarias-summary-value">{{ totais.valor_por_servidor|default:"-" }}</strong>
+              <strong class="diarias-summary-value" id="planoDiariasValorServidor">{{ totais.valor_por_servidor|default:"-" }}</strong>
             </article>
             <article class="diarias-summary-card">
               <span class="diarias-summary-label">Diarias por servidor</span>
-              <strong class="diarias-summary-value">{{ totais.diarias_por_servidor|default:"-" }}</strong>
+              <strong class="diarias-summary-value" id="planoDiariasQtdServidor">{{ totais.diarias_por_servidor|default:"-" }}</strong>
             </article>
             <article class="diarias-summary-card">
               <span class="diarias-summary-label">Valor unitario da diaria</span>
-              <strong class="diarias-summary-value">{{ totais.valor_unitario_referencia|default:"-" }}</strong>
+              <strong class="diarias-summary-value" id="planoDiariasValorUnitario">{{ totais.valor_unitario|default:totais.valor_unitario_referencia|default:"-" }}</strong>
             </article>
           </div>
           <div class="preview-line">
             <span class="preview-label">Valor por extenso</span>
-            <span class="preview-value">{{ totais.valor_extenso|default:"-" }}</span>
+            <span class="preview-value" id="planoDiariasValorExtenso">{{ totais.valor_extenso|default:"-" }}</span>
           </div>
         {% endwith %}
-      </section>
-
-      <section class="grid">
-        <label>
-          Composicao de diarias
-          {{ form.composicao_diarias }}
-          {% if form.composicao_diarias.errors %}<span class="error">{{ form.composicao_diarias.errors|join:", " }}</span>{% endif %}
-        </label>
-        <label>
-          Valor unitario (por servidor)
-          {{ form.valor_unitario }}
-          {% if form.valor_unitario.errors %}<span class="error">{{ form.valor_unitario.errors|join:", " }}</span>{% endif %}
-        </label>
-        <label>
-          Valor total
-          <input type="text" name="valor_total_calculado" id="id_valor_total_calculado" value="{{ form.valor_total_calculado.value|default:'' }}" />
-          {% if form.valor_total_calculado.errors %}<span class="error">{{ form.valor_total_calculado.errors|join:", " }}</span>{% endif %}
-        </label>
       </section>
 
       <section class="sub-card">
@@ -93,9 +84,86 @@
     (function () {
       const form = document.getElementById("planoStep3Form");
       if (!form) return;
+
+      const diariasUrl = form.dataset.diariasUrl || "";
+      const recalcBtn = document.getElementById("recalcularDiariasPlanoBtn");
+      const errorEl = document.getElementById("planoDiariasError");
+
+      const totalEl = document.getElementById("planoDiariasTotalGeral");
+      const valorServidorEl = document.getElementById("planoDiariasValorServidor");
+      const qtdServidorEl = document.getElementById("planoDiariasQtdServidor");
+      const unitarioEl = document.getElementById("planoDiariasValorUnitario");
+      const extensoEl = document.getElementById("planoDiariasValorExtenso");
+
+      const composicaoInput = document.getElementById("id_composicao_diarias");
+      const valorUnitarioInput = document.getElementById("id_valor_unitario");
+      const valorTotalInput = document.getElementById("id_valor_total_calculado");
+
       const hiddenInput = document.getElementById("id_recursos_json");
       const rowsContainer = document.getElementById("recursosRows");
       const addBtn = document.getElementById("addRecursoBtn");
+
+      const showError = (message) => {
+        if (!errorEl) return;
+        errorEl.hidden = !message;
+        errorEl.textContent = message || "";
+      };
+
+      const formatMoney = (value) => {
+        const raw = String(value || "").trim();
+        if (!raw) return "-";
+        return raw.startsWith("R$") ? raw : `R$ ${raw}`;
+      };
+
+      const clearFinanceFields = () => {
+        if (composicaoInput) composicaoInput.value = "";
+        if (valorUnitarioInput) valorUnitarioInput.value = "";
+        if (valorTotalInput) valorTotalInput.value = "";
+      };
+
+      const applyDiariasResult = (payload) => {
+        const totais = payload?.totais || {};
+        const financeiro = payload?.financeiro || {};
+
+        if (totalEl) totalEl.textContent = formatMoney(totais.total_geral || totais.total_valor);
+        if (valorServidorEl) valorServidorEl.textContent = formatMoney(totais.valor_por_servidor);
+        if (qtdServidorEl) qtdServidorEl.textContent = totais.diarias_por_servidor || "-";
+        if (unitarioEl) unitarioEl.textContent = formatMoney(totais.valor_unitario || totais.valor_unitario_referencia);
+        if (extensoEl) extensoEl.textContent = totais.valor_extenso || "-";
+
+        if (composicaoInput) {
+          composicaoInput.value = financeiro.diarias_por_servidor || totais.diarias_por_servidor || "";
+        }
+        if (valorUnitarioInput) {
+          valorUnitarioInput.value = financeiro.valor_unitario || totais.valor_unitario || totais.valor_unitario_referencia || "";
+        }
+        if (valorTotalInput) {
+          valorTotalInput.value = financeiro.total_geral || totais.total_geral || totais.total_valor || "";
+        }
+      };
+
+      const requestDiarias = async () => {
+        if (!diariasUrl) return;
+        recalcBtn?.setAttribute("disabled", "disabled");
+        showError("");
+        try {
+          const response = await fetch(diariasUrl, {
+            method: "GET",
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload?.error || "Nao foi possivel calcular as diarias.");
+          }
+          applyDiariasResult(payload);
+        } catch (error) {
+          clearFinanceFields();
+          showError(error?.message || "Nao foi possivel calcular as diarias.");
+        } finally {
+          recalcBtn?.removeAttribute("disabled");
+        }
+      };
 
       function parsePayload() {
         try {
@@ -152,7 +220,10 @@
         render();
       });
 
+      recalcBtn?.addEventListener("click", requestDiarias);
+
       render();
+      requestDiarias();
     })();
   </script>
 {% endblock %}

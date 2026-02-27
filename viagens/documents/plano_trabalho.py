@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 
 from django.conf import settings
 from django.utils import timezone
+from django.utils.dateparse import parse_time
 from docx import Document as DocxFactory
 
+from viagens.diarias import PeriodMarker
 from viagens.models import (
     Oficio,
     PlanoTrabalho,
@@ -20,6 +22,11 @@ from viagens.models import (
     get_next_plano_num,
 )
 from viagens.services.oficio_config import get_oficio_config
+from viagens.services.diarias_unified import (
+    calculate_diarias_from_markers,
+    derive_financeiro_diarias,
+    parse_decimal_br,
+)
 from viagens.documents.document import (
     _find_unresolved_placeholders,
     safe_replace_placeholders,
@@ -167,6 +174,79 @@ def _ensure_plano_trabalho(oficio: Oficio, trechos: list[Trecho]) -> PlanoTrabal
     return plano
 
 
+def _build_period_markers_from_trechos(trechos: list[Trecho]) -> list[PeriodMarker]:
+    markers: list[PeriodMarker] = []
+    for trecho in trechos:
+        if not trecho.saida_data:
+            continue
+        saida_hora = trecho.saida_hora or time.min
+        saida_dt = datetime.combine(trecho.saida_data, saida_hora)
+        destino_uf = ""
+        if trecho.destino_estado:
+            destino_uf = trecho.destino_estado.sigla
+        elif trecho.destino_cidade and trecho.destino_cidade.estado:
+            destino_uf = trecho.destino_cidade.estado.sigla
+        markers.append(
+            PeriodMarker(
+                saida=saida_dt,
+                destino_cidade=trecho.destino_cidade.nome if trecho.destino_cidade else "",
+                destino_uf=destino_uf,
+            )
+        )
+    return markers
+
+
+def _sync_plano_financeiro_from_diarias(
+    plano: PlanoTrabalho,
+    oficio: Oficio,
+    trechos: list[Trecho],
+) -> None:
+    total_servidores = int(plano.quantidade_servidores or 0)
+    if total_servidores < 1:
+        raise ValueError(
+            "Plano de trabalho incompleto. Preencha o efetivo para calcular as diarias."
+        )
+    markers = _build_period_markers_from_trechos(trechos)
+    if not markers:
+        raise ValueError(
+            "Plano de trabalho incompleto. Informe trechos validos para calcular as diarias."
+        )
+    chegada_data = oficio.retorno_chegada_data or plano.data_fim
+    chegada_hora = oficio.retorno_chegada_hora or parse_time("18:00") or time.min
+    chegada_final = datetime.combine(chegada_data, chegada_hora)
+    resultado = calculate_diarias_from_markers(
+        markers=markers,
+        chegada_final_sede=chegada_final,
+        total_servidores=total_servidores,
+    )
+    financeiro = derive_financeiro_diarias(resultado)
+
+    composicao = financeiro.get("diarias_por_servidor", "")
+    valor_unitario = (
+        parse_decimal_br(financeiro.get("valor_unitario"))
+        or parse_decimal_br(financeiro.get("valor_por_servidor"))
+    )
+    valor_total = parse_decimal_br(financeiro.get("total_geral"))
+    if not valor_total:
+        raise ValueError(
+            "Plano de trabalho incompleto. Nao foi possivel derivar o valor total das diarias."
+        )
+
+    update_fields: list[str] = []
+    if composicao and plano.composicao_diarias != composicao:
+        plano.composicao_diarias = composicao
+        update_fields.append("composicao_diarias")
+    if valor_unitario is not None and plano.valor_unitario != valor_unitario:
+        plano.valor_unitario = valor_unitario
+        update_fields.append("valor_unitario")
+    if plano.valor_total_calculado != valor_total:
+        plano.valor_total_calculado = valor_total
+        update_fields.append("valor_total_calculado")
+
+    if update_fields:
+        plano.save(update_fields=update_fields + ["updated_at"])
+
+
 def _resolve_plano_template_path() -> Path:
     return Path(settings.BASE_DIR) / "viagens" / "documents" / PLANO_TEMPLATE_FILENAME
 
@@ -181,6 +261,7 @@ def build_plano_trabalho_docx_bytes(oficio: Oficio) -> BytesIO:
         ).order_by("ordem", "id")
     )
     plano = _ensure_plano_trabalho(oficio, trechos)
+    _sync_plano_financeiro_from_diarias(plano, oficio, trechos)
     cfg = get_oficio_config()
     placeholders = build_plano_placeholders(plano, oficio, cfg)
     missing = validate_required_placeholders(placeholders)
