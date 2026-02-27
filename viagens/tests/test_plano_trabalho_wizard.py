@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from datetime import date, time
 from io import BytesIO
+from pathlib import Path
 
+from django.conf import settings
 from django.test import TestCase
 from django.urls import reverse
 from docx import Document
@@ -551,3 +553,62 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertNotEqual(placeholders["metas_formatadas"], "-")
         self.assertIn("• Atividade institucional A", placeholders["atividades_formatada"])
         self.assertIn("• Meta institucional A", placeholders["metas_formatadas"])
+
+    def test_rota_legada_editar_redireciona_para_step1_quando_incompleto(self) -> None:
+        response = self.client.get(
+            reverse("plano_trabalho_editar", args=[self.oficio.id]),
+            follow=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("plano_trabalho_step1", args=[self.oficio.id]), response.url)
+
+    def test_rota_legada_editar_redireciona_para_resumo_quando_completo(self) -> None:
+        self._post_step1(solicitantes=["Parana em Acao"])
+        response_step2 = self.client.post(
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
+            {
+                "efetivo_json": json.dumps(
+                    [{"cargo_id": self.cargo_delegado.id, "quantidade": 2}]
+                ),
+                **self._conteudo_plano_payload(),
+                "unidade_movel": "nao",
+                "coordenador_plano": str(self.servidor.id),
+                "coordenador_plano_nome": self.servidor.nome,
+                "coordenador_plano_cargo": self.servidor.cargo,
+                "coordenador_municipal": "",
+                "coordenador_municipal_nome": "",
+                "coordenador_municipal_cargo": "",
+                "coordenador_municipal_cidade": "",
+            },
+        )
+        self.assertEqual(response_step2.status_code, 302)
+        response_step3 = self.client.post(
+            reverse("plano_trabalho_step3", args=[self.oficio.id]),
+            {
+                "composicao_diarias": "2 x 100%",
+                "valor_unitario": "290,55",
+                "valor_total_calculado": "581,10",
+                "recursos_json": json.dumps([{"descricao": "Computadores"}]),
+            },
+        )
+        self.assertEqual(response_step3.status_code, 302)
+
+        response = self.client.get(
+            reverse("plano_trabalho_editar", args=[self.oficio.id]),
+            follow=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("plano_trabalho_resumo", args=[self.oficio.id]), response.url)
+
+    def test_templates_wizard_sem_referencia_etapa_6(self) -> None:
+        template_dir = Path(settings.BASE_DIR) / "viagens" / "templates" / "viagens"
+        for name in (
+            "plano_trabalho_step1.html",
+            "plano_trabalho_step2.html",
+            "plano_trabalho_step3.html",
+            "plano_trabalho_step4.html",
+        ):
+            content = (template_dir / name).read_text(encoding="utf-8").lower()
+            self.assertNotIn("etapa 6", content)
+            self.assertNotIn("etapa-6", content)
+            self.assertNotIn("revisao e geracao", content)

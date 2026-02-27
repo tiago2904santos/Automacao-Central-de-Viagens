@@ -10,6 +10,7 @@ from docx import Document
 
 from viagens.documents.plano_trabalho import build_plano_trabalho_docx_bytes
 from viagens.models import (
+    Cargo,
     Cidade,
     CoordenadorMunicipal,
     Estado,
@@ -36,6 +37,7 @@ class PlanoTrabalhoEnxutoTests(TestCase):
             cpf="00000000000",
             cargo="Delegado",
         )
+        self.cargo_delegado = Cargo.objects.create(nome="Delegado", ativo=True, ordem=1)
         self.servidor = Viajante.objects.create(
             nome="Servidor Operacional",
             rg="98765432X",
@@ -84,48 +86,47 @@ class PlanoTrabalhoEnxutoTests(TestCase):
             chunks.extend(paragraph.text for paragraph in section.footer.paragraphs)
         return "\n".join(chunks)
 
-    def _base_payload(self) -> dict[str, str]:
+    def _post_step1(self, *, solicitantes: list[str]) -> None:
+        response = self.client.post(
+            reverse("plano_trabalho_step1", args=[self.oficio.id]),
+            {
+                "solicitantes": solicitantes,
+                "solicitante_pcpr_nome": "Prefeitura Municipal" if "PCPR na Comunidade" in solicitantes else "",
+                "data_unica": "",
+                "data_inicio": "2026-03-12",
+                "data_fim": "2026-03-14",
+                "horario_inicio": "09:00",
+                "horario_fim": "17:00",
+                "destinos-TOTAL_FORMS": "1",
+                "destinos-order": "0",
+                "destinos-0-uf": "PR",
+                "destinos-0-cidade": str(self.cidade_destino.id),
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("plano_trabalho_step2", args=[self.oficio.id]), response.url)
+
+    def _step2_payload(self) -> dict[str, str]:
+        atividade = "Confecção da Carteira de Identidade Nacional (CIN)"
+        meta = (
+            "ampliar o acesso ao documento oficial de identificação civil, "
+            "garantindo cidadania e inclusão social à população atendida."
+        )
         return {
-            "numero": "",
-            "ano": "2026",
-            "sigla_unidade": "ASCOM",
-            "programa_projeto": "PCPR na Comunidade",
-            "destino": "Foz do Iguacu/PR",
-            "solicitante": "Prefeitura Municipal",
-            "contexto_solicitacao": "Atendimento solicitado para emissao de documentos.",
-            "data_inicio": "2026-03-12",
-            "data_fim": "2026-03-14",
-            "horario_atendimento": "das 09h as 17h",
-            "efetivo_formatado": "12 servidores.",
-            "estrutura_apoio": "",
-            "quantidade_servidores": "12",
-            "composicao_diarias": "4 x 100% + 1 x 30%",
-            "valor_unitario": "150,00",
-            "valor_total_calculado": "",
+            "efetivo_json": json.dumps(
+                [{"cargo_id": self.cargo_delegado.id, "quantidade": 12}],
+                ensure_ascii=False,
+            ),
+            "atividades_json": json.dumps([{"descricao": atividade}], ensure_ascii=False),
+            "metas_json": json.dumps([{"descricao": meta}], ensure_ascii=False),
+            "unidade_movel": "nao",
             "coordenador_plano": str(self.coordenador_admin.id),
+            "coordenador_plano_nome": self.coordenador_admin.nome,
+            "coordenador_plano_cargo": self.coordenador_admin.cargo,
             "coordenador_municipal": "",
-            "possui_coordenador_municipal": "nao",
             "coordenador_municipal_nome": "",
             "coordenador_municipal_cargo": "",
             "coordenador_municipal_cidade": "",
-            "texto_override": "",
-            "atividades_selecionadas": [
-                "Confecção da Carteira de Identidade Nacional (CIN)"
-            ],
-            "metas_json": json.dumps(
-                [
-                    {
-                        "descricao": "ampliar o acesso ao documento oficial de identificação civil, garantindo cidadania e inclusão social à população atendida."
-                    }
-                ]
-            ),
-            "atividades_json": json.dumps(
-                [{"descricao": "Confecção da Carteira de Identidade Nacional (CIN)"}]
-            ),
-            "recursos_json": json.dumps([{"descricao": "Unidade movel da PCPR."}]),
-            "locais_json": json.dumps(
-                [{"data": "2026-03-12", "local": "Foz do Iguacu/PR"}]
-            ),
         }
 
     def _create_plano_base(self) -> PlanoTrabalho:
@@ -220,17 +221,17 @@ class PlanoTrabalhoEnxutoTests(TestCase):
         self.assertIn("Joana Silva", text)
 
     def test_cenario_4_cadastro_inline_coordenador_municipal(self) -> None:
-        payload = self._base_payload()
+        self._post_step1(solicitantes=["PCPR na Comunidade"])
+        payload = self._step2_payload()
         payload.update(
             {
-                "possui_coordenador_municipal": "sim",
                 "coordenador_municipal_nome": "Carlos Pereira",
                 "coordenador_municipal_cargo": "Diretor Municipal",
                 "coordenador_municipal_cidade": "Foz do Iguacu",
             }
         )
         response = self.client.post(
-            reverse("plano_trabalho_editar", args=[self.oficio.id]),
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
             payload,
         )
         if response.status_code != 302:
@@ -250,10 +251,10 @@ class PlanoTrabalhoEnxutoTests(TestCase):
         )
 
     def test_cenario_5_erro_quando_coordenador_municipal_ausente(self) -> None:
-        payload = self._base_payload()
-        payload.update({"possui_coordenador_municipal": "sim"})
+        self._post_step1(solicitantes=["PCPR na Comunidade"])
+        payload = self._step2_payload()
         response = self.client.post(
-            reverse("plano_trabalho_editar", args=[self.oficio.id]),
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
             payload,
         )
         self.assertEqual(response.status_code, 200)
@@ -271,3 +272,4 @@ class PlanoTrabalhoEnxutoTests(TestCase):
         self.assertIn("COORDENADOR DO EVENTO", text)
         self.assertNotIn("{{", text)
         self.assertNotIn("}}", text)
+

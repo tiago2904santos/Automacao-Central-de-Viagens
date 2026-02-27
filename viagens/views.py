@@ -34,7 +34,6 @@ from .forms import (
     MotoristaTransporteForm,
     OficioNumeracaoForm,
     OrdemServicoForm,
-    PlanoTrabalhoForm,
     PlanoTrabalhoStep1Form,
     PlanoTrabalhoStep2Form,
     PlanoTrabalhoStep3Form,
@@ -71,7 +70,6 @@ from .services.diarias_unified import (
 )
 from .services.oficio_helpers import build_assunto, infer_tipo_destino, valor_por_extenso_ptbr
 from .services.plano_trabalho import (
-    ATIVIDADE_META_PAIRS,
     DEFAULT_COORDENADOR_PLANO_CARGO,
     DEFAULT_COORDENADOR_PLANO_NOME,
     DEFAULT_UNIDADE_MOVEL_TEXTO,
@@ -5071,6 +5069,49 @@ def _plano_diarias_resultado(plano: PlanoTrabalho, oficio: Oficio) -> dict | Non
         return None
 
 
+def _plano_legado_redirect_para_resumo(plano: PlanoTrabalho) -> bool:
+    solicitantes = normalize_solicitantes(
+        plano.solicitantes_json if isinstance(plano.solicitantes_json, list) else []
+    )
+    if not solicitantes:
+        return False
+
+    if not plano.data_inicio or not plano.data_fim:
+        return False
+
+    if not (
+        (plano.horario_inicio and plano.horario_fim)
+        or " ".join((plano.horario_atendimento or "").split())
+    ):
+        return False
+
+    destinos = destinos_labels(plano.destinos_json if isinstance(plano.destinos_json, list) else [])
+    if not destinos and not " ".join((plano.destino or "").split()):
+        return False
+
+    efetivo_rows = normalize_efetivo_payload(
+        plano.efetivo_json if isinstance(plano.efetivo_json, list) else []
+    )
+    total_servidores = efetivo_total_servidores(efetivo_rows) or int(plano.quantidade_servidores or 0)
+    if total_servidores <= 0:
+        return False
+
+    if not plano.atividades.exists() or not plano.metas.exists():
+        return False
+    if not plano.recursos.exists():
+        return False
+
+    if not plano.get_coordenador_administrativo_nome():
+        return False
+    if has_coordenador_municipal(solicitantes) and not plano.coordenador_municipal:
+        return False
+
+    if not " ".join((plano.composicao_diarias or "").split()):
+        return False
+
+    return True
+
+
 def _plano_resumo_context(plano: PlanoTrabalho, oficio: Oficio) -> dict[str, object]:
     solicitantes = normalize_solicitantes(
         plano.solicitantes_json if isinstance(plano.solicitantes_json, list) else []
@@ -5317,100 +5358,14 @@ def planos_trabalho_list(request):
 
 @require_http_methods(["GET", "POST"])
 def plano_trabalho_editar(request, oficio_id: int):
-    if request.method == "GET":
-        return redirect("plano_trabalho_step1", oficio_id=oficio_id)
-
     oficio = get_object_or_404(
         Oficio.objects.prefetch_related("trechos", "viajantes"),
         id=oficio_id,
     )
     plano = _get_plano_trabalho(oficio)
-    form = PlanoTrabalhoForm(request.POST, instance=plano)
-    if form.is_valid():
-        with transaction.atomic():
-            plano_obj = form.save(commit=False)
-            if not plano_obj.ano:
-                plano_obj.ano = int(oficio.ano or timezone.localdate().year)
-            if not plano_obj.numero:
-                plano_obj.numero = get_next_plano_num(int(plano_obj.ano))
-            plano_obj.oficio = oficio
-            if not (plano_obj.sigla_unidade or "").strip():
-                plano_obj.sigla_unidade = _derive_sigla_unidade_from_config()
-            if not (plano_obj.destino or "").strip():
-                plano_obj.destino = _resolve_destinos_oficio(oficio)
-
-            locais = form.parsed_locais
-            local_principal = ""
-            if locais:
-                local_principal = str(locais[0].get("local") or "").strip()
-            plano_obj.local = local_principal or _resolve_local_oficio(oficio)
-
-            if not plano_obj.quantidade_servidores:
-                plano_obj.quantidade_servidores = int(oficio.viajantes.count() or 0)
-            if not plano_obj.efetivo_por_dia:
-                plano_obj.efetivo_por_dia = int(plano_obj.quantidade_servidores or 0)
-
-            if plano_obj.coordenador_plano:
-                plano_obj.coordenador_nome = plano_obj.coordenador_plano.nome
-                plano_obj.coordenador_cargo = plano_obj.coordenador_plano.cargo
-
-            if plano_obj.possui_coordenador_municipal and not plano_obj.coordenador_municipal:
-                nome = " ".join(
-                    (form.cleaned_data.get("coordenador_municipal_nome") or "").split()
-                )
-                cargo = " ".join(
-                    (form.cleaned_data.get("coordenador_municipal_cargo") or "").split()
-                )
-                cidade = " ".join(
-                    (form.cleaned_data.get("coordenador_municipal_cidade") or "").split()
-                )
-                if nome and cargo and cidade:
-                    coordenador_municipal = CoordenadorMunicipal.objects.filter(
-                        nome__iexact=nome,
-                        cargo__iexact=cargo,
-                        cidade__iexact=cidade,
-                    ).first()
-                    if not coordenador_municipal:
-                        coordenador_municipal = CoordenadorMunicipal.objects.create(
-                            nome=nome,
-                            cargo=cargo,
-                            cidade=cidade,
-                            ativo=True,
-                        )
-                    plano_obj.coordenador_municipal = coordenador_municipal
-
-            plano_obj.save()
-
-            _sync_plano_ordered_text_items(
-                plano_obj,
-                model_cls=PlanoTrabalhoMeta,
-                values=form.parsed_metas,
-            )
-            _sync_plano_ordered_text_items(
-                plano_obj,
-                model_cls=PlanoTrabalhoAtividade,
-                values=form.parsed_atividades,
-            )
-            _sync_plano_ordered_text_items(
-                plano_obj,
-                model_cls=PlanoTrabalhoRecurso,
-                values=form.parsed_recursos,
-            )
-            _sync_plano_locais(plano_obj, form.parsed_locais)
-
-        messages.success(request, "Plano de trabalho salvo com sucesso.")
-        return redirect("oficio_documentos", oficio_id=oficio.id)
-
-    return render(
-        request,
-        "viagens/plano_trabalho_form.html",
-        {
-            "form": form,
-            "oficio": oficio,
-            "plano": plano,
-            "atividade_meta_pairs_json": json.dumps(ATIVIDADE_META_PAIRS, ensure_ascii=False),
-        },
-    )
+    if plano and _plano_legado_redirect_para_resumo(plano):
+        return redirect("plano_trabalho_resumo", oficio_id=oficio.id)
+    return redirect("plano_trabalho_step1", oficio_id=oficio.id)
 
 
 @require_http_methods(["GET", "POST"])
