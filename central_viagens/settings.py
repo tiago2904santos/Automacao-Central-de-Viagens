@@ -6,7 +6,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = "django-insecure-change-me"
 DEBUG = True
-ALLOWED_HOSTS: list[str] = []
+_allowed_hosts_env = os.getenv("DJANGO_ALLOWED_HOSTS", "")
+ALLOWED_HOSTS: list[str] = [
+    host.strip() for host in _allowed_hosts_env.split(",") if host.strip()
+]
+
+if DEBUG:
+    for host in ("localhost", "127.0.0.1", "testserver"):
+        if host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(host)
+else:
+    ALLOWED_HOSTS = [host for host in ALLOWED_HOSTS if host != "*"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",

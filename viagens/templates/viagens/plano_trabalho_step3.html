@@ -1,0 +1,180 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Plano de Trabalho - Etapa 3{% endblock %}
+
+{% block breadcrumb %}
+  Planos de Trabalho <span class="breadcrumb-sep">/</span> Etapa 3
+{% endblock %}
+
+{% block content %}
+  <link rel="stylesheet" href="{% static 'css/diarias.css' %}" />
+  <style>
+    #recursosRows { display: grid; gap: 8px; margin-top: 10px; }
+    .editor-item { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    @media (max-width: 768px) {
+      .editor-item { grid-template-columns: 1fr; }
+    }
+  </style>
+  <nav class="stepper" aria-label="Etapas">
+    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step1' oficio.id %}">
+      <span class="stepper-index">1</span>
+      Identificacao e evento
+    </a>
+    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step2' oficio.id %}">
+      <span class="stepper-index">2</span>
+      Equipe e estrutura
+    </a>
+    <button class="stepper-step is-active" type="button" disabled>
+      <span class="stepper-index">3</span>
+      Financeiro e recursos
+    </button>
+    <a class="stepper-step" href="{% url 'plano_trabalho_resumo' oficio.id %}">
+      <span class="stepper-index">4</span>
+      Resumo
+    </a>
+  </nav>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa 3 - Financeiro e recursos</h2>
+      <p class="page-subtitle">Plano {{ numero_plano_formatado }}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="post" id="planoStep3Form">
+      {% csrf_token %}
+      {{ form.recursos_json }}
+
+      <section class="sub-card">
+        <div class="sub-card-title">Integracao com diarias</div>
+        {% with totais=diarias_resultado.totais %}
+          <div class="diarias-summary-grid">
+            <article class="diarias-summary-card">
+              <span class="diarias-summary-label">Total geral</span>
+              <strong class="diarias-summary-value">{{ totais.total_valor|default:"-" }}</strong>
+            </article>
+            <article class="diarias-summary-card">
+              <span class="diarias-summary-label">Valor por servidor</span>
+              <strong class="diarias-summary-value">{{ totais.valor_por_servidor|default:"-" }}</strong>
+            </article>
+            <article class="diarias-summary-card">
+              <span class="diarias-summary-label">Diarias por servidor</span>
+              <strong class="diarias-summary-value">{{ totais.diarias_por_servidor|default:"-" }}</strong>
+            </article>
+            <article class="diarias-summary-card">
+              <span class="diarias-summary-label">Valor unitario da diaria</span>
+              <strong class="diarias-summary-value">{{ totais.valor_unitario_referencia|default:"-" }}</strong>
+            </article>
+          </div>
+          <div class="preview-line">
+            <span class="preview-label">Valor por extenso</span>
+            <span class="preview-value">{{ totais.valor_extenso|default:"-" }}</span>
+          </div>
+        {% endwith %}
+      </section>
+
+      <section class="grid">
+        <label>
+          Composicao de diarias
+          {{ form.composicao_diarias }}
+          {% if form.composicao_diarias.errors %}<span class="error">{{ form.composicao_diarias.errors|join:", " }}</span>{% endif %}
+        </label>
+        <label>
+          Valor unitario (por servidor)
+          {{ form.valor_unitario }}
+          {% if form.valor_unitario.errors %}<span class="error">{{ form.valor_unitario.errors|join:", " }}</span>{% endif %}
+        </label>
+        <label>
+          Valor total
+          <input type="text" name="valor_total_calculado" id="id_valor_total_calculado" value="{{ form.valor_total_calculado.value|default:'' }}" />
+          {% if form.valor_total_calculado.errors %}<span class="error">{{ form.valor_total_calculado.errors|join:", " }}</span>{% endif %}
+        </label>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Recursos necessarios</div>
+        <div id="recursosRows"></div>
+        <div class="field-actions">
+          <button class="btn-clear btn-small" type="button" id="addRecursoBtn">+ Adicionar recurso</button>
+        </div>
+        {% if form.recursos_json.errors %}<span class="error">{{ form.recursos_json.errors|join:", " }}</span>{% endif %}
+      </section>
+
+      <div class="wizard-actions">
+        <a class="btn-clear" href="{% url 'plano_trabalho_step2' oficio.id %}">Voltar</a>
+        <button class="btn-primary" type="submit">Avancar</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (function () {
+      const form = document.getElementById("planoStep3Form");
+      if (!form) return;
+      const hiddenInput = document.getElementById("id_recursos_json");
+      const rowsContainer = document.getElementById("recursosRows");
+      const addBtn = document.getElementById("addRecursoBtn");
+
+      function parsePayload() {
+        try {
+          const parsed = JSON.parse(hiddenInput.value || "[]");
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (_err) {
+          return [];
+        }
+      }
+
+      let rows = parsePayload();
+      if (!rows.length) rows = [{ descricao: "" }];
+
+      function normalizeText(value) {
+        return String(value || "").replace(/\s+/g, " ").trim();
+      }
+
+      function syncHidden() {
+        const clean = rows
+          .map((row) => normalizeText(row.descricao || row))
+          .filter(Boolean)
+          .map((descricao) => ({ descricao }));
+        hiddenInput.value = JSON.stringify(clean);
+      }
+
+      function render() {
+        rowsContainer.innerHTML = "";
+        rows.forEach((row, index) => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "editor-item";
+          const value = typeof row === "string" ? row : row.descricao || "";
+          wrapper.innerHTML = `
+            <input type="text" class="input-field" placeholder="Recurso" value="${String(value).replace(/"/g, "&quot;")}" />
+            <button type="button" class="btn-clear" data-action="remove">Remover</button>
+          `;
+          const input = wrapper.querySelector("input");
+          const removeBtn = wrapper.querySelector("[data-action='remove']");
+          input.addEventListener("input", () => {
+            rows[index] = { descricao: input.value };
+            syncHidden();
+          });
+          removeBtn.addEventListener("click", () => {
+            if (rows.length <= 1) rows[0] = { descricao: "" };
+            else rows.splice(index, 1);
+            render();
+          });
+          rowsContainer.appendChild(wrapper);
+        });
+        syncHidden();
+      }
+
+      addBtn?.addEventListener("click", () => {
+        rows.push({ descricao: "" });
+        render();
+      });
+
+      render();
+    })();
+  </script>
+{% endblock %}

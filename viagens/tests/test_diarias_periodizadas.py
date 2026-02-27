@@ -127,6 +127,9 @@ class DiariasPeriodizadasTests(TestCase):
         self.assertEqual(payload["periodos"][1]["tipo"], "CAPITAL")
         self.assertEqual(payload["totais"]["total_diarias"], "4 x 100% + 1 x 30%")
         self.assertEqual(payload["totais"]["total_valor"], "1435,00")
+        self.assertEqual(payload["totais"]["diarias_por_servidor"], "4 x 100% + 1 x 30%")
+        self.assertEqual(payload["totais"]["valor_por_servidor"], "1435,00")
+        self.assertTrue(payload["totais"]["valor_unitario_referencia"])
 
     def test_endpoint_calcular_diarias_retorna_erro_quando_falta_data(self) -> None:
         session = self.client.session

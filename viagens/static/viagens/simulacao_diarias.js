@@ -22,6 +22,9 @@
   const valorExtensoEl = document.getElementById("simValorExtenso");
   const qtdEl = document.getElementById("simQtd");
   const horasEl = document.getElementById("simHoras");
+  const porServidorQtdEl = document.getElementById("simPorServidorQtd");
+  const porServidorValorEl = document.getElementById("simPorServidorValor");
+  const valorUnitarioEl = document.getElementById("simValorUnitario");
 
   const initialPeriodsNode = document.getElementById("simInitialPeriods");
   let initialPeriods = [];
@@ -143,6 +146,15 @@
     if (horasEl) {
       horasEl.textContent = emptyMarkers.horas;
     }
+    if (porServidorQtdEl) {
+      porServidorQtdEl.textContent = emptyMarkers.qtd;
+    }
+    if (porServidorValorEl) {
+      porServidorValorEl.textContent = emptyMarkers.total;
+    }
+    if (valorUnitarioEl) {
+      valorUnitarioEl.textContent = emptyMarkers.total;
+    }
     hideResult();
   };
 
@@ -199,6 +211,15 @@
     }
     if (horasEl) {
       horasEl.textContent = formatHours(totais.total_horas);
+    }
+    if (porServidorQtdEl) {
+      porServidorQtdEl.textContent = totais.diarias_por_servidor || "-";
+    }
+    if (porServidorValorEl) {
+      porServidorValorEl.textContent = formatMoney(totais.valor_por_servidor);
+    }
+    if (valorUnitarioEl) {
+      valorUnitarioEl.textContent = formatMoney(totais.valor_unitario_referencia);
     }
     showResult();
   };

@@ -1,0 +1,215 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Plano de Trabalho - Etapa 2{% endblock %}
+
+{% block breadcrumb %}
+  Planos de Trabalho <span class="breadcrumb-sep">/</span> Etapa 2
+{% endblock %}
+
+{% block content %}
+  <style>
+    #efetivoRows { display: grid; gap: 8px; margin-top: 10px; }
+    .editor-item { display: grid; grid-template-columns: 1fr 160px auto; gap: 8px; }
+    @media (max-width: 768px) {
+      .editor-item { grid-template-columns: 1fr; }
+    }
+  </style>
+  <nav class="stepper" aria-label="Etapas">
+    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step1' oficio.id %}">
+      <span class="stepper-index">1</span>
+      Identificacao e evento
+    </a>
+    <button class="stepper-step is-active" type="button" disabled>
+      <span class="stepper-index">2</span>
+      Equipe e estrutura
+    </button>
+    <a class="stepper-step" href="{% url 'plano_trabalho_step3' oficio.id %}">
+      <span class="stepper-index">3</span>
+      Financeiro e recursos
+    </a>
+    <a class="stepper-step" href="{% url 'plano_trabalho_resumo' oficio.id %}">
+      <span class="stepper-index">4</span>
+      Resumo
+    </a>
+  </nav>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa 2 - Equipe e estrutura</h2>
+      <p class="page-subtitle">Plano {{ numero_plano_formatado }}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="post" id="planoStep2Form">
+      {% csrf_token %}
+      {{ form.efetivo_json }}
+
+      <section class="sub-card">
+        <div class="sub-card-title">Efetivo</div>
+        <p class="field-help">Informe cargo/função e quantidade. O total de servidores sera calculado automaticamente.</p>
+        <div id="efetivoRows"></div>
+        <div class="field-actions">
+          <button class="btn-clear btn-small" type="button" id="addEfetivoBtn">+ Adicionar linha</button>
+        </div>
+        {% if form.efetivo_json.errors %}<span class="error">{{ form.efetivo_json.errors|join:", " }}</span>{% endif %}
+        <div class="preview-line">
+          <span class="preview-label">Total de servidores</span>
+          <span class="preview-value" id="efetivoTotalPreview">0</span>
+        </div>
+      </section>
+
+      <section class="grid">
+        <label>
+          Estrutura/unidade movel
+          {{ form.unidade_movel }}
+          {% if form.unidade_movel.errors %}<span class="error">{{ form.unidade_movel.errors|join:", " }}</span>{% endif %}
+        </label>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Coordenacao administrativa</div>
+        <div class="grid">
+          <label class="full">
+            Coordenador do plano (cadastro de servidores)
+            {{ form.coordenador_plano }}
+            {% if form.coordenador_plano.errors %}<span class="error">{{ form.coordenador_plano.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            Nome do coordenador
+            {{ form.coordenador_plano_nome }}
+            {% if form.coordenador_plano_nome.errors %}<span class="error">{{ form.coordenador_plano_nome.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            Cargo do coordenador
+            {{ form.coordenador_plano_cargo }}
+            {% if form.coordenador_plano_cargo.errors %}<span class="error">{{ form.coordenador_plano_cargo.errors|join:", " }}</span>{% endif %}
+          </label>
+        </div>
+      </section>
+
+      {% if permite_municipal %}
+        <section class="sub-card">
+          <div class="sub-card-title">Coordenacao municipal (opcional)</div>
+          <div class="grid">
+            <label class="full">
+              Coordenador municipal (cadastro existente)
+              {{ form.coordenador_municipal }}
+              {% if form.coordenador_municipal.errors %}<span class="error">{{ form.coordenador_municipal.errors|join:", " }}</span>{% endif %}
+            </label>
+            <label>
+              Novo coordenador - Nome
+              {{ form.coordenador_municipal_nome }}
+              {% if form.coordenador_municipal_nome.errors %}<span class="error">{{ form.coordenador_municipal_nome.errors|join:", " }}</span>{% endif %}
+            </label>
+            <label>
+              Novo coordenador - Cargo
+              {{ form.coordenador_municipal_cargo }}
+              {% if form.coordenador_municipal_cargo.errors %}<span class="error">{{ form.coordenador_municipal_cargo.errors|join:", " }}</span>{% endif %}
+            </label>
+            <label>
+              Novo coordenador - Cidade
+              {{ form.coordenador_municipal_cidade }}
+              {% if form.coordenador_municipal_cidade.errors %}<span class="error">{{ form.coordenador_municipal_cidade.errors|join:", " }}</span>{% endif %}
+            </label>
+          </div>
+        </section>
+      {% else %}
+        <section class="sub-card">
+          <div class="sub-card-title">Coordenacao municipal</div>
+          <p class="field-help">Para os solicitantes selecionados, este plano usa apenas coordenacao administrativa.</p>
+        </section>
+      {% endif %}
+
+      <div class="wizard-actions">
+        <a class="btn-clear" href="{% url 'plano_trabalho_step1' oficio.id %}">Voltar</a>
+        <button class="btn-primary" type="submit">Avancar</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/form.js' %}"></script>
+  <script>
+    (function () {
+      const form = document.getElementById("planoStep2Form");
+      if (!form) return;
+      const hiddenInput = document.getElementById("id_efetivo_json");
+      const rowsContainer = document.getElementById("efetivoRows");
+      const addBtn = document.getElementById("addEfetivoBtn");
+      const totalPreview = document.getElementById("efetivoTotalPreview");
+
+      function parsePayload() {
+        try {
+          const parsed = JSON.parse(hiddenInput.value || "[]");
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (_err) {
+          return [];
+        }
+      }
+
+      let rows = parsePayload();
+      if (!rows.length) rows = [{ cargo: "", quantidade: "" }];
+
+      function normalizeText(value) {
+        return String(value || "").replace(/\s+/g, " ").trim();
+      }
+
+      function syncHidden() {
+        const clean = rows
+          .map((row) => ({
+            cargo: normalizeText(row.cargo),
+            quantidade: String(row.quantidade || "").trim(),
+          }))
+          .filter((row) => row.cargo && /^\d+$/.test(row.quantidade) && Number(row.quantidade) > 0);
+        hiddenInput.value = JSON.stringify(clean);
+        const total = clean.reduce((acc, row) => acc + Number(row.quantidade || 0), 0);
+        totalPreview.textContent = String(total);
+      }
+
+      function render() {
+        rowsContainer.innerHTML = "";
+        rows.forEach((row, index) => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "editor-item";
+          wrapper.innerHTML = `
+            <input type="text" class="input-field" placeholder="Cargo/funcao" value="${String(row.cargo || "").replace(/"/g, "&quot;")}" />
+            <input type="number" class="input-field" min="1" step="1" placeholder="Qtd" value="${String(row.quantidade || "").replace(/"/g, "&quot;")}" />
+            <button type="button" class="btn-clear" data-action="remove">Remover</button>
+          `;
+          const cargoInput = wrapper.querySelector("input[type='text']");
+          const qtdInput = wrapper.querySelector("input[type='number']");
+          const removeBtn = wrapper.querySelector("[data-action='remove']");
+          cargoInput.addEventListener("input", () => {
+            rows[index].cargo = cargoInput.value;
+            syncHidden();
+          });
+          qtdInput.addEventListener("input", () => {
+            rows[index].quantidade = qtdInput.value;
+            syncHidden();
+          });
+          removeBtn.addEventListener("click", () => {
+            if (rows.length <= 1) {
+              rows[0] = { cargo: "", quantidade: "" };
+            } else {
+              rows.splice(index, 1);
+            }
+            render();
+          });
+          rowsContainer.appendChild(wrapper);
+        });
+        syncHidden();
+      }
+
+      addBtn?.addEventListener("click", () => {
+        rows.push({ cargo: "", quantidade: "" });
+        render();
+      });
+
+      render();
+      window.initializeAutocompleteSelects?.(document);
+    })();
+  </script>
+{% endblock %}

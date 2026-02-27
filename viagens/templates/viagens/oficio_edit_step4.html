@@ -50,6 +50,7 @@
     </div>
     <div class="page-actions">
       <span class="badge">Editando Oficio {{ oficio_display }}</span>
+      <a class="btn-clear btn-small" href="{% url 'oficio_documentos' oficio_id %}">Documentos</a>
       <a class="btn-clear btn-small" href="{% url 'oficio_download_termo_autorizacao' oficio_id %}">Termo</a>
       <a class="btn-icon btn-icon--docx" href="{% url 'oficio_download_docx' oficio_id %}" aria-label="Baixar DOCX">W</a>
       <a class="btn-icon btn-icon--pdf" href="{% url 'oficio_download_pdf' oficio_id %}" aria-label="Baixar PDF">PDF</a>

@@ -1,0 +1,88 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Justificativas{% endblock %}
+
+{% block breadcrumb %}
+  Documentos <span class="breadcrumb-sep">/</span> Justificativas
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Justificativas</h2>
+      <p class="page-subtitle">Pendencias e justificativas preenchidas.</p>
+    </div>
+  </div>
+
+  <div class="wizard-actions">
+    <a class="btn-clear{% if status_filter == 'pendentes' %} is-active{% endif %}" href="?status=pendentes">
+      Pendentes
+    </a>
+    <a class="btn-clear{% if status_filter == 'completas' %} is-active{% endif %}" href="?status=completas">
+      Completas
+    </a>
+  </div>
+
+  <div class="card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Oficio</th>
+          <th>Protocolo</th>
+          <th>Data saida</th>
+          <th>Antecedencia</th>
+          <th>Destino</th>
+          <th>Status</th>
+          <th>Acoes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.oficio.numero_formatado|default:row.oficio.oficio|default:row.oficio.id }}</td>
+            <td>{{ row.oficio.protocolo_formatado|default:row.oficio.protocolo|default:"-" }}</td>
+            <td>
+              {% if row.primeira_saida %}
+                {{ row.primeira_saida|date:"d/m/Y" }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>
+              {% if row.antecedencia is not None %}
+                {{ row.antecedencia }} dia(s)
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{{ row.destinos }}</td>
+            <td>{% if row.pendente %}Pendente{% else %}Completa{% endif %}</td>
+            <td>
+              <a href="{% url 'justificativa_form' row.oficio.id %}?next={% url 'oficio_documentos' row.oficio.id %}">
+                Preencher/Editar
+              </a> |
+              <a href="{% url 'oficio_download_docx' row.oficio.id %}">Gerar oficio</a> |
+              <a href="{% url 'oficio_documentos' row.oficio.id %}">Abrir oficio</a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="7">Nenhum oficio encontrado para este filtro.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="wizard-actions">
+      {% if page_obj.has_previous %}
+        <a class="btn-clear" href="?status={{ status_filter }}&page={{ page_obj.previous_page_number }}">Pagina anterior</a>
+      {% endif %}
+      <span>Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn-clear" href="?status={{ status_filter }}&page={{ page_obj.next_page_number }}">Proxima pagina</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}

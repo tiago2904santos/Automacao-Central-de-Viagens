@@ -18,6 +18,64 @@ urlpatterns = [
     path("oficios/etapa-3/", views.oficio_step3, name="oficio_step3"),
     path("oficios/calcular-diarias/", views.oficio_calcular_diarias, name="oficio_calcular_diarias"),
     path("oficios/etapa-4/", views.oficio_step4, name="oficio_step4"),
+    path("planos-trabalho/", views.planos_trabalho_list, name="planos_trabalho_list"),
+    path(
+        "planos-trabalho/oficio/<int:oficio_id>/editar/",
+        views.plano_trabalho_editar,
+        name="plano_trabalho_editar",
+    ),
+    path(
+        "planos-trabalho/oficio/<int:oficio_id>/etapa-1/",
+        views.plano_trabalho_step1,
+        name="plano_trabalho_step1",
+    ),
+    path(
+        "planos-trabalho/oficio/<int:oficio_id>/etapa-2/",
+        views.plano_trabalho_step2,
+        name="plano_trabalho_step2",
+    ),
+    path(
+        "planos-trabalho/oficio/<int:oficio_id>/etapa-3/",
+        views.plano_trabalho_step3,
+        name="plano_trabalho_step3",
+    ),
+    path(
+        "planos-trabalho/oficio/<int:oficio_id>/resumo/",
+        views.plano_trabalho_resumo,
+        name="plano_trabalho_resumo",
+    ),
+    path(
+        "planos-trabalho/oficio/<int:oficio_id>/docx/",
+        views.plano_trabalho_download_docx,
+        name="plano_trabalho_download_docx",
+    ),
+    path(
+        "planos-trabalho/oficio/<int:oficio_id>/pdf/",
+        views.plano_trabalho_download_pdf,
+        name="plano_trabalho_download_pdf",
+    ),
+    path("justificativas/", views.justificativas_list, name="justificativas_list"),
+    path(
+        "justificativas/oficio/<int:oficio_id>/",
+        views.justificativa_form,
+        name="justificativa_form",
+    ),
+    path("ordens-servico/", views.ordens_servico_list, name="ordens_servico_list"),
+    path(
+        "ordens-servico/oficio/<int:oficio_id>/editar/",
+        views.ordem_servico_editar,
+        name="ordem_servico_editar",
+    ),
+    path(
+        "ordens-servico/oficio/<int:oficio_id>/docx/",
+        views.ordem_servico_download_docx,
+        name="ordem_servico_download_docx",
+    ),
+    path(
+        "ordens-servico/oficio/<int:oficio_id>/pdf/",
+        views.ordem_servico_download_pdf,
+        name="ordem_servico_download_pdf",
+    ),
     path(
         "oficios/<int:oficio_id>/justificativa/",
         views.oficio_justificativa,
@@ -64,11 +122,52 @@ urlpatterns = [
         name="oficio_edit_cancel",
     ),
 
+    path(
+        "oficios/<int:oficio_id>/documentos/",
+        views.oficio_documentos,
+        name="oficio_documentos",
+    ),
+    path(
+        "oficios/<int:oficio_id>/documentos/",
+        views.oficio_documentos,
+        name="oficio_documentos_central",
+    ),
+    path(
+        "oficios/<int:oficio_id>/documentos/gerar_todos/",
+        views.oficio_documentos_gerar_todos,
+        name="oficio_documentos_gerar_todos",
+    ),
+    path(
+        "oficios/<int:oficio_id>/documentos/plano_trabalho.docx",
+        views.oficio_download_plano_trabalho_docx,
+        name="oficio_download_plano_trabalho_docx",
+    ),
+    path(
+        "oficios/<int:oficio_id>/documentos/plano_trabalho.pdf",
+        views.oficio_download_plano_trabalho_pdf,
+        name="oficio_download_plano_trabalho_pdf",
+    ),
+    path(
+        "oficios/<int:oficio_id>/documentos/ordem_servico.docx",
+        views.oficio_download_ordem_servico_docx,
+        name="oficio_download_ordem_servico_docx",
+    ),
+    path(
+        "oficios/<int:oficio_id>/documentos/ordem_servico.pdf",
+        views.oficio_download_ordem_servico_pdf,
+        name="oficio_download_ordem_servico_pdf",
+    ),
+
     path("oficios/<int:oficio_id>/download-docx/",views.oficio_download_docx,name="oficio_download_docx"),
     path(
         "oficios/<int:oficio_id>/download-termo-autorizacao/",
         views.oficio_download_termo_autorizacao,
         name="oficio_download_termo_autorizacao",
+    ),
+    path(
+        "oficios/<int:oficio_id>/download-termo-autorizacao/pdf/",
+        views.oficio_download_termo_autorizacao_pdf,
+        name="oficio_download_termo_autorizacao_pdf",
     ),
     path("oficios/<int:oficio_id>/download-pdf/", views.oficio_download_pdf, name="oficio_download_pdf"),
     path("api/validacoes/resultado/", views.validacao_resultado, name="validacao_resultado"),
@@ -109,6 +208,11 @@ urlpatterns = [
     path("api/ufs/", views.ufs_api, name="ufs_api"),
     path("api/cidades-busca/", views.cidades_busca_api, name="cidades_busca_api"),
     path("api/servidores/", views.servidores_api, name="servidores_api"),
+    path(
+        "api/coordenadores-municipais/",
+        views.coordenadores_municipais_api,
+        name="coordenadores_municipais_api",
+    ),
     path("api/assinantes/", views.assinantes_api, name="assinantes_api"),
     path("api/motoristas/", views.motoristas_api, name="motoristas_api"),
     path("api/cep/<str:cep>/", views.cep_api, name="cep_api"),

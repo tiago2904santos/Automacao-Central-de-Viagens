@@ -72,6 +72,33 @@
               </li>
             </ul>
           </li>
+          <li class="has-submenu">
+            <a href="#" class="submenu-toggle">
+              <i data-lucide="files"></i>
+              Documentos
+              <i data-lucide="chevron-down" class="chevron"></i>
+            </a>
+            <ul class="submenu">
+              <li>
+                <a href="{% url 'planos_trabalho_list' %}">
+                  <i data-lucide="file-text"></i>
+                  Planos de trabalho
+                </a>
+              </li>
+              <li>
+                <a href="{% url 'ordens_servico_list' %}">
+                  <i data-lucide="clipboard-list"></i>
+                  Ordens de servico
+                </a>
+              </li>
+              <li>
+                <a href="{% url 'justificativas_list' %}">
+                  <i data-lucide="alert-triangle"></i>
+                  Justificativas
+                </a>
+              </li>
+            </ul>
+          </li>
           <li>
             <a href="{% url 'simulacao_diarias' %}">
               <i data-lucide="calculator"></i>

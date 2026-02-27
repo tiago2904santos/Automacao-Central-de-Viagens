@@ -1,0 +1,364 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Plano de Trabalho - Etapa 1{% endblock %}
+
+{% block breadcrumb %}
+  Planos de Trabalho <span class="breadcrumb-sep">/</span> Etapa 1
+{% endblock %}
+
+{% block content %}
+  <style>
+    .destinos-list { display: grid; gap: 12px; margin-top: 10px; }
+    .destino-item { border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; background: #fff; }
+    .destino-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .destino-actions { display: flex; align-items: center; gap: 10px; }
+    .drag-handle { cursor: grab; }
+    .destinos-actions { margin-top: 10px; }
+    .termo-date-panel { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin: 12px 0; }
+    .termo-date-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+    .termo-date-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; }
+    .termo-date-card.is-hidden { display: none; }
+    .termo-switch { display: inline-flex; align-items: center; gap: 10px; margin-top: 8px; }
+    .termo-switch-input { position: absolute; opacity: 0; pointer-events: none; }
+    .termo-switch-track { width: 44px; height: 24px; border-radius: 999px; background: #cbd5e1; position: relative; display: inline-block; }
+    .termo-switch-track::after { content: ""; width: 18px; height: 18px; border-radius: 50%; background: #fff; position: absolute; top: 3px; left: 3px; transition: transform .2s ease; }
+    .termo-switch-input:checked + .termo-switch-track { background: #2563eb; }
+    .termo-switch-input:checked + .termo-switch-track::after { transform: translateX(20px); }
+  </style>
+  <nav class="stepper" aria-label="Etapas">
+    <button class="stepper-step is-active" type="button" disabled>
+      <span class="stepper-index">1</span>
+      Identificacao e evento
+    </button>
+    <a class="stepper-step" href="{% url 'plano_trabalho_step2' oficio.id %}">
+      <span class="stepper-index">2</span>
+      Equipe e estrutura
+    </a>
+    <a class="stepper-step" href="{% url 'plano_trabalho_step3' oficio.id %}">
+      <span class="stepper-index">3</span>
+      Financeiro e recursos
+    </a>
+    <a class="stepper-step" href="{% url 'plano_trabalho_resumo' oficio.id %}">
+      <span class="stepper-index">4</span>
+      Resumo
+    </a>
+  </nav>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa 1 - Identificacao e evento</h2>
+      <p class="page-subtitle">Numero do plano automatico: {{ numero_plano_formatado }}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="post" id="planoStep1Form">
+      {% csrf_token %}
+      <section class="grid">
+        <label>
+          Numero do plano
+          <input type="text" value="{{ numero_plano_formatado }}" readonly />
+        </label>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Solicitante(s)</div>
+        <div class="grid">
+          <div class="full">
+            {% for checkbox in form.solicitantes %}
+              <label class="atividade-item">{{ checkbox.tag }} <span>{{ checkbox.choice_label }}</span></label>
+            {% endfor %}
+            {% if form.solicitantes.errors %}
+              <span class="error">{{ form.solicitantes.errors|join:", " }}</span>
+            {% endif %}
+          </div>
+          <label id="pcprNomeWrap" class="full">
+            Nome do solicitante (quando PCPR na Comunidade)
+            {{ form.solicitante_pcpr_nome }}
+            {% if form.solicitante_pcpr_nome.errors %}
+              <span class="error">{{ form.solicitante_pcpr_nome.errors|join:", " }}</span>
+            {% endif %}
+          </label>
+        </div>
+      </section>
+
+      <section class="termo-date-panel">
+        <div class="sub-card-title">Datas do evento</div>
+        <label class="termo-switch">
+          {{ form.data_unica }}
+          <span class="termo-switch-track" aria-hidden="true"></span>
+          <span class="termo-switch-text">Data unica</span>
+        </label>
+        <div class="termo-date-grid">
+          <div class="termo-date-card" id="dataInicioWrap">
+            <label class="termo-date-label">Data inicial</label>
+            {{ form.data_inicio }}
+            {% if form.data_inicio.errors %}<p class="field-errors">{{ form.data_inicio.errors|join:", " }}</p>{% endif %}
+          </div>
+          <div class="termo-date-card" id="dataFimWrap">
+            <label class="termo-date-label">Data final</label>
+            {{ form.data_fim }}
+            {% if form.data_fim.errors %}<p class="field-errors">{{ form.data_fim.errors|join:", " }}</p>{% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Horario de atendimento</div>
+        <div class="grid">
+          <label>
+            Hora inicial
+            {{ form.horario_inicio }}
+            {% if form.horario_inicio.errors %}<span class="error">{{ form.horario_inicio.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            Hora final
+            {{ form.horario_fim }}
+            {% if form.horario_fim.errors %}<span class="error">{{ form.horario_fim.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label class="full">
+            Preview
+            <input id="horarioPreview" type="text" readonly value="-" />
+          </label>
+        </div>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Destinos</div>
+        {% if erros.destinos %}
+          <p class="field-errors">{{ erros.destinos }}</p>
+        {% endif %}
+        <div class="destinos-list" id="destinosList">
+          {% for destino in destinos %}
+            <div class="destino-item" data-index="{{ forloop.counter0 }}">
+              <div class="destino-header">
+                <div class="destino-info">
+                  <span class="badge">Destino {{ forloop.counter }}</span>
+                </div>
+                <div class="destino-actions">
+                  <span class="drag-handle" draggable="true" title="Arraste para reordenar">&#9776;</span>
+                  <button class="btn-danger destino-remove" type="button" data-action="remove-destino">Remover</button>
+                </div>
+              </div>
+              <div class="grid">
+                <label>
+                  UF
+                  <select
+                    name="destinos-{{ forloop.counter0 }}-uf"
+                    class="input-field"
+                    data-role="destino-estado"
+                    data-autocomplete-url="/api/ufs/"
+                    data-autocomplete-type="uf"
+                  >
+                    <option value="">Selecione</option>
+                    {% for estado in estados %}
+                      <option value="{{ estado.sigla }}" {% if estado.sigla == destino.uf %}selected{% endif %}>
+                        {{ estado.sigla }} - {{ estado.nome }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>
+                  Cidade
+                  <select
+                    name="destinos-{{ forloop.counter0 }}-cidade"
+                    class="input-field"
+                    data-role="destino-cidade"
+                    data-autocomplete-url="/api/cidades-busca/"
+                    data-autocomplete-type="cidade"
+                  >
+                    <option value="">Selecione</option>
+                    {% if destino.cidade and destino.cidade_label %}
+                      <option value="{{ destino.cidade }}" selected>{{ destino.cidade_label }}</option>
+                    {% endif %}
+                  </select>
+                </label>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="destinos-actions">
+          <button type="button" class="btn-clear btn-small" id="addDestinoBtn">+ Adicionar destino</button>
+        </div>
+        <input type="hidden" name="destinos-TOTAL_FORMS" id="destinosTotalForms" value="{{ destinos_total_forms }}" />
+        <input type="hidden" name="destinos-order" id="destinosOrder" value="{{ destinos_order }}" />
+      </section>
+
+      <div class="wizard-actions">
+        <a class="btn-clear" href="{% url 'oficio_documentos' oficio.id %}">Voltar</a>
+        <button class="btn-primary" type="submit">Avancar</button>
+      </div>
+    </form>
+  </div>
+
+  <template id="destinoTemplate">
+    <div class="destino-item" data-index="__prefix__">
+      <div class="destino-header">
+        <div class="destino-info">
+          <span class="badge">Destino</span>
+        </div>
+        <div class="destino-actions">
+          <span class="drag-handle" draggable="true" title="Arraste para reordenar">&#9776;</span>
+          <button class="btn-danger destino-remove" type="button" data-action="remove-destino">Remover</button>
+        </div>
+      </div>
+      <div class="grid">
+        <label>
+          UF
+          <select
+            name="destinos-__prefix__-uf"
+            class="input-field"
+            data-role="destino-estado"
+            data-autocomplete-url="/api/ufs/"
+            data-autocomplete-type="uf"
+          >
+            <option value="">Selecione</option>
+            {% for estado in estados %}
+              <option value="{{ estado.sigla }}" {% if estado.sigla == "PR" %}selected{% endif %}>
+                {{ estado.sigla }} - {{ estado.nome }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Cidade
+          <select
+            name="destinos-__prefix__-cidade"
+            class="input-field"
+            data-role="destino-cidade"
+            data-autocomplete-url="/api/cidades-busca/"
+            data-autocomplete-type="cidade"
+          >
+            <option value="">Selecione</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </template>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/form.js' %}"></script>
+  <script>
+    (function () {
+      const form = document.getElementById("planoStep1Form");
+      if (!form) return;
+
+      const dataUnica = document.getElementById("id_data_unica");
+      const dataFimWrap = document.getElementById("dataFimWrap");
+      const dataFimInput = document.getElementById("id_data_fim");
+      const inicioInput = document.getElementById("id_horario_inicio");
+      const fimInput = document.getElementById("id_horario_fim");
+      const previewInput = document.getElementById("horarioPreview");
+      const pcprWrap = document.getElementById("pcprNomeWrap");
+      const solicitanteInputs = Array.from(form.querySelectorAll("input[name='solicitantes']"));
+
+      const destinosList = document.getElementById("destinosList");
+      const destinoTemplate = document.getElementById("destinoTemplate");
+      const addDestinoBtn = document.getElementById("addDestinoBtn");
+      const destinosTotalForms = document.getElementById("destinosTotalForms");
+      const destinosOrder = document.getElementById("destinosOrder");
+
+      const updateElementIndex = (element, index, prefix) => {
+        const regex = new RegExp(`${prefix}-(\\d+|__prefix__)-`, "g");
+        element.querySelectorAll("[name], [id], [for]").forEach((item) => {
+          if (item.name) item.name = item.name.replace(regex, `${prefix}-${index}-`);
+          if (item.id) item.id = item.id.replace(regex, `${prefix}-${index}-`);
+          if (item.htmlFor) item.htmlFor = item.htmlFor.replace(regex, `${prefix}-${index}-`);
+        });
+        element.dataset.index = String(index);
+      };
+
+      const getDestinoItems = () => Array.from(destinosList.querySelectorAll(".destino-item"));
+      const syncDestinos = () => {
+        const items = getDestinoItems();
+        items.forEach((item, index) => updateElementIndex(item, index, "destinos"));
+        destinosTotalForms.value = String(items.length);
+        destinosOrder.value = items.map((_, index) => String(index)).join(",");
+      };
+
+      const updateDataFim = () => {
+        const isSingle = Boolean(dataUnica?.checked);
+        if (!dataFimWrap || !dataFimInput) return;
+        dataFimWrap.classList.toggle("is-hidden", isSingle);
+        dataFimInput.required = !isSingle;
+        if (isSingle) dataFimInput.value = "";
+      };
+
+      const formatHora = (value) => {
+        if (!value) return "";
+        const [h, m] = value.split(":");
+        if (!h) return "";
+        if (!m || m === "00") return `${h}h`;
+        return `${h}h${m}`;
+      };
+
+      const updateHorarioPreview = () => {
+        const ini = formatHora(inicioInput?.value || "");
+        const fim = formatHora(fimInput?.value || "");
+        previewInput.value = ini && fim ? `das ${ini} as ${fim}` : "-";
+      };
+
+      const updateSolicitantePcpr = () => {
+        const hasPcpr = solicitanteInputs.some((input) => input.checked && input.value === "PCPR na Comunidade");
+        if (pcprWrap) pcprWrap.style.display = hasPcpr ? "block" : "none";
+      };
+
+      addDestinoBtn?.addEventListener("click", () => {
+        const html = destinoTemplate.innerHTML.replace(/__prefix__/g, String(getDestinoItems().length));
+        destinosList.insertAdjacentHTML("beforeend", html);
+        const newItem = getDestinoItems()[getDestinoItems().length - 1];
+        if (newItem && window.initializeAutocompleteSelects) {
+          window.initializeAutocompleteSelects(newItem);
+        }
+        syncDestinos();
+      });
+
+      destinosList?.addEventListener("click", (event) => {
+        const removeBtn = event.target.closest("[data-action='remove-destino']");
+        if (!removeBtn) return;
+        const item = removeBtn.closest(".destino-item");
+        if (!item) return;
+        if (getDestinoItems().length <= 1) return;
+        item.remove();
+        syncDestinos();
+      });
+
+      let dragItem = null;
+      destinosList?.addEventListener("dragstart", (event) => {
+        const handle = event.target.closest(".drag-handle");
+        if (!handle) return;
+        dragItem = handle.closest(".destino-item");
+        if (!dragItem) return;
+        dragItem.classList.add("is-dragging");
+      });
+      destinosList?.addEventListener("dragover", (event) => {
+        if (!dragItem) return;
+        event.preventDefault();
+        const overItem = event.target.closest(".destino-item");
+        if (!overItem || overItem === dragItem) return;
+        const rect = overItem.getBoundingClientRect();
+        const after = event.clientY - rect.top > rect.height / 2;
+        if (after) overItem.after(dragItem);
+        else overItem.before(dragItem);
+      });
+      destinosList?.addEventListener("dragend", () => {
+        if (dragItem) dragItem.classList.remove("is-dragging");
+        dragItem = null;
+        syncDestinos();
+      });
+
+      dataUnica?.addEventListener("change", updateDataFim);
+      inicioInput?.addEventListener("input", updateHorarioPreview);
+      fimInput?.addEventListener("input", updateHorarioPreview);
+      solicitanteInputs.forEach((input) => input.addEventListener("change", updateSolicitantePcpr));
+
+      updateDataFim();
+      updateHorarioPreview();
+      updateSolicitantePcpr();
+      syncDestinos();
+      window.initializeAutocompleteSelects?.(document);
+    })();
+  </script>
+{% endblock %}

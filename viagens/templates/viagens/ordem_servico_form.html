@@ -1,0 +1,41 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Ordem de Servico{% endblock %}
+
+{% block breadcrumb %}
+  Ordens de Servico <span class="breadcrumb-sep">/</span> {% if ordem %}Editar{% else %}Criar{% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">
+        {% if ordem %}Editar Ordem de Servico{% else %}Criar Ordem de Servico{% endif %}
+      </h2>
+      <p class="page-subtitle">
+        Oficio {{ oficio.numero_formatado|default:oficio.oficio|default:oficio.id }}
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="post">
+      {% csrf_token %}
+      <section class="grid">
+        {% for field in form %}
+          <label>
+            {{ field.label }}
+            {{ field }}
+            {% if field.errors %}
+              <span class="error">{{ field.errors|join:", " }}</span>
+            {% endif %}
+          </label>
+        {% endfor %}
+      </section>
+      <div class="wizard-actions">
+        <a class="btn-clear" href="{% url 'ordens_servico_list' %}">Voltar</a>
+        <button class="btn-primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

@@ -47,6 +47,9 @@ function initRoteiroFormset() {
   const diariasExtensoCard = document.getElementById("diariasExtenso");
   const diariasQtdCard = document.getElementById("diariasQtd");
   const diariasHorasCard = document.getElementById("diariasHoras");
+  const diariasPorServidorQtdCard = document.getElementById("diariasPorServidorQtd");
+  const diariasPorServidorValorCard = document.getElementById("diariasPorServidorValor");
+  const diariasValorUnitarioCard = document.getElementById("diariasValorUnitario");
   const diariasTotalQtd = document.getElementById("diariasTotalQtd");
   const diariasTotalHoras = document.getElementById("diariasTotalHoras");
   const diariasTotalValor = document.getElementById("diariasTotalValor");
@@ -300,6 +303,15 @@ function initRoteiroFormset() {
     if (diariasHorasCard) {
       diariasHorasCard.textContent = "-";
     }
+    if (diariasPorServidorQtdCard) {
+      diariasPorServidorQtdCard.textContent = "-";
+    }
+    if (diariasPorServidorValorCard) {
+      diariasPorServidorValorCard.textContent = "-";
+    }
+    if (diariasValorUnitarioCard) {
+      diariasValorUnitarioCard.textContent = "-";
+    }
     if (diariasTotalQtd) {
       diariasTotalQtd.textContent = "-";
     }
@@ -454,6 +466,15 @@ function initRoteiroFormset() {
     }
     if (diariasHorasCard) {
       diariasHorasCard.textContent = formatHours(totais.total_horas);
+    }
+    if (diariasPorServidorQtdCard) {
+      diariasPorServidorQtdCard.textContent = totais.diarias_por_servidor || "-";
+    }
+    if (diariasPorServidorValorCard) {
+      diariasPorServidorValorCard.textContent = formatMoney(totais.valor_por_servidor);
+    }
+    if (diariasValorUnitarioCard) {
+      diariasValorUnitarioCard.textContent = formatMoney(totais.valor_unitario_referencia);
     }
     if (diariasTotalQtd) {
       diariasTotalQtd.textContent = totais.total_diarias || "-";

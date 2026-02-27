@@ -241,6 +241,19 @@ def calculate_periods_from_payload(
         periodos_out.append(out)
 
     total_valor_str = _currency(total_valor_decimal)
+    valor_por_servidor = (
+        (total_valor_decimal / Decimal(servidores)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if servidores > 0
+        else total_valor_decimal
+    )
+    valores_unitarios = [str(item.get("valor_diaria", "") or "").strip() for item in periodos_out]
+    valores_unitarios = [item for item in valores_unitarios if item]
+    if len(set(valores_unitarios)) == 1:
+        valor_unitario_referencia = valores_unitarios[0]
+    elif valores_unitarios:
+        valor_unitario_referencia = f"{valores_unitarios[0]} (variavel por periodo)"
+    else:
+        valor_unitario_referencia = ""
     valor_extenso = valor_por_extenso_ptbr(total_valor_str) or ""
     return {
         "periodos": periodos_out,
@@ -249,5 +262,9 @@ def calculate_periods_from_payload(
             "total_horas": round(total_horas, 2),
             "total_valor": total_valor_str,
             "valor_extenso": valor_extenso,
+            "quantidade_servidores": servidores,
+            "diarias_por_servidor": _total_diarias_resumo(periodos_out),
+            "valor_por_servidor": _currency(valor_por_servidor),
+            "valor_unitario_referencia": valor_unitario_referencia,
         },
     }

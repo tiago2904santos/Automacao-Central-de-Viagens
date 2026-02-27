@@ -767,6 +767,12 @@ textarea {
   border-color: rgba(15, 118, 110, 0.35);
 }
 
+.btn-clear.is-active {
+  background-color: var(--brand-primary);
+  color: #fff;
+  border-color: var(--brand-primary);
+}
+
 .btn-small {
   height: 36px;
   padding: 0 14px;
@@ -974,6 +980,28 @@ textarea {
   gap: 12px;
   align-items: center;
   justify-content: flex-end;
+}
+
+.document-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 18px 0;
+}
+
+.documentos-central-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.documentos-central-actions form {
+  margin: 0;
+  display: block;
+}
+
+.documentos-central-actions .btn-primary[disabled] {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .trecho-list {

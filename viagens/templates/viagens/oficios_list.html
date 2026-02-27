@@ -90,8 +90,10 @@
                 <div class="table-actions table-actions--right">
                   {% if oficio.status == "DRAFT" %}
                     <a href="{% url 'oficio_draft_resume' oficio.id %}" class="btn-edit">Continuar rascunho</a>
+                    <a href="{% url 'oficio_documentos' oficio.id %}" class="btn-clear btn-small">Documentos</a>
                   {% else %}
                     <a href="{% url 'oficio_edit_step1' oficio.id %}" class="btn-edit">Editar</a>
+                    <a href="{% url 'oficio_documentos' oficio.id %}" class="btn-clear btn-small">Documentos</a>
                     <a class="btn-icon btn-icon--docx" href="{% url 'oficio_download_docx' oficio.id %}" aria-label="Baixar DOCX">W</a>
                     <a class="btn-icon btn-icon--pdf" href="{% url 'oficio_download_pdf' oficio.id %}" aria-label="Baixar PDF">PDF</a>
                   {% endif %}

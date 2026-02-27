@@ -1,0 +1,101 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Planos de Trabalho{% endblock %}
+
+{% block breadcrumb %}
+  Documentos <span class="breadcrumb-sep">/</span> Planos de Trabalho
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Planos de Trabalho</h2>
+      <p class="page-subtitle">Lista de planos e pendencias por oficio.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="get" class="grid">
+      <label>
+        Ano
+        <input class="input-field" type="text" name="ano" value="{{ filters.ano }}" />
+      </label>
+      <label>
+        Oficio
+        <input class="input-field" type="text" name="oficio" value="{{ filters.oficio }}" />
+      </label>
+      <label>
+        Protocolo
+        <input class="input-field" type="text" name="protocolo" value="{{ filters.protocolo }}" />
+      </label>
+      <label>
+        Destino
+        <input class="input-field" type="text" name="destino" value="{{ filters.destino }}" />
+      </label>
+      <div class="wizard-actions">
+        <button class="btn-primary" type="submit">Filtrar</button>
+        <a class="btn-clear" href="{% url 'planos_trabalho_list' %}">Limpar</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Plano</th>
+          <th>Oficio</th>
+          <th>Protocolo</th>
+          <th>Periodo</th>
+          <th>Destinos</th>
+          <th>Status</th>
+          <th>Acoes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              {% if row.plano %}
+                {{ row.plano.numero }}/{{ row.plano.ano }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{{ row.oficio.numero_formatado|default:row.oficio.oficio|default:row.oficio.id }}</td>
+            <td>{{ row.oficio.protocolo_formatado|default:row.oficio.protocolo|default:"-" }}</td>
+            <td>{{ row.data_inicio|date:"d/m/Y" }} a {{ row.data_fim|date:"d/m/Y" }}</td>
+            <td>{{ row.destinos }}</td>
+            <td>{{ row.status }}</td>
+            <td>
+              <a href="{% url 'plano_trabalho_editar' row.oficio.id %}">Ver/Editar</a> |
+              <a href="{% url 'plano_trabalho_download_docx' row.oficio.id %}">DOCX</a> |
+              <a href="{% url 'plano_trabalho_download_pdf' row.oficio.id %}">PDF</a> |
+              <a href="{% url 'oficio_documentos' row.oficio.id %}">Oficio</a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="7">Nenhum registro encontrado.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="wizard-actions">
+      {% if page_obj.has_previous %}
+        <a class="btn-clear" href="?page={{ page_obj.previous_page_number }}{% if querystring %}&{{ querystring }}{% endif %}">
+          Pagina anterior
+        </a>
+      {% endif %}
+      <span>Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn-clear" href="?page={{ page_obj.next_page_number }}{% if querystring %}&{{ querystring }}{% endif %}">
+          Proxima pagina
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}

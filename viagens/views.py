@@ -21,7 +21,7 @@ from django.db.models import Count, Q
 from django.db.models.functions import ExtractMonth, TruncDate
 from django.forms import inlineformset_factory
 from django.forms.models import BaseInlineFormSet
-from django.http import JsonResponse
+from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -29,9 +29,15 @@ from django.utils.dateparse import parse_date, parse_time
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_GET, require_http_methods
 from .forms import (
+    JustificativaForm,
     MotoristaSelectForm,
     MotoristaTransporteForm,
     OficioNumeracaoForm,
+    OrdemServicoForm,
+    PlanoTrabalhoForm,
+    PlanoTrabalhoStep1Form,
+    PlanoTrabalhoStep2Form,
+    PlanoTrabalhoStep3Form,
     ServidoresSelectForm,
     TrechoForm,
     ViajanteNormalizeForm,
@@ -39,9 +45,18 @@ from .forms import (
 from .models import (
     Cargo,
     Cidade,
+    CoordenadorMunicipal,
     Estado,
     Oficio,
     OficioCounter,
+    OrdemServico,
+    PlanoTrabalho,
+    PlanoTrabalhoAtividade,
+    PlanoTrabalhoLocalAtuacao,
+    PlanoTrabalhoMeta,
+    PlanoTrabalhoRecurso,
+    get_next_ordem_num,
+    get_next_plano_num,
     TermoAutorizacao,
     Trecho,
     Viajante,
@@ -50,8 +65,32 @@ from .models import (
 from .diarias import PeriodMarker, calculate_periodized_diarias
 from .simulacao import calculate_periods_from_payload
 from .services.oficio_helpers import build_assunto, infer_tipo_destino, valor_por_extenso_ptbr
+from .services.plano_trabalho import (
+    ATIVIDADE_META_PAIRS,
+    DEFAULT_COORDENADOR_PLANO_CARGO,
+    DEFAULT_COORDENADOR_PLANO_NOME,
+    DEFAULT_UNIDADE_MOVEL_TEXTO,
+    build_coordenacao_formatada,
+    destinos_labels,
+    efetivo_total_servidores,
+    format_data_extenso_br,
+    format_lista_portugues,
+    format_periodo_evento_extenso,
+    formatar_efetivo_resumo,
+    formatar_horario_intervalo,
+    formatar_solicitante_exibicao,
+    normalize_destinos_payload,
+    normalize_efetivo_payload,
+    metas_from_atividades,
+    normalize_atividades_selecionadas,
+    normalize_solicitantes,
+    parse_horario_atendimento_intervalo,
+    permite_coordenador_municipal,
+)
 from .services.justificativas import (
     JUSTIFICATIVA_TEMPLATES,
+    get_antecedencia_dias,
+    get_primeira_saida_data,
     get_justificativa_template_text,
     has_justificativa_preenchida,
     requires_justificativa,
@@ -82,6 +121,9 @@ from .documents.document import (
     build_termo_autorizacao_docx_bytes,
     docx_bytes_to_pdf_bytes,
 )
+from .documents.generator import generate_all_documents
+from .documents.ordem_servico import build_ordem_servico_docx_bytes
+from .documents.plano_trabalho import build_plano_trabalho_docx_bytes
 
 
 logger = logging.getLogger(__name__)
@@ -4568,6 +4610,1307 @@ def oficio_editar(request, oficio_id: int):
 
 # viagens/views.py (adicione perto das outras views)
 
+
+def _docx_http_response(payload: bytes, filename: str) -> HttpResponse:
+    response = HttpResponse(
+        payload,
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _pdf_http_response(payload: bytes, filename: str) -> HttpResponse:
+    response = HttpResponse(payload, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _get_plano_trabalho(oficio: Oficio) -> PlanoTrabalho | None:
+    try:
+        return oficio.plano_trabalho
+    except PlanoTrabalho.DoesNotExist:
+        return None
+
+
+def _get_ordem_servico(oficio: Oficio) -> OrdemServico | None:
+    try:
+        return oficio.ordem_servico
+    except OrdemServico.DoesNotExist:
+        return None
+
+
+def _oficio_trechos(oficio: Oficio) -> list[Trecho]:
+    return list(
+        oficio.trechos.select_related(
+            "origem_cidade",
+            "origem_estado",
+            "destino_cidade",
+            "destino_estado",
+        ).order_by("ordem", "id")
+    )
+
+
+def _resolve_periodo_oficio(oficio: Oficio) -> tuple[date, date]:
+    trechos = _oficio_trechos(oficio)
+    inicio_datas = [trecho.saida_data for trecho in trechos if trecho.saida_data]
+    fim_datas = [
+        trecho.chegada_data or trecho.saida_data
+        for trecho in trechos
+        if trecho.chegada_data or trecho.saida_data
+    ]
+    if oficio.retorno_saida_data:
+        fim_datas.append(oficio.retorno_saida_data)
+    if oficio.retorno_chegada_data:
+        fim_datas.append(oficio.retorno_chegada_data)
+
+    today = timezone.localdate()
+    data_inicio = min(inicio_datas) if inicio_datas else today
+    data_fim = max(fim_datas) if fim_datas else data_inicio
+    if data_fim < data_inicio:
+        data_fim = data_inicio
+    return data_inicio, data_fim
+
+
+def _resolve_local_oficio(oficio: Oficio) -> str:
+    if oficio.cidade_sede and oficio.estado_sede:
+        return f"{oficio.cidade_sede.nome}/{oficio.estado_sede.sigla}"
+    if oficio.cidade_sede:
+        return oficio.cidade_sede.nome
+    if oficio.cidade_destino and oficio.estado_destino:
+        return f"{oficio.cidade_destino.nome}/{oficio.estado_destino.sigla}"
+    if oficio.cidade_destino:
+        return oficio.cidade_destino.nome
+
+    cfg = get_oficio_config()
+    sede_default = getattr(cfg, "sede_cidade_default", None)
+    if sede_default and getattr(sede_default, "estado", None):
+        return f"{sede_default.nome}/{sede_default.estado.sigla}"
+    return "Curitiba/PR"
+
+
+def _resolve_destinos_oficio(oficio: Oficio) -> str:
+    destinos: list[str] = []
+    seen: set[str] = set()
+    for trecho in _oficio_trechos(oficio):
+        if trecho.destino_cidade and trecho.destino_estado:
+            label = f"{trecho.destino_cidade.nome}/{trecho.destino_estado.sigla}"
+        elif trecho.destino_cidade:
+            label = trecho.destino_cidade.nome
+        else:
+            label = ""
+        if label and label not in seen:
+            seen.add(label)
+            destinos.append(label)
+
+    if not destinos:
+        if oficio.cidade_destino and oficio.estado_destino:
+            return f"{oficio.cidade_destino.nome}/{oficio.estado_destino.sigla}"
+        if oficio.cidade_destino:
+            return oficio.cidade_destino.nome
+        return "-"
+    if len(destinos) == 1:
+        return destinos[0]
+    if len(destinos) == 2:
+        return f"{destinos[0]} e {destinos[1]}"
+    return f"{', '.join(destinos[:-1])} e {destinos[-1]}"
+
+
+def _resolve_assinante_defaults() -> tuple[str, str]:
+    cfg = get_oficio_config()
+    assinante = getattr(cfg, "assinante", None)
+    if not assinante:
+        return "", ""
+    return (assinante.nome or "").strip(), (assinante.cargo or "").strip()
+
+
+def _resolve_assinante_id_default() -> int | None:
+    cfg = get_oficio_config()
+    assinante = getattr(cfg, "assinante", None)
+    if not assinante:
+        return None
+    return int(assinante.id)
+
+
+def _plano_locais_default(oficio: Oficio, data_inicio: date) -> list[dict[str, str]]:
+    locais: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for trecho in _oficio_trechos(oficio):
+        label = ""
+        if trecho.destino_cidade and trecho.destino_estado:
+            label = f"{trecho.destino_cidade.nome}/{trecho.destino_estado.sigla}"
+        elif trecho.destino_cidade:
+            label = trecho.destino_cidade.nome
+        elif trecho.destino_estado:
+            label = trecho.destino_estado.sigla
+        data_str = trecho.saida_data.isoformat() if trecho.saida_data else ""
+        if not label:
+            continue
+        key = (data_str, label)
+        if key in seen:
+            continue
+        seen.add(key)
+        locais.append({"data": data_str, "local": label})
+
+    if locais:
+        return locais
+    fallback_local = _resolve_local_oficio(oficio)
+    fallback_data = data_inicio.isoformat() if data_inicio else ""
+    return [{"data": fallback_data, "local": fallback_local}]
+
+
+def _serialize_ordered_text_items(values: list[str]) -> str:
+    return json.dumps([{"descricao": value} for value in values], ensure_ascii=False)
+
+
+def _serialize_locais_items(values: list[dict[str, object]]) -> str:
+    payload: list[dict[str, str]] = []
+    for item in values:
+        data_val = item.get("data")
+        if isinstance(data_val, date):
+            data_str = data_val.isoformat()
+        else:
+            data_str = str(data_val or "")
+        payload.append(
+            {
+                "data": data_str,
+                "local": str(item.get("local") or "").strip(),
+            }
+        )
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _plano_items_default_payload(oficio: Oficio, data_inicio: date) -> dict[str, str]:
+    atividades_default_values: list[str] = []
+    metas_default_values = metas_from_atividades(atividades_default_values)
+    metas_default = _serialize_ordered_text_items(metas_default_values)
+    atividades_default = _serialize_ordered_text_items(atividades_default_values)
+    recursos_default = _serialize_ordered_text_items(
+        [
+            "Unidade movel da PCPR.",
+        ]
+    )
+    locais_default = _serialize_locais_items(_plano_locais_default(oficio, data_inicio))
+    return {
+        "metas_json": metas_default,
+        "atividades_json": atividades_default,
+        "atividades_selecionadas": atividades_default_values,
+        "recursos_json": recursos_default,
+        "locais_json": locais_default,
+    }
+
+
+def _sync_plano_ordered_text_items(
+    plano: PlanoTrabalho,
+    *,
+    model_cls,
+    values: list[str],
+) -> None:
+    model_cls.objects.filter(plano=plano).delete()
+    bulk = [
+        model_cls(plano=plano, ordem=idx + 1, descricao=value)
+        for idx, value in enumerate(values)
+        if (value or "").strip()
+    ]
+    if bulk:
+        model_cls.objects.bulk_create(bulk)
+
+
+def _sync_plano_locais(plano: PlanoTrabalho, locais: list[dict[str, object]]) -> None:
+    PlanoTrabalhoLocalAtuacao.objects.filter(plano=plano).delete()
+    bulk = []
+    for idx, item in enumerate(locais):
+        local = str(item.get("local") or "").strip()
+        if not local:
+            continue
+        bulk.append(
+            PlanoTrabalhoLocalAtuacao(
+                plano=plano,
+                ordem=idx + 1,
+                data=item.get("data") if isinstance(item.get("data"), date) else None,
+                local=local,
+            )
+        )
+    if bulk:
+        PlanoTrabalhoLocalAtuacao.objects.bulk_create(bulk)
+
+
+def _plano_items_payload_from_instance(plano: PlanoTrabalho) -> dict[str, str]:
+    atividades = normalize_atividades_selecionadas(
+        [item.descricao for item in plano.atividades.all().order_by("ordem", "id")]
+    )
+    metas = metas_from_atividades(atividades)
+    recursos = [item.descricao for item in plano.recursos.all().order_by("ordem", "id")]
+    locais = [
+        {"data": item.data, "local": item.local}
+        for item in plano.locais_atuacao.all().order_by("ordem", "id")
+    ]
+    data_inicio = plano.data_inicio or timezone.localdate()
+    defaults = _plano_items_default_payload(plano.oficio, data_inicio)
+    return {
+        "metas_json": _serialize_ordered_text_items(metas) if metas else defaults["metas_json"],
+        "atividades_json": _serialize_ordered_text_items(atividades)
+        if atividades
+        else defaults["atividades_json"],
+        "atividades_selecionadas": atividades if atividades else defaults["atividades_selecionadas"],
+        "recursos_json": _serialize_ordered_text_items(recursos)
+        if recursos
+        else defaults["recursos_json"],
+        "locais_json": _serialize_locais_items(locais) if locais else defaults["locais_json"],
+    }
+
+
+def _plano_initial_data(oficio: Oficio) -> dict[str, object]:
+    data_inicio, data_fim = _resolve_periodo_oficio(oficio)
+    coordenador_nome, coordenador_cargo = _resolve_assinante_defaults()
+    items_payload = _plano_items_default_payload(oficio, data_inicio)
+    return {
+        "ano": int(oficio.ano or timezone.localdate().year),
+        "sigla_unidade": "ASCOM",
+        "programa_projeto": "PCPR na Comunidade",
+        "destino": _resolve_destinos_oficio(oficio),
+        "solicitante": "",
+        "contexto_solicitacao": "",
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "horario_atendimento": "das 09h as 17h",
+        "efetivo_formatado": f"{int(oficio.viajantes.count() or 0)} servidores.",
+        "estrutura_apoio": "",
+        "quantidade_servidores": oficio.viajantes.count(),
+        "composicao_diarias": "",
+        "valor_unitario": "",
+        "valor_total_calculado": "",
+        "coordenador_plano": _resolve_assinante_id_default(),
+        "possui_coordenador_municipal": "nao",
+        "coordenador_nome": coordenador_nome,
+        "coordenador_cargo": coordenador_cargo,
+        "metas_json": items_payload["metas_json"],
+        "atividades_json": items_payload["atividades_json"],
+        "atividades_selecionadas": items_payload["atividades_selecionadas"],
+        "recursos_json": items_payload["recursos_json"],
+        "locais_json": items_payload["locais_json"],
+    }
+
+
+def _derive_sigla_unidade_from_config() -> str:
+    cfg = get_oficio_config()
+    unidade = " ".join((getattr(cfg, "unidade_nome", "") or "").split())
+    if not unidade:
+        return "ASCOM"
+    if unidade.isupper() and len(unidade) <= 10 and " " not in unidade:
+        return unidade
+    tokens = [
+        token
+        for token in re.findall(r"[A-Za-z]+", unidade.upper())
+        if token not in {"DE", "DA", "DO", "DOS", "DAS", "E"}
+    ]
+    if not tokens:
+        return "ASCOM"
+    sigla = "".join(token[0] for token in tokens[:8])
+    return sigla or "ASCOM"
+
+
+def _plano_default_destinos_payload(oficio: Oficio) -> list[dict[str, str]]:
+    destinos: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for trecho in _oficio_trechos(oficio):
+        uf = trecho.destino_estado.sigla if trecho.destino_estado else ""
+        cidade = str(trecho.destino_cidade_id or "")
+        if not uf and trecho.destino_cidade and trecho.destino_cidade.estado:
+            uf = trecho.destino_cidade.estado.sigla
+        if not cidade and trecho.destino_cidade:
+            cidade = trecho.destino_cidade.nome
+        if not uf and not cidade:
+            continue
+        key = (uf, cidade)
+        if key in seen:
+            continue
+        seen.add(key)
+        label = _format_trecho_local(trecho.destino_cidade, trecho.destino_estado)
+        destinos.append({"uf": uf, "cidade": cidade, "label": label})
+
+    if destinos:
+        return destinos
+    if oficio.cidade_destino and oficio.estado_destino:
+        return [
+            {
+                "uf": oficio.estado_destino.sigla,
+                "cidade": str(oficio.cidade_destino.id),
+                "label": f"{oficio.cidade_destino.nome}/{oficio.estado_destino.sigla}",
+            }
+        ]
+    sede_default_id = _get_sede_cidade_default_id()
+    return [{"uf": "PR", "cidade": sede_default_id, "label": ""}]
+
+
+def _sync_plano_destinos(plano: PlanoTrabalho, destinos_payload: list[dict[str, str]]) -> None:
+    normalized = normalize_destinos_payload(destinos_payload)
+    labels = destinos_labels(normalized)
+    plano.destinos_json = normalized
+    plano.destino = format_lista_portugues(labels)
+    if labels:
+        plano.local = labels[0]
+    locais = [{"data": plano.data_inicio, "local": label} for label in labels]
+    if locais:
+        _sync_plano_locais(plano, locais)
+
+
+def _ensure_plano_wizard_instance(oficio: Oficio) -> PlanoTrabalho:
+    plano = _get_plano_trabalho(oficio)
+    if plano:
+        return plano
+
+    data_inicio, data_fim = _resolve_periodo_oficio(oficio)
+    destinos_payload = _plano_default_destinos_payload(oficio)
+    destinos_norm = normalize_destinos_payload(destinos_payload)
+    labels = destinos_labels(destinos_norm)
+    qtd_servidores = int(oficio.viajantes.count() or 0)
+    cfg = get_oficio_config()
+    assinante = getattr(cfg, "assinante", None)
+    coordenador_nome = (getattr(assinante, "nome", "") or "").strip() or DEFAULT_COORDENADOR_PLANO_NOME
+    coordenador_cargo = (getattr(assinante, "cargo", "") or "").strip() or DEFAULT_COORDENADOR_PLANO_CARGO
+
+    with transaction.atomic():
+        plano = PlanoTrabalho.objects.create(
+            oficio=oficio,
+            numero=get_next_plano_num(int(oficio.ano or timezone.localdate().year)),
+            ano=int(oficio.ano or timezone.localdate().year),
+            sigla_unidade=_derive_sigla_unidade_from_config(),
+            programa_projeto="",
+            solicitantes_json=[],
+            destino=format_lista_portugues(labels) or _resolve_destinos_oficio(oficio),
+            destinos_json=destinos_norm,
+            solicitante="",
+            local=(labels[0] if labels else _resolve_local_oficio(oficio)),
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            horario_inicio=parse_time("09:00"),
+            horario_fim=parse_time("17:00"),
+            horario_atendimento="das 09h as 17h",
+            efetivo_json=(
+                [{"cargo": "Servidores", "quantidade": qtd_servidores}]
+                if qtd_servidores > 0
+                else []
+            ),
+            efetivo_formatado=(
+                f"Servidores: {qtd_servidores}" if qtd_servidores > 0 else ""
+            ),
+            efetivo_por_dia=qtd_servidores,
+            quantidade_servidores=qtd_servidores,
+            unidade_movel=False,
+            estrutura_apoio="",
+            composicao_diarias=(oficio.quantidade_diarias or "").strip() or "1 x 100%",
+            valor_total=(oficio.valor_diarias or "").strip(),
+            coordenador_plano=assinante if isinstance(assinante, Viajante) else None,
+            coordenador_nome=coordenador_nome,
+            coordenador_cargo=coordenador_cargo,
+            possui_coordenador_municipal=False,
+        )
+        _sync_plano_destinos(plano, destinos_norm)
+        plano.save(update_fields=["destinos_json", "destino", "local", "updated_at"])
+        if not plano.recursos.exists():
+            PlanoTrabalhoRecurso.objects.create(
+                plano=plano,
+                ordem=1,
+                descricao="Unidade movel da PCPR.",
+            )
+    return plano
+
+
+def _plano_destinos_initial(plano: PlanoTrabalho, oficio: Oficio) -> list[dict[str, str]]:
+    destinos_payload = (
+        plano.destinos_json if isinstance(plano.destinos_json, list) and plano.destinos_json else []
+    )
+    if not destinos_payload:
+        destinos_payload = _plano_default_destinos_payload(oficio)
+    normalized = []
+    for item in normalize_destinos_payload(destinos_payload):
+        normalized.append({"uf": item.get("uf", ""), "cidade": item.get("cidade", "")})
+    return _build_destinos_display(_normalize_destinos_for_wizard(normalized))
+
+
+def _plano_diarias_resultado(plano: PlanoTrabalho, oficio: Oficio) -> dict | None:
+    trechos = _oficio_trechos(oficio)
+    if not trechos:
+        return None
+    retorno_data = oficio.retorno_chegada_data or plano.data_fim
+    retorno_hora = oficio.retorno_chegada_hora or parse_time("18:00")
+    try:
+        return _calculate_periodized_diarias_for_trechos(
+            trechos,
+            retorno_data,
+            retorno_hora,
+            quantidade_servidores=max(1, int(plano.quantidade_servidores or 0)),
+        )
+    except ValueError:
+        return None
+
+
+def _plano_resumo_context(plano: PlanoTrabalho, oficio: Oficio) -> dict[str, object]:
+    solicitantes = normalize_solicitantes(
+        plano.solicitantes_json if isinstance(plano.solicitantes_json, list) else []
+    )
+    solicitantes_exibicao = formatar_solicitante_exibicao(
+        solicitantes,
+        nome_pcpr=plano.solicitante or "",
+    )
+    destinos = destinos_labels(plano.destinos_json if isinstance(plano.destinos_json, list) else [])
+    efetivo_rows = normalize_efetivo_payload(
+        plano.efetivo_json if isinstance(plano.efetivo_json, list) else []
+    )
+    diarias = _plano_diarias_resultado(plano, oficio) or {}
+    recursos = [item.descricao for item in plano.recursos.all().order_by("ordem", "id")]
+    return {
+        "plano": plano,
+        "oficio": oficio,
+        "numero_plano_formatado": f"{int(plano.numero or 0):02d}/{int(plano.ano or timezone.localdate().year)}",
+        "solicitantes_exibicao": solicitantes_exibicao or "-",
+        "destinos_exibicao": format_lista_portugues(destinos) or "-",
+        "dias_evento_extenso": format_periodo_evento_extenso(plano.data_inicio, plano.data_fim),
+        "horario_atendimento": (
+            formatar_horario_intervalo(plano.horario_inicio, plano.horario_fim)
+            or plano.horario_atendimento
+            or "-"
+        ),
+        "efetivo_rows": efetivo_rows,
+        "efetivo_total": efetivo_total_servidores(efetivo_rows) or int(plano.quantidade_servidores or 0),
+        "unidade_movel": plano.unidade_movel,
+        "coordenacao_formatada": build_coordenacao_formatada(plano),
+        "diarias_resultado": diarias,
+        "recursos": recursos,
+        "data_resumo_extenso": format_data_extenso_br(timezone.localdate()),
+    }
+
+
+def _ordem_initial_data(oficio: Oficio) -> dict[str, object]:
+    determinante_nome, determinante_cargo = _resolve_assinante_defaults()
+    return {
+        "ano": int(oficio.ano or timezone.localdate().year),
+        "referencia": "Diligências",
+        "determinante_nome": determinante_nome,
+        "determinante_cargo": determinante_cargo,
+        "finalidade": (oficio.motivo or "").strip(),
+    }
+
+
+def _pdf_unavailable_response(document_label: str, exc: Exception) -> HttpResponse:
+    return HttpResponseBadRequest(
+        f"PDF indisponivel para {document_label} neste ambiente. Gere o DOCX. Detalhe: {exc}"
+    )
+
+
+def _resolve_documentos_active_tab(
+    raw_tab: str | None,
+    *,
+    tem_plano: bool,
+    exige_justificativa: bool,
+) -> str:
+    tab = (raw_tab or "").strip().lower() or "oficio"
+    allowed_tabs = {"oficio", "termo", "plano"}
+    if not tem_plano:
+        allowed_tabs.add("ordem")
+    if exige_justificativa:
+        allowed_tabs.add("justificativa")
+    if tab not in allowed_tabs:
+        return "oficio"
+    return tab
+
+
+@require_GET
+def oficio_documentos(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("viajantes", "trechos"),
+        id=oficio_id,
+    )
+    plano_trabalho = _get_plano_trabalho(oficio)
+    ordem_servico = _get_ordem_servico(oficio)
+    tem_plano = plano_trabalho is not None
+    tem_ordem = ordem_servico is not None
+    antecedencia = get_antecedencia_dias(oficio=oficio)
+    exige_justificativa = requires_justificativa(oficio=oficio)
+    justificativa_ok = has_justificativa_preenchida(oficio)
+    justificativa_pendente = exige_justificativa and not justificativa_ok
+    active_tab = _resolve_documentos_active_tab(
+        request.GET.get("tab"),
+        tem_plano=tem_plano,
+        exige_justificativa=exige_justificativa,
+    )
+    return render(
+        request,
+        "viagens/oficio_documentos.html",
+        {
+            "oficio": oficio,
+            "plano_trabalho": plano_trabalho,
+            "ordem_servico": ordem_servico,
+            "active_tab": active_tab,
+            "tem_plano": tem_plano,
+            "tem_ordem": tem_ordem,
+            "antecedencia": antecedencia,
+            "exige_justificativa": exige_justificativa,
+            "justificativa_ok": justificativa_ok,
+            "justificativa_pendente": justificativa_pendente,
+        },
+    )
+
+
+@require_http_methods(["POST"])
+def oficio_documentos_gerar_todos(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("viajantes", "trechos"),
+        id=oficio_id,
+    )
+    if _requires_justificativa_pendente(oficio):
+        messages.error(request, JUSTIFICATIVA_REQUIRED_MESSAGE)
+        return _redirect_to_oficio_justificativa(
+            oficio,
+            next_url=reverse("oficio_documentos", args=[oficio.id]),
+        )
+
+    try:
+        docs = generate_all_documents(oficio, pdf_if_available=True)
+    except MotoristaCaronaValidationError as exc:
+        messages.error(request, str(exc))
+        return redirect("oficio_edit_step2", oficio_id=oficio.id)
+    except AssinaturaObrigatoriaError as exc:
+        messages.error(request, str(exc))
+        return redirect("config_oficio")
+    except Exception as exc:
+        logger.exception("[oficio-documentos] falha ao gerar documentos: oficio_id=%s", oficio.id)
+        messages.error(request, f"Falha ao gerar documentos. Detalhe: {exc}")
+        return redirect("oficio_documentos", oficio_id=oficio.id)
+
+    messages.success(
+        request,
+        "Documentos gerados com sucesso: " + ", ".join(sorted(docs.keys())),
+    )
+    return redirect("oficio_documentos", oficio_id=oficio.id)
+
+
+@require_GET
+def planos_trabalho_list(request):
+    ano_raw = (request.GET.get("ano") or "").strip()
+    oficio_raw = (request.GET.get("oficio") or "").strip()
+    protocolo_raw = (request.GET.get("protocolo") or "").strip()
+    destino_raw = (request.GET.get("destino") or "").strip()
+
+    params = request.GET.copy()
+    params.pop("page", None)
+    querystring = params.urlencode()
+
+    oficios = (
+        Oficio.objects.select_related(
+            "cidade_destino",
+            "estado_destino",
+            "plano_trabalho",
+        )
+        .prefetch_related("trechos")
+        .order_by("-created_at")
+    )
+
+    if ano_raw.isdigit():
+        ano_val = int(ano_raw)
+        oficios = oficios.filter(
+            models.Q(plano_trabalho__ano=ano_val) | models.Q(ano=ano_val)
+        )
+    if oficio_raw:
+        normalized = normalize_oficio_num(oficio_raw)
+        oficios = oficios.filter(
+            models.Q(oficio__icontains=oficio_raw)
+            | models.Q(oficio__icontains=normalized)
+            | models.Q(numero__in=[int(x) for x in re.findall(r"\d+", oficio_raw)] if re.findall(r"\d+", oficio_raw) else [])
+        )
+    if protocolo_raw:
+        normalized = normalize_protocolo_num(protocolo_raw)
+        oficios = oficios.filter(
+            models.Q(protocolo__icontains=protocolo_raw)
+            | models.Q(protocolo__icontains=normalized)
+        )
+    if destino_raw:
+        oficios = oficios.filter(
+            models.Q(cidade_destino__nome__icontains=destino_raw)
+            | models.Q(destino__icontains=destino_raw)
+            | models.Q(trechos__destino_cidade__nome__icontains=destino_raw)
+        ).distinct()
+
+    paginator = Paginator(oficios, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    rows: list[dict[str, object]] = []
+    for oficio in page_obj:
+        plano = _get_plano_trabalho(oficio)
+        data_inicio, data_fim = _resolve_periodo_oficio(oficio)
+        rows.append(
+            {
+                "oficio": oficio,
+                "plano": plano,
+                "status": "Gerado" if plano else "Pendente",
+                "data_inicio": data_inicio,
+                "data_fim": data_fim,
+                "destinos": _resolve_destinos_oficio(oficio),
+            }
+        )
+
+    return render(
+        request,
+        "viagens/planos_trabalho_list.html",
+        {
+            "rows": rows,
+            "page_obj": page_obj,
+            "querystring": querystring,
+            "filters": {
+                "ano": ano_raw,
+                "oficio": oficio_raw,
+                "protocolo": protocolo_raw,
+                "destino": destino_raw,
+            },
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def plano_trabalho_editar(request, oficio_id: int):
+    if request.method == "GET":
+        return redirect("plano_trabalho_step1", oficio_id=oficio_id)
+
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos", "viajantes"),
+        id=oficio_id,
+    )
+    plano = _get_plano_trabalho(oficio)
+    form = PlanoTrabalhoForm(request.POST, instance=plano)
+    if form.is_valid():
+        with transaction.atomic():
+            plano_obj = form.save(commit=False)
+            if not plano_obj.ano:
+                plano_obj.ano = int(oficio.ano or timezone.localdate().year)
+            if not plano_obj.numero:
+                plano_obj.numero = get_next_plano_num(int(plano_obj.ano))
+            plano_obj.oficio = oficio
+            if not (plano_obj.sigla_unidade or "").strip():
+                plano_obj.sigla_unidade = _derive_sigla_unidade_from_config()
+            if not (plano_obj.destino or "").strip():
+                plano_obj.destino = _resolve_destinos_oficio(oficio)
+
+            locais = form.parsed_locais
+            local_principal = ""
+            if locais:
+                local_principal = str(locais[0].get("local") or "").strip()
+            plano_obj.local = local_principal or _resolve_local_oficio(oficio)
+
+            if not plano_obj.quantidade_servidores:
+                plano_obj.quantidade_servidores = int(oficio.viajantes.count() or 0)
+            if not plano_obj.efetivo_por_dia:
+                plano_obj.efetivo_por_dia = int(plano_obj.quantidade_servidores or 0)
+
+            if plano_obj.coordenador_plano:
+                plano_obj.coordenador_nome = plano_obj.coordenador_plano.nome
+                plano_obj.coordenador_cargo = plano_obj.coordenador_plano.cargo
+
+            if plano_obj.possui_coordenador_municipal and not plano_obj.coordenador_municipal:
+                nome = " ".join(
+                    (form.cleaned_data.get("coordenador_municipal_nome") or "").split()
+                )
+                cargo = " ".join(
+                    (form.cleaned_data.get("coordenador_municipal_cargo") or "").split()
+                )
+                cidade = " ".join(
+                    (form.cleaned_data.get("coordenador_municipal_cidade") or "").split()
+                )
+                if nome and cargo and cidade:
+                    coordenador_municipal = CoordenadorMunicipal.objects.filter(
+                        nome__iexact=nome,
+                        cargo__iexact=cargo,
+                        cidade__iexact=cidade,
+                    ).first()
+                    if not coordenador_municipal:
+                        coordenador_municipal = CoordenadorMunicipal.objects.create(
+                            nome=nome,
+                            cargo=cargo,
+                            cidade=cidade,
+                            ativo=True,
+                        )
+                    plano_obj.coordenador_municipal = coordenador_municipal
+
+            plano_obj.save()
+
+            _sync_plano_ordered_text_items(
+                plano_obj,
+                model_cls=PlanoTrabalhoMeta,
+                values=form.parsed_metas,
+            )
+            _sync_plano_ordered_text_items(
+                plano_obj,
+                model_cls=PlanoTrabalhoAtividade,
+                values=form.parsed_atividades,
+            )
+            _sync_plano_ordered_text_items(
+                plano_obj,
+                model_cls=PlanoTrabalhoRecurso,
+                values=form.parsed_recursos,
+            )
+            _sync_plano_locais(plano_obj, form.parsed_locais)
+
+        messages.success(request, "Plano de trabalho salvo com sucesso.")
+        return redirect("oficio_documentos", oficio_id=oficio.id)
+
+    return render(
+        request,
+        "viagens/plano_trabalho_form.html",
+        {
+            "form": form,
+            "oficio": oficio,
+            "plano": plano,
+            "atividade_meta_pairs_json": json.dumps(ATIVIDADE_META_PAIRS, ensure_ascii=False),
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def plano_trabalho_step1(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos", "viajantes"),
+        id=oficio_id,
+    )
+    plano = _ensure_plano_wizard_instance(oficio)
+    estados = Estado.objects.order_by("sigla")
+    destinos_post = _plano_destinos_initial(plano, oficio)
+    erros: dict[str, str] = {}
+
+    horario_inicio = plano.horario_inicio
+    horario_fim = plano.horario_fim
+    if (not horario_inicio or not horario_fim) and plano.horario_atendimento:
+        horario_inicio, horario_fim = parse_horario_atendimento_intervalo(plano.horario_atendimento)
+
+    initial = {
+        "solicitantes": normalize_solicitantes(
+            plano.solicitantes_json if isinstance(plano.solicitantes_json, list) else []
+        ),
+        "solicitante_pcpr_nome": plano.solicitante or "",
+        "data_unica": bool(plano.data_inicio and plano.data_fim and plano.data_inicio == plano.data_fim),
+        "data_inicio": plano.data_inicio,
+        "data_fim": plano.data_fim,
+        "horario_inicio": horario_inicio or parse_time("09:00"),
+        "horario_fim": horario_fim or parse_time("17:00"),
+    }
+
+    if request.method == "POST":
+        form = PlanoTrabalhoStep1Form(request.POST, initial=initial)
+        _, _, destinos_raw = _serialize_sede_destinos_from_post(request.POST)
+        destinos_validos = [
+            destino
+            for destino in destinos_raw
+            if (destino.get("uf") or "").strip() and (destino.get("cidade") or "").strip()
+        ]
+        destinos_post = _build_destinos_display(_normalize_destinos_for_wizard(destinos_raw or [{}]))
+        if not destinos_validos:
+            erros["destinos"] = "Informe ao menos um destino."
+
+        if form.is_valid() and not erros:
+            destinos_payload: list[dict[str, str]] = []
+            for destino in destinos_validos:
+                uf = (destino.get("uf") or "").strip().upper()
+                cidade = (destino.get("cidade") or "").strip()
+                estado_obj = _resolve_estado(uf)
+                cidade_obj = _resolve_cidade(cidade, estado=estado_obj)
+                label = _format_trecho_local(cidade_obj, estado_obj)
+                if not label:
+                    label = f"{cidade}/{uf}" if cidade and uf else cidade or uf
+                destinos_payload.append({"uf": uf, "cidade": cidade, "label": label})
+
+            solicitantes = form.cleaned_data["solicitantes"]
+            with transaction.atomic():
+                plano.solicitantes_json = solicitantes
+                plano.solicitante = form.cleaned_data["solicitante_pcpr_nome"]
+                plano.data_inicio = form.cleaned_data["data_inicio"]
+                plano.data_fim = form.cleaned_data["data_fim"]
+                plano.horario_inicio = form.cleaned_data["horario_inicio"]
+                plano.horario_fim = form.cleaned_data["horario_fim"]
+                plano.horario_atendimento = form.cleaned_data["horario_atendimento"]
+                plano.sigla_unidade = _derive_sigla_unidade_from_config()
+                plano.possui_coordenador_municipal = False
+                if not permite_coordenador_municipal(solicitantes):
+                    plano.coordenador_municipal = None
+                _sync_plano_destinos(plano, destinos_payload)
+                plano.save()
+
+            return redirect("plano_trabalho_step2", oficio_id=oficio.id)
+    else:
+        form = PlanoTrabalhoStep1Form(initial=initial)
+
+    destinos_order = ",".join(str(idx) for idx in range(len(destinos_post)))
+    return render(
+        request,
+        "viagens/plano_trabalho_step1.html",
+        {
+            "oficio": oficio,
+            "plano": plano,
+            "form": form,
+            "erros": erros,
+            "estados": estados,
+            "destinos": destinos_post,
+            "destinos_total_forms": len(destinos_post),
+            "destinos_order": destinos_order,
+            "numero_plano_formatado": f"{int(plano.numero or 0):02d}/{int(plano.ano or timezone.localdate().year)}",
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def plano_trabalho_step2(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos", "viajantes"),
+        id=oficio_id,
+    )
+    plano = _ensure_plano_wizard_instance(oficio)
+    solicitantes = normalize_solicitantes(
+        plano.solicitantes_json if isinstance(plano.solicitantes_json, list) else []
+    )
+    permite_municipal = permite_coordenador_municipal(solicitantes)
+    efetivo_rows = normalize_efetivo_payload(
+        plano.efetivo_json if isinstance(plano.efetivo_json, list) else []
+    )
+    if not efetivo_rows and plano.quantidade_servidores:
+        efetivo_rows = [{"cargo": "Servidores", "quantidade": int(plano.quantidade_servidores)}]
+
+    initial = {
+        "efetivo_json": json.dumps(efetivo_rows, ensure_ascii=False),
+        "unidade_movel": "sim" if plano.unidade_movel else "nao",
+        "coordenador_plano": plano.coordenador_plano_id or "",
+        "coordenador_plano_nome": plano.coordenador_nome or DEFAULT_COORDENADOR_PLANO_NOME,
+        "coordenador_plano_cargo": plano.coordenador_cargo or DEFAULT_COORDENADOR_PLANO_CARGO,
+        "coordenador_municipal": plano.coordenador_municipal_id or "",
+        "coordenador_municipal_nome": "",
+        "coordenador_municipal_cargo": "",
+        "coordenador_municipal_cidade": "",
+    }
+
+    if request.method == "POST":
+        form = PlanoTrabalhoStep2Form(
+            request.POST,
+            permite_municipal=permite_municipal,
+            initial=initial,
+        )
+        if form.is_valid():
+            with transaction.atomic():
+                efetivo_payload = form.parsed_efetivo
+                total_servidores = efetivo_total_servidores(efetivo_payload)
+
+                plano.efetivo_json = efetivo_payload
+                plano.quantidade_servidores = total_servidores
+                plano.efetivo_por_dia = total_servidores
+                plano.efetivo_formatado = formatar_efetivo_resumo(efetivo_payload)
+                plano.unidade_movel = bool(form.cleaned_data["unidade_movel"])
+                if plano.unidade_movel:
+                    plano.estrutura_apoio = DEFAULT_UNIDADE_MOVEL_TEXTO
+                else:
+                    plano.estrutura_apoio = ""
+
+                plano.coordenador_plano = form.cleaned_data.get("coordenador_plano")
+                plano.coordenador_nome = form.cleaned_data["coordenador_plano_nome"]
+                plano.coordenador_cargo = form.cleaned_data["coordenador_plano_cargo"]
+                if plano.coordenador_plano:
+                    plano.coordenador_nome = plano.coordenador_plano.nome
+                    plano.coordenador_cargo = plano.coordenador_plano.cargo
+
+                if permite_municipal:
+                    coordenador_municipal = form.cleaned_data.get("coordenador_municipal")
+                    if not coordenador_municipal:
+                        nome = form.cleaned_data.get("coordenador_municipal_nome", "")
+                        cargo = form.cleaned_data.get("coordenador_municipal_cargo", "")
+                        cidade = form.cleaned_data.get("coordenador_municipal_cidade", "")
+                        if nome and cargo and cidade:
+                            coordenador_municipal = CoordenadorMunicipal.objects.filter(
+                                nome__iexact=nome,
+                                cargo__iexact=cargo,
+                                cidade__iexact=cidade,
+                            ).first()
+                            if not coordenador_municipal:
+                                coordenador_municipal = CoordenadorMunicipal.objects.create(
+                                    nome=nome,
+                                    cargo=cargo,
+                                    cidade=cidade,
+                                    ativo=True,
+                                )
+                    plano.coordenador_municipal = coordenador_municipal
+                    plano.possui_coordenador_municipal = bool(coordenador_municipal)
+                else:
+                    plano.coordenador_municipal = None
+                    plano.possui_coordenador_municipal = False
+                plano.save()
+            return redirect("plano_trabalho_step3", oficio_id=oficio.id)
+    else:
+        form = PlanoTrabalhoStep2Form(
+            initial=initial,
+            permite_municipal=permite_municipal,
+        )
+
+    return render(
+        request,
+        "viagens/plano_trabalho_step2.html",
+        {
+            "oficio": oficio,
+            "plano": plano,
+            "form": form,
+            "permite_municipal": permite_municipal,
+            "numero_plano_formatado": f"{int(plano.numero or 0):02d}/{int(plano.ano or timezone.localdate().year)}",
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def plano_trabalho_step3(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos", "viajantes"),
+        id=oficio_id,
+    )
+    plano = _ensure_plano_wizard_instance(oficio)
+    diarias_resultado = _plano_diarias_resultado(plano, oficio) or {}
+    totais_diarias = diarias_resultado.get("totais", {}) if isinstance(diarias_resultado, dict) else {}
+
+    recursos = [item.descricao for item in plano.recursos.all().order_by("ordem", "id")]
+    if not recursos:
+        recursos = ["Unidade movel da PCPR."]
+    valor_unitario_inicial = ""
+    if plano.valor_unitario:
+        valor_unitario_inicial = f"{plano.valor_unitario:.2f}".replace(".", ",")
+    elif totais_diarias.get("valor_por_servidor"):
+        valor_unitario_inicial = str(totais_diarias.get("valor_por_servidor", ""))
+
+    initial = {
+        "composicao_diarias": plano.composicao_diarias or totais_diarias.get("total_diarias", ""),
+        "valor_unitario": valor_unitario_inicial,
+        "valor_total_calculado": (
+            f"{plano.valor_total_calculado:.2f}".replace(".", ",")
+            if plano.valor_total_calculado
+            else str(totais_diarias.get("total_valor", ""))
+        ),
+        "recursos_json": json.dumps([{"descricao": item} for item in recursos], ensure_ascii=False),
+    }
+
+    if request.method == "POST":
+        form = PlanoTrabalhoStep3Form(request.POST, initial=initial)
+        if form.is_valid():
+            with transaction.atomic():
+                plano.composicao_diarias = form.cleaned_data["composicao_diarias"]
+                plano.valor_unitario = form.cleaned_data["valor_unitario"]
+                total_raw = (request.POST.get("valor_total_calculado") or "").strip()
+                if total_raw:
+                    total_val = PlanoTrabalhoStep3Form._parse_decimal_input(total_raw)
+                    plano.valor_total_calculado = total_val
+                elif totais_diarias.get("total_valor"):
+                    total_val = PlanoTrabalhoStep3Form._parse_decimal_input(
+                        str(totais_diarias.get("total_valor"))
+                    )
+                    plano.valor_total_calculado = total_val
+                plano.save()
+                _sync_plano_ordered_text_items(
+                    plano,
+                    model_cls=PlanoTrabalhoRecurso,
+                    values=form.parsed_recursos,
+                )
+            return redirect("plano_trabalho_resumo", oficio_id=oficio.id)
+    else:
+        form = PlanoTrabalhoStep3Form(initial=initial)
+
+    return render(
+        request,
+        "viagens/plano_trabalho_step3.html",
+        {
+            "oficio": oficio,
+            "plano": plano,
+            "form": form,
+            "diarias_resultado": diarias_resultado,
+            "numero_plano_formatado": f"{int(plano.numero or 0):02d}/{int(plano.ano or timezone.localdate().year)}",
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def plano_trabalho_resumo(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos", "viajantes"),
+        id=oficio_id,
+    )
+    plano = _ensure_plano_wizard_instance(oficio)
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+        if action == "voltar":
+            return redirect("plano_trabalho_step3", oficio_id=oficio.id)
+        if action == "docx":
+            return redirect("plano_trabalho_download_docx", oficio_id=oficio.id)
+        if action == "pdf":
+            return redirect("plano_trabalho_download_pdf", oficio_id=oficio.id)
+        return redirect("oficio_documentos", oficio_id=oficio.id)
+
+    context = _plano_resumo_context(plano, oficio)
+    context.update(
+        {
+            "numero_plano_formatado": f"{int(plano.numero or 0):02d}/{int(plano.ano or timezone.localdate().year)}",
+        }
+    )
+    return render(request, "viagens/plano_trabalho_step4.html", context)
+
+
+@require_GET
+def plano_trabalho_download_docx(request, oficio_id: int):
+    return oficio_download_plano_trabalho_docx(request, oficio_id)
+
+
+@require_GET
+def plano_trabalho_download_pdf(request, oficio_id: int):
+    return oficio_download_plano_trabalho_pdf(request, oficio_id)
+
+
+@require_GET
+def justificativas_list(request):
+    status_filter = (request.GET.get("status") or "pendentes").strip().lower()
+    if status_filter not in {"pendentes", "completas"}:
+        status_filter = "pendentes"
+
+    oficios = (
+        Oficio.objects.select_related("cidade_destino", "estado_destino")
+        .prefetch_related("trechos")
+        .order_by("-created_at")
+    )
+
+    rows: list[dict[str, object]] = []
+    for oficio in oficios:
+        antecedencia = get_antecedencia_dias(oficio=oficio)
+        primeira_saida = get_primeira_saida_data(oficio=oficio)
+        preenchida = has_justificativa_preenchida(oficio)
+        pendente = bool(antecedencia is not None and antecedencia < 10 and not preenchida)
+        completa = preenchida
+
+        if status_filter == "pendentes" and not pendente:
+            continue
+        if status_filter == "completas" and not completa:
+            continue
+
+        rows.append(
+            {
+                "oficio": oficio,
+                "antecedencia": antecedencia,
+                "primeira_saida": primeira_saida,
+                "destinos": _resolve_destinos_oficio(oficio),
+                "pendente": pendente,
+                "completa": completa,
+            }
+        )
+
+    paginator = Paginator(rows, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    return render(
+        request,
+        "viagens/justificativas_list.html",
+        {
+            "rows": page_obj,
+            "page_obj": page_obj,
+            "status_filter": status_filter,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def justificativa_form(request, oficio_id: int):
+    oficio = get_object_or_404(Oficio, id=oficio_id)
+    next_url = _resolve_justificativa_next(
+        request,
+        oficio,
+        request.GET.get("next") if request.method == "GET" else request.POST.get("next"),
+    )
+    if not next_url:
+        next_url = reverse("oficio_documentos", args=[oficio.id])
+
+    initial: dict[str, str] = {}
+    if request.method == "GET":
+        selected_model = (oficio.justificativa_modelo or "").strip()
+        justificativa_texto = (oficio.justificativa_texto or "").strip()
+        if not justificativa_texto and selected_model:
+            justificativa_texto = get_justificativa_template_text(selected_model)
+            initial["justificativa_texto"] = justificativa_texto
+        form = JustificativaForm(instance=oficio, initial=initial)
+    else:
+        form = JustificativaForm(request.POST, instance=oficio)
+        if form.is_valid():
+            justificativa_texto = (form.cleaned_data.get("justificativa_texto") or "").strip()
+            if requires_justificativa(oficio=oficio) and not justificativa_texto:
+                form.add_error(
+                    "justificativa_texto",
+                    "Preencha a justificativa para continuar.",
+                )
+                messages.error(request, JUSTIFICATIVA_REQUIRED_MESSAGE)
+            else:
+                oficio.justificativa_modelo = form.cleaned_data.get("justificativa_modelo") or ""
+                oficio.justificativa_texto = justificativa_texto
+                oficio.save(update_fields=["justificativa_modelo", "justificativa_texto", "updated_at"])
+                messages.success(request, "Justificativa salva com sucesso.")
+                return redirect(next_url)
+
+    return render(
+        request,
+        "viagens/justificativa_form.html",
+        {
+            "oficio": oficio,
+            "oficio_display": _oficio_display_label(oficio),
+            "justificativa_templates": JUSTIFICATIVA_TEMPLATES,
+            "justificativa_templates_json": json.dumps(
+                JUSTIFICATIVA_TEMPLATES, ensure_ascii=False
+            ),
+            "next_url": next_url,
+            "requires_justificativa": requires_justificativa(oficio=oficio),
+            "form": form,
+        },
+    )
+
+
+@require_GET
+def ordens_servico_list(request):
+    oficios = (
+        Oficio.objects.filter(plano_trabalho__isnull=True)
+        .select_related("cidade_destino", "estado_destino")
+        .prefetch_related("trechos")
+        .order_by("-created_at")
+    )
+    rows: list[dict[str, object]] = []
+    for oficio in oficios:
+        ordem = _get_ordem_servico(oficio)
+        data_inicio, data_fim = _resolve_periodo_oficio(oficio)
+        rows.append(
+            {
+                "oficio": oficio,
+                "ordem": ordem,
+                "status": "Completa" if ordem else "Pendente",
+                "data_inicio": data_inicio,
+                "data_fim": data_fim,
+                "destinos": _resolve_destinos_oficio(oficio),
+            }
+        )
+    paginator = Paginator(rows, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    return render(
+        request,
+        "viagens/ordens_servico_list.html",
+        {
+            "rows": page_obj,
+            "page_obj": page_obj,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def ordem_servico_editar(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos", "viajantes"),
+        id=oficio_id,
+    )
+    ordem = _get_ordem_servico(oficio)
+
+    if request.method == "POST":
+        form = OrdemServicoForm(request.POST, instance=ordem)
+        if form.is_valid():
+            ordem_obj = form.save(commit=False)
+            if not ordem_obj.ano:
+                ordem_obj.ano = int(oficio.ano or timezone.localdate().year)
+            if not ordem_obj.numero:
+                ordem_obj.numero = get_next_ordem_num(int(ordem_obj.ano))
+            ordem_obj.oficio = oficio
+            ordem_obj.save()
+            messages.success(request, "Ordem de servico salva com sucesso.")
+            return redirect("ordens_servico_list")
+    else:
+        if ordem:
+            form = OrdemServicoForm(instance=ordem)
+        else:
+            form = OrdemServicoForm(initial=_ordem_initial_data(oficio))
+
+    return render(
+        request,
+        "viagens/ordem_servico_form.html",
+        {
+            "form": form,
+            "oficio": oficio,
+            "ordem": ordem,
+        },
+    )
+
+
+@require_GET
+def ordem_servico_download_docx(request, oficio_id: int):
+    return oficio_download_ordem_servico_docx(request, oficio_id)
+
+
+@require_GET
+def ordem_servico_download_pdf(request, oficio_id: int):
+    return oficio_download_ordem_servico_pdf(request, oficio_id)
+
+
+@require_GET
+def oficio_download_plano_trabalho_docx(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("viajantes", "trechos"),
+        id=oficio_id,
+    )
+    try:
+        docx_bytes = build_plano_trabalho_docx_bytes(oficio).getvalue()
+    except Exception as exc:
+        logger.exception("[plano-docx] falha na geracao: oficio_id=%s", oficio.id)
+        messages.error(request, f"Falha ao gerar Plano de Trabalho DOCX. Detalhe: {exc}")
+        return redirect("oficio_documentos", oficio_id=oficio.id)
+
+    filename = f"plano_trabalho_{oficio.numero_formatado or oficio.oficio or oficio.id}.docx"
+    return _docx_http_response(docx_bytes, filename)
+
+
+@require_GET
+def oficio_download_plano_trabalho_pdf(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("viajantes", "trechos"),
+        id=oficio_id,
+    )
+    try:
+        docx_bytes = build_plano_trabalho_docx_bytes(oficio).getvalue()
+        pdf_bytes = docx_bytes_to_pdf_bytes(docx_bytes, oficio_id=oficio.id)
+    except Exception as exc:
+        logger.exception("[plano-pdf] falha na geracao: oficio_id=%s", oficio.id)
+        return _pdf_unavailable_response("Plano de Trabalho", exc)
+
+    filename = f"plano_trabalho_{oficio.numero_formatado or oficio.oficio or oficio.id}.pdf"
+    return _pdf_http_response(pdf_bytes, filename)
+
+
+@require_GET
+def oficio_download_ordem_servico_docx(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("viajantes", "trechos"),
+        id=oficio_id,
+    )
+    try:
+        docx_bytes = build_ordem_servico_docx_bytes(oficio).getvalue()
+    except Exception as exc:
+        logger.exception("[ordem-docx] falha na geracao: oficio_id=%s", oficio.id)
+        messages.error(request, f"Falha ao gerar Ordem de Servico DOCX. Detalhe: {exc}")
+        return redirect("oficio_documentos", oficio_id=oficio.id)
+
+    filename = f"ordem_servico_{oficio.numero_formatado or oficio.oficio or oficio.id}.docx"
+    return _docx_http_response(docx_bytes, filename)
+
+
+@require_GET
+def oficio_download_ordem_servico_pdf(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("viajantes", "trechos"),
+        id=oficio_id,
+    )
+    try:
+        docx_bytes = build_ordem_servico_docx_bytes(oficio).getvalue()
+        pdf_bytes = docx_bytes_to_pdf_bytes(docx_bytes, oficio_id=oficio.id)
+    except Exception as exc:
+        logger.exception("[ordem-pdf] falha na geracao: oficio_id=%s", oficio.id)
+        return _pdf_unavailable_response("Ordem de Servico", exc)
+
+    filename = f"ordem_servico_{oficio.numero_formatado or oficio.oficio or oficio.id}.pdf"
+    return _pdf_http_response(pdf_bytes, filename)
+
+
 @require_GET
 def oficio_download_docx(request, oficio_id: int):
     oficio = get_object_or_404(
@@ -4626,6 +5969,26 @@ def oficio_download_termo_autorizacao(request, oficio_id: int):
     )
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
+
+
+@require_GET
+def oficio_download_termo_autorizacao_pdf(request, oficio_id: int):
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos"),
+        id=oficio_id,
+    )
+    try:
+        docx_bytes = build_termo_autorizacao_docx_bytes(oficio).getvalue()
+        pdf_bytes = docx_bytes_to_pdf_bytes(docx_bytes, oficio_id=oficio.id)
+    except Exception as exc:
+        logger.exception(
+            "[oficio-termo-pdf] falha na geracao do termo de autorizacao em PDF: oficio_id=%s",
+            oficio.id,
+        )
+        return _pdf_unavailable_response("Termo de Autorizacao", exc)
+
+    filename = f"termo_autorizacao_{oficio.numero_formatado or oficio.oficio or oficio.id}.pdf"
+    return _pdf_http_response(pdf_bytes, filename)
 
 
 def oficio_download_pdf(request, oficio_id):
@@ -4785,6 +6148,32 @@ def servidores_api(request):
         viajantes = list(queryset.order_by("-id")[:20])
         viajantes.sort(key=lambda item: item.nome or "")
     return JsonResponse({"results": [_autocomplete_viajante_payload(v) for v in viajantes]})
+
+
+@require_GET
+def coordenadores_municipais_api(request):
+    q = request.GET.get("q", "").strip()
+    cidade = request.GET.get("cidade", "").strip()
+    queryset = CoordenadorMunicipal.objects.filter(ativo=True)
+    if q:
+        queryset = queryset.filter(
+            Q(nome__icontains=q) | Q(cargo__icontains=q) | Q(cidade__icontains=q)
+        )
+    if cidade:
+        queryset = queryset.filter(cidade__icontains=cidade)
+    coordenadores = list(queryset.order_by("nome")[:50])
+    payload = [
+        {
+            "id": item.id,
+            "text": f"{item.nome} - {item.cargo} ({item.cidade})",
+            "label": f"{item.nome} - {item.cargo} ({item.cidade})",
+            "nome": item.nome,
+            "cargo": item.cargo,
+            "cidade": item.cidade,
+        }
+        for item in coordenadores
+    ]
+    return JsonResponse({"results": payload})
 
 
 @require_GET

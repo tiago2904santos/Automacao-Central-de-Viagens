@@ -64,9 +64,13 @@ FOOTER_ASSINANTE_CARGO_DEFAULT = "MD. DELEGADO GERAL ADJUNTO"
 CUSTOS_SECTION_TITLE = (
     "Custos: Informar qual entidade custeara as diarias (hospedagem/alimentacao) e deslocamento:"
 )
-JUSTIFICATIVA_DESTINATARIO_RE = re.compile(
-    r"\bEXMO\.?\s*SR\.?:?|\bDR\.|\bMD\.|CURITIBA\s*[-\u2013\u2014]\s*PR\.?",
-    flags=re.IGNORECASE,
+JUSTIFICATIVA_DESTINATARIO_TOKENS = (
+    "exmo",
+    "md.",
+    "dr.",
+    "curitiba",
+    "delegado",
+    "pr",
 )
 
 
@@ -1103,10 +1107,15 @@ def _clear_container_text(container) -> None:
         _replace_paragraph_text(paragraph, "")
 
 
+def _contains_justificativa_destinatario(text: str) -> bool:
+    normalized = (text or "").casefold()
+    return any(token in normalized for token in JUSTIFICATIVA_DESTINATARIO_TOKENS)
+
+
 def _strip_destinatario_from_container(container) -> None:
     for paragraph in _iter_paragraphs_from_container(container):
         text = "".join(run.text for run in paragraph.runs)
-        if JUSTIFICATIVA_DESTINATARIO_RE.search(text):
+        if _contains_justificativa_destinatario(text):
             _replace_paragraph_text(paragraph, "")
 
 
@@ -1121,7 +1130,7 @@ def _container_text(container) -> str:
 
 def _validate_justificativa_no_destinatario(section) -> None:
     header_footer_text = f"{_container_text(section.header)}\n{_container_text(section.footer)}"
-    if JUSTIFICATIVA_DESTINATARIO_RE.search(header_footer_text):
+    if _contains_justificativa_destinatario(header_footer_text):
         raise ValueError(
             "Secao JUSTIFICATIVA contem bloco de destinatario no header/footer."
         )

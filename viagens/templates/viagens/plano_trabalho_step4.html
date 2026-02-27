@@ -1,0 +1,105 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Plano de Trabalho - Resumo{% endblock %}
+
+{% block breadcrumb %}
+  Planos de Trabalho <span class="breadcrumb-sep">/</span> Resumo
+{% endblock %}
+
+{% block content %}
+  <link rel="stylesheet" href="{% static 'css/diarias.css' %}" />
+  <nav class="stepper" aria-label="Etapas">
+    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step1' oficio.id %}">
+      <span class="stepper-index">1</span>
+      Identificacao e evento
+    </a>
+    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step2' oficio.id %}">
+      <span class="stepper-index">2</span>
+      Equipe e estrutura
+    </a>
+    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step3' oficio.id %}">
+      <span class="stepper-index">3</span>
+      Financeiro e recursos
+    </a>
+    <button class="stepper-step is-active" type="button" disabled>
+      <span class="stepper-index">4</span>
+      Resumo
+    </button>
+  </nav>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa 4 - Resumo final</h2>
+      <p class="page-subtitle">Plano {{ numero_plano_formatado }}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="post">
+      {% csrf_token %}
+
+      <section class="grid">
+        <div class="sub-card">
+          <div class="sub-card-title">Identificacao</div>
+          <div class="preview-line"><span class="preview-label">Plano</span><span class="preview-value">{{ numero_plano_formatado }}</span></div>
+          <div class="preview-line"><span class="preview-label">Solicitantes</span><span class="preview-value">{{ solicitantes_exibicao }}</span></div>
+          <div class="preview-line"><span class="preview-label">Destinos</span><span class="preview-value">{{ destinos_exibicao }}</span></div>
+          <div class="preview-line"><span class="preview-label">Datas</span><span class="preview-value">{{ dias_evento_extenso|default:"-" }}</span></div>
+          <div class="preview-line"><span class="preview-label">Horario</span><span class="preview-value">{{ horario_atendimento|default:"-" }}</span></div>
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-title">Equipe e coordenacao</div>
+          <div class="preview-line"><span class="preview-label">Total de servidores</span><span class="preview-value">{{ efetivo_total }}</span></div>
+          <div class="preview-line"><span class="preview-label">Unidade movel</span><span class="preview-value">{% if unidade_movel %}Sim{% else %}Nao{% endif %}</span></div>
+          {% if efetivo_rows %}
+            {% for row in efetivo_rows %}
+              <div class="preview-line">
+                <span class="preview-label">{{ row.cargo }}</span>
+                <span class="preview-value">{{ row.quantidade }}</span>
+              </div>
+            {% endfor %}
+          {% endif %}
+          <div class="preview-line">
+            <span class="preview-label">Coordenacao</span>
+            <span class="preview-value">{{ coordenacao_formatada|linebreaksbr }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="sub-card">
+          <div class="sub-card-title">Diarias</div>
+          {% with totais=diarias_resultado.totais %}
+            <div class="preview-line"><span class="preview-label">Quantidade</span><span class="preview-value">{{ totais.total_diarias|default:"-" }}</span></div>
+            <div class="preview-line"><span class="preview-label">Valor por servidor</span><span class="preview-value">{{ totais.valor_por_servidor|default:"-" }}</span></div>
+            <div class="preview-line"><span class="preview-label">Valor unitario da diaria</span><span class="preview-value">{{ totais.valor_unitario_referencia|default:"-" }}</span></div>
+            <div class="preview-line"><span class="preview-label">Valor total</span><span class="preview-value">{{ totais.total_valor|default:"-" }}</span></div>
+            <div class="preview-line"><span class="preview-label">Valor por extenso</span><span class="preview-value">{{ totais.valor_extenso|default:"-" }}</span></div>
+          {% endwith %}
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-title">Recursos necessarios</div>
+          {% if recursos %}
+            <ul>
+              {% for recurso in recursos %}
+                <li>{{ recurso }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p>-</p>
+          {% endif %}
+        </div>
+      </section>
+
+      <div class="wizard-actions">
+        <button class="btn-clear" type="submit" name="action" value="voltar">Voltar</button>
+        <button class="btn-clear" type="submit" name="action" value="docx">Gerar DOCX</button>
+        <button class="btn-clear" type="submit" name="action" value="pdf">Gerar PDF</button>
+        <button class="btn-primary" type="submit" name="action" value="documentos">Ir para documentos</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

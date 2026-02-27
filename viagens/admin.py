@@ -1,6 +1,19 @@
 from django.contrib import admin
 
-from .models import Cidade, Estado, Oficio, Trecho, Viajante, Veiculo
+from .models import (
+    Cidade,
+    CoordenadorMunicipal,
+    Estado,
+    Oficio,
+    PlanoTrabalho,
+    PlanoTrabalhoAtividade,
+    PlanoTrabalhoLocalAtuacao,
+    PlanoTrabalhoMeta,
+    PlanoTrabalhoRecurso,
+    Trecho,
+    Viajante,
+    Veiculo,
+)
 
 
 @admin.register(Viajante)
@@ -64,3 +77,61 @@ class OficioAdmin(admin.ModelAdmin):
         return obj.get_destino_display()
 
     destino_label.short_description = "Destino"
+
+
+@admin.register(CoordenadorMunicipal)
+class CoordenadorMunicipalAdmin(admin.ModelAdmin):
+    list_display = ("nome", "cargo", "cidade", "ativo", "updated_at")
+    search_fields = ("nome", "cargo", "cidade")
+    list_filter = ("ativo", "cidade")
+
+
+class PlanoTrabalhoMetaInline(admin.TabularInline):
+    model = PlanoTrabalhoMeta
+    extra = 0
+    fields = ("ordem", "descricao")
+    ordering = ("ordem", "id")
+
+
+class PlanoTrabalhoAtividadeInline(admin.TabularInline):
+    model = PlanoTrabalhoAtividade
+    extra = 0
+    fields = ("ordem", "descricao")
+    ordering = ("ordem", "id")
+
+
+class PlanoTrabalhoRecursoInline(admin.TabularInline):
+    model = PlanoTrabalhoRecurso
+    extra = 0
+    fields = ("ordem", "descricao")
+    ordering = ("ordem", "id")
+
+
+class PlanoTrabalhoLocalInline(admin.TabularInline):
+    model = PlanoTrabalhoLocalAtuacao
+    extra = 0
+    fields = ("ordem", "data", "local")
+    ordering = ("ordem", "id")
+
+
+@admin.register(PlanoTrabalho)
+class PlanoTrabalhoAdmin(admin.ModelAdmin):
+    list_display = (
+        "numero",
+        "ano",
+        "sigla_unidade",
+        "destino",
+        "solicitante",
+        "coordenador_plano",
+        "possui_coordenador_municipal",
+        "updated_at",
+    )
+    search_fields = ("numero", "ano", "destino", "solicitante")
+    list_filter = ("ano", "sigla_unidade", "possui_coordenador_municipal")
+    autocomplete_fields = ("coordenador_plano", "coordenador_municipal")
+    inlines = (
+        PlanoTrabalhoMetaInline,
+        PlanoTrabalhoAtividadeInline,
+        PlanoTrabalhoRecursoInline,
+        PlanoTrabalhoLocalInline,
+    )

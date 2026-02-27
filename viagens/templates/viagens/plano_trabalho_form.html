@@ -1,0 +1,544 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Plano de Trabalho{% endblock %}
+
+{% block breadcrumb %}
+  Planos de Trabalho <span class="breadcrumb-sep">/</span> {% if plano %}Editar{% else %}Criar{% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">
+        {% if plano %}Editar Plano de Trabalho{% else %}Criar Plano de Trabalho{% endif %}
+      </h2>
+      <p class="page-subtitle">
+        Oficio {{ oficio.numero_formatado|default:oficio.oficio|default:oficio.id }}
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="post" id="planoForm" novalidate>
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="error">
+          {{ form.non_field_errors|join:", " }}
+        </div>
+      {% endif %}
+
+      {{ form.metas_json }}
+      {{ form.atividades_json }}
+      {{ form.recursos_json }}
+      {{ form.locais_json }}
+
+      <div class="plano-steps">
+        <button type="button" class="btn-clear step-pill is-active" data-step-target="1">Etapa 1</button>
+        <button type="button" class="btn-clear step-pill" data-step-target="2">Etapa 2</button>
+        <button type="button" class="btn-clear step-pill" data-step-target="3">Etapa 3</button>
+        <button type="button" class="btn-clear step-pill" data-step-target="4">Etapa 4</button>
+        <button type="button" class="btn-clear step-pill" data-step-target="5">Etapa 5</button>
+        <button type="button" class="btn-clear step-pill" data-step-target="6">Etapa 6</button>
+      </div>
+
+      <section class="plano-step is-active" data-step="1">
+        <h3>Etapa 1 - Identificacao do plano</h3>
+        <div class="grid">
+          <label>
+            {{ form.numero.label }}
+            {{ form.numero }}
+            {% if form.numero.errors %}<span class="error">{{ form.numero.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.ano.label }}
+            {{ form.ano }}
+            {% if form.ano.errors %}<span class="error">{{ form.ano.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.sigla_unidade.label }}
+            {{ form.sigla_unidade }}
+            {% if form.sigla_unidade.errors %}<span class="error">{{ form.sigla_unidade.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.programa_projeto.label }}
+            {{ form.programa_projeto }}
+            {% if form.programa_projeto.errors %}<span class="error">{{ form.programa_projeto.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.destino.label }}
+            {{ form.destino }}
+            {% if form.destino.errors %}<span class="error">{{ form.destino.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.solicitante.label }}
+            {{ form.solicitante }}
+            {% if form.solicitante.errors %}<span class="error">{{ form.solicitante.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label class="col-span-2">
+            {{ form.contexto_solicitacao.label }}
+            {{ form.contexto_solicitacao }}
+            {% if form.contexto_solicitacao.errors %}<span class="error">{{ form.contexto_solicitacao.errors|join:", " }}</span>{% endif %}
+          </label>
+        </div>
+      </section>
+
+      <section class="plano-step" data-step="2">
+        <h3>Etapa 2 - Metas e atividades</h3>
+        <div class="list-editor">
+          <div class="editor-header">
+            <strong>Atividades do evento (selecione uma ou mais)</strong>
+          </div>
+          <div id="atividadesFixasList" class="atividades-fixas-list">
+            {% for checkbox in form.atividades_selecionadas %}
+              <label class="atividade-item">{{ checkbox.tag }} <span>{{ checkbox.choice_label }}</span></label>
+            {% endfor %}
+          </div>
+          {% if form.atividades_selecionadas.errors %}<span class="error">{{ form.atividades_selecionadas.errors|join:", " }}</span>{% endif %}
+          {% if form.atividades_json.errors %}<span class="error">{{ form.atividades_json.errors|join:", " }}</span>{% endif %}
+        </div>
+
+        <div class="list-editor">
+          <div class="editor-header">
+            <strong>Metas geradas automaticamente a partir das atividades</strong>
+          </div>
+          <div id="metasAutoPreview" class="metas-auto-preview"></div>
+          {% if form.metas_json.errors %}<span class="error">{{ form.metas_json.errors|join:", " }}</span>{% endif %}
+        </div>
+      </section>
+
+      <section class="plano-step" data-step="3">
+        <h3>Etapa 3 - Atuacao</h3>
+        <div class="grid">
+          <label>
+            {{ form.data_inicio.label }}
+            {{ form.data_inicio }}
+            {% if form.data_inicio.errors %}<span class="error">{{ form.data_inicio.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.data_fim.label }}
+            {{ form.data_fim }}
+            {% if form.data_fim.errors %}<span class="error">{{ form.data_fim.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.horario_atendimento.label }}
+            {{ form.horario_atendimento }}
+            {% if form.horario_atendimento.errors %}<span class="error">{{ form.horario_atendimento.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.efetivo_formatado.label }}
+            {{ form.efetivo_formatado }}
+            {% if form.efetivo_formatado.errors %}<span class="error">{{ form.efetivo_formatado.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label class="col-span-2">
+            {{ form.estrutura_apoio.label }}
+            {{ form.estrutura_apoio }}
+            {% if form.estrutura_apoio.errors %}<span class="error">{{ form.estrutura_apoio.errors|join:", " }}</span>{% endif %}
+          </label>
+        </div>
+
+        <div class="list-editor" data-editor="locais">
+          <div class="editor-header">
+            <strong>Locais de atuacao</strong>
+            <button type="button" class="btn-clear add-item" data-target="locais">Adicionar local</button>
+          </div>
+          <div class="editor-items" id="locaisItems"></div>
+          {% if form.locais_json.errors %}<span class="error">{{ form.locais_json.errors|join:", " }}</span>{% endif %}
+        </div>
+      </section>
+
+      <section class="plano-step" data-step="4">
+        <h3>Etapa 4 - Financeiro e recursos</h3>
+        <div class="grid">
+          <label>
+            {{ form.quantidade_servidores.label }}
+            {{ form.quantidade_servidores }}
+            {% if form.quantidade_servidores.errors %}<span class="error">{{ form.quantidade_servidores.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.composicao_diarias.label }}
+            {{ form.composicao_diarias }}
+            {% if form.composicao_diarias.errors %}<span class="error">{{ form.composicao_diarias.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.valor_unitario.label }}
+            {{ form.valor_unitario }}
+            {% if form.valor_unitario.errors %}<span class="error">{{ form.valor_unitario.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            {{ form.valor_total_calculado.label }}
+            {{ form.valor_total_calculado }}
+            {% if form.valor_total_calculado.errors %}<span class="error">{{ form.valor_total_calculado.errors|join:", " }}</span>{% endif %}
+          </label>
+        </div>
+
+        <div class="list-editor" data-editor="recursos">
+          <div class="editor-header">
+            <strong>Recursos necessarios</strong>
+            <button type="button" class="btn-clear add-item" data-target="recursos">Adicionar recurso</button>
+          </div>
+          <div class="editor-items" id="recursosItems"></div>
+          {% if form.recursos_json.errors %}<span class="error">{{ form.recursos_json.errors|join:", " }}</span>{% endif %}
+        </div>
+      </section>
+
+      <section class="plano-step" data-step="5">
+        <h3>Etapa 5 - Coordenacao</h3>
+        <div class="grid">
+          <label>
+            {{ form.coordenador_plano.label }}
+            {{ form.coordenador_plano }}
+            {% if form.coordenador_plano.errors %}<span class="error">{{ form.coordenador_plano.errors|join:", " }}</span>{% endif %}
+            <small>Se nao encontrar, cadastre em <a href="{% url 'viajante_cadastro' %}" target="_blank" rel="noopener">Viajantes</a> e recarregue a pagina.</small>
+          </label>
+          <label>
+            {{ form.possui_coordenador_municipal.label }}
+            {{ form.possui_coordenador_municipal }}
+            {% if form.possui_coordenador_municipal.errors %}<span class="error">{{ form.possui_coordenador_municipal.errors|join:", " }}</span>{% endif %}
+          </label>
+        </div>
+
+        <div id="coordenadorMunicipalBlock">
+          <div class="grid">
+            <label>
+              {{ form.coordenador_municipal.label }}
+              {{ form.coordenador_municipal }}
+              {% if form.coordenador_municipal.errors %}<span class="error">{{ form.coordenador_municipal.errors|join:", " }}</span>{% endif %}
+            </label>
+            <div></div>
+            <label>
+              Novo coordenador municipal - Nome
+              {{ form.coordenador_municipal_nome }}
+              {% if form.coordenador_municipal_nome.errors %}<span class="error">{{ form.coordenador_municipal_nome.errors|join:", " }}</span>{% endif %}
+            </label>
+            <label>
+              Novo coordenador municipal - Cargo
+              {{ form.coordenador_municipal_cargo }}
+              {% if form.coordenador_municipal_cargo.errors %}<span class="error">{{ form.coordenador_municipal_cargo.errors|join:", " }}</span>{% endif %}
+            </label>
+            <label>
+              Novo coordenador municipal - Cidade
+              {{ form.coordenador_municipal_cidade }}
+              {% if form.coordenador_municipal_cidade.errors %}<span class="error">{{ form.coordenador_municipal_cidade.errors|join:", " }}</span>{% endif %}
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="plano-step" data-step="6">
+        <h3>Etapa 6 - Revisao e geracao</h3>
+        <p>Revise os dados do plano e clique em salvar. Apos salvar, gere DOCX/PDF pela aba de documentos do oficio.</p>
+        <label>
+          Observacoes internas (opcional)
+          {{ form.texto_override }}
+          {% if form.texto_override.errors %}<span class="error">{{ form.texto_override.errors|join:", " }}</span>{% endif %}
+        </label>
+      </section>
+
+      <div class="wizard-actions">
+        <a class="btn-clear" href="{% url 'oficio_documentos' oficio.id %}">Voltar</a>
+        <button type="button" class="btn-clear" id="prevStepBtn">Etapa anterior</button>
+        <button type="button" class="btn-clear" id="nextStepBtn">Proxima etapa</button>
+        <button class="btn-primary" type="submit">Salvar plano</button>
+      </div>
+    </form>
+  </div>
+
+  <style>
+    .plano-steps { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .step-pill { opacity: .7; }
+    .step-pill.is-active { opacity: 1; border-color: #1f2937; }
+    .plano-step { display: none; margin-bottom: 1rem; }
+    .plano-step.is-active { display: block; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .75rem; }
+    .col-span-2 { grid-column: 1 / -1; }
+    .list-editor { border: 1px solid #d1d5db; border-radius: .5rem; padding: .75rem; margin: .75rem 0; }
+    .editor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; }
+    .editor-item { display: grid; grid-template-columns: 1fr auto auto auto; gap: .5rem; margin-bottom: .5rem; }
+    .editor-item-locais { grid-template-columns: 160px 1fr auto auto auto; }
+    .editor-item input[type="text"], .editor-item input[type="date"] { width: 100%; }
+    .atividades-fixas-list { display: grid; gap: .5rem; }
+    .atividade-item { display: flex; gap: .5rem; align-items: start; }
+    .metas-auto-preview { white-space: pre-line; line-height: 1.35; }
+    .error { display: block; margin-top: .25rem; color: #b91c1c; font-size: .85rem; }
+    @media (max-width: 768px) {
+      .editor-item, .editor-item-locais { grid-template-columns: 1fr; }
+    }
+  </style>
+
+  <script>
+    (function () {
+      const form = document.getElementById("planoForm");
+      if (!form) return;
+
+      const steps = Array.from(form.querySelectorAll(".plano-step"));
+      const pills = Array.from(form.querySelectorAll("[data-step-target]"));
+      let currentStep = 1;
+
+      function showStep(step) {
+        currentStep = Math.max(1, Math.min(steps.length, step));
+        steps.forEach((section) => {
+          section.classList.toggle("is-active", Number(section.dataset.step) === currentStep);
+        });
+        pills.forEach((pill) => {
+          pill.classList.toggle("is-active", Number(pill.dataset.stepTarget) === currentStep);
+        });
+      }
+
+      pills.forEach((pill) => {
+        pill.addEventListener("click", () => showStep(Number(pill.dataset.stepTarget || 1)));
+      });
+      document.getElementById("prevStepBtn").addEventListener("click", () => showStep(currentStep - 1));
+      document.getElementById("nextStepBtn").addEventListener("click", () => showStep(currentStep + 1));
+
+      function safeJsonParse(rawValue) {
+        if (!rawValue) return [];
+        try {
+          const parsed = JSON.parse(rawValue);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (err) {
+          return [];
+        }
+      }
+
+      function normalizeText(value) {
+        return String(value || "").replace(/\s+/g, " ").trim();
+      }
+
+      const atividadeMetaPairs = (function () {
+        try {
+          return JSON.parse('{{ atividade_meta_pairs_json|escapejs }}');
+        } catch (err) {
+          return [];
+        }
+      })();
+
+      function setupSimpleEditor(key, itemsContainerId, hiddenId) {
+        const container = document.getElementById(itemsContainerId);
+        const hiddenInput = document.getElementById(hiddenId);
+        if (!container || !hiddenInput) return;
+        let items = safeJsonParse(hiddenInput.value).map((item) => {
+          if (typeof item === "string") return { descricao: normalizeText(item) };
+          return { descricao: normalizeText(item.descricao || item.texto || "") };
+        }).filter((item) => item.descricao);
+
+        function syncHidden() {
+          hiddenInput.value = JSON.stringify(items);
+        }
+
+        function moveItem(index, direction) {
+          const target = index + direction;
+          if (target < 0 || target >= items.length) return;
+          const tmp = items[index];
+          items[index] = items[target];
+          items[target] = tmp;
+          render();
+        }
+
+        function render() {
+          container.innerHTML = "";
+          items.forEach((item, index) => {
+            const row = document.createElement("div");
+            row.className = "editor-item";
+            row.innerHTML = `
+              <input type="text" class="input-field" value="${item.descricao.replace(/"/g, "&quot;")}" />
+              <button type="button" class="btn-clear" data-action="up">Subir</button>
+              <button type="button" class="btn-clear" data-action="down">Descer</button>
+              <button type="button" class="btn-clear" data-action="remove">Remover</button>
+            `;
+            const textInput = row.querySelector("input");
+            textInput.addEventListener("input", () => {
+              items[index].descricao = normalizeText(textInput.value);
+              syncHidden();
+            });
+            row.querySelector('[data-action="up"]').addEventListener("click", () => moveItem(index, -1));
+            row.querySelector('[data-action="down"]').addEventListener("click", () => moveItem(index, +1));
+            row.querySelector('[data-action="remove"]').addEventListener("click", () => {
+              items.splice(index, 1);
+              render();
+            });
+            container.appendChild(row);
+          });
+          syncHidden();
+        }
+
+        form.querySelector(`.add-item[data-target="${key}"]`).addEventListener("click", () => {
+          items.push({ descricao: "" });
+          render();
+        });
+
+        render();
+      }
+
+      function setupLocaisEditor() {
+        const container = document.getElementById("locaisItems");
+        const hiddenInput = document.getElementById("id_locais_json");
+        if (!container || !hiddenInput) return;
+        let items = safeJsonParse(hiddenInput.value).map((item) => {
+          if (typeof item === "string") return { data: "", local: normalizeText(item) };
+          return {
+            data: normalizeText(item.data || ""),
+            local: normalizeText(item.local || "")
+          };
+        }).filter((item) => item.local);
+
+        function syncHidden() {
+          hiddenInput.value = JSON.stringify(items);
+        }
+
+        function moveItem(index, direction) {
+          const target = index + direction;
+          if (target < 0 || target >= items.length) return;
+          const tmp = items[index];
+          items[index] = items[target];
+          items[target] = tmp;
+          render();
+        }
+
+        function render() {
+          container.innerHTML = "";
+          items.forEach((item, index) => {
+            const row = document.createElement("div");
+            row.className = "editor-item editor-item-locais";
+            row.innerHTML = `
+              <input type="date" class="input-field" value="${item.data}" />
+              <input type="text" class="input-field" value="${item.local.replace(/"/g, "&quot;")}" />
+              <button type="button" class="btn-clear" data-action="up">Subir</button>
+              <button type="button" class="btn-clear" data-action="down">Descer</button>
+              <button type="button" class="btn-clear" data-action="remove">Remover</button>
+            `;
+            const dateInput = row.querySelector('input[type="date"]');
+            const localInput = row.querySelector('input[type="text"]');
+            dateInput.addEventListener("input", () => {
+              items[index].data = normalizeText(dateInput.value);
+              syncHidden();
+            });
+            localInput.addEventListener("input", () => {
+              items[index].local = normalizeText(localInput.value);
+              syncHidden();
+            });
+            row.querySelector('[data-action="up"]').addEventListener("click", () => moveItem(index, -1));
+            row.querySelector('[data-action="down"]').addEventListener("click", () => moveItem(index, +1));
+            row.querySelector('[data-action="remove"]').addEventListener("click", () => {
+              items.splice(index, 1);
+              render();
+            });
+            container.appendChild(row);
+          });
+          syncHidden();
+        }
+
+        form.querySelector('.add-item[data-target="locais"]').addEventListener("click", () => {
+          items.push({ data: "", local: "" });
+          render();
+        });
+
+        render();
+      }
+
+      function setupAtividadesComMetas() {
+        const atividadeInputs = Array.from(
+          form.querySelectorAll('input[name="atividades_selecionadas"]')
+        );
+        const atividadesHidden = document.getElementById("id_atividades_json");
+        const metasHidden = document.getElementById("id_metas_json");
+        const metasPreview = document.getElementById("metasAutoPreview");
+        if (!atividadeInputs.length || !atividadesHidden || !metasHidden || !metasPreview) return;
+
+        const atividadeToMeta = new Map(atividadeMetaPairs);
+
+        function render() {
+          const checked = new Set(
+            atividadeInputs.filter((input) => input.checked).map((input) => normalizeText(input.value))
+          );
+          const atividadesOrdenadas = atividadeMetaPairs
+            .map((pair) => normalizeText(pair[0]))
+            .filter((atividade) => checked.has(atividade));
+
+          const metasOrdenadas = [];
+          atividadesOrdenadas.forEach((atividade) => {
+            const meta = normalizeText(atividadeToMeta.get(atividade) || "");
+            if (meta && !metasOrdenadas.includes(meta)) metasOrdenadas.push(meta);
+          });
+
+          atividadesHidden.value = JSON.stringify(
+            atividadesOrdenadas.map((descricao) => ({ descricao }))
+          );
+          metasHidden.value = JSON.stringify(
+            metasOrdenadas.map((descricao) => ({ descricao }))
+          );
+
+          if (!metasOrdenadas.length) {
+            metasPreview.textContent = "-";
+            return;
+          }
+          metasPreview.textContent = metasOrdenadas.map((meta) => `\u2022 ${meta}`).join("\n\n");
+        }
+
+        atividadeInputs.forEach((input) => {
+          input.addEventListener("change", render);
+        });
+        render();
+      }
+
+      function parseCurrency(rawValue) {
+        const cleaned = String(rawValue || "").trim();
+        if (!cleaned) return null;
+        const normalized = cleaned.replace(/\./g, "").replace(",", ".");
+        const num = Number.parseFloat(normalized);
+        if (!Number.isFinite(num)) return null;
+        return num;
+      }
+
+      function parseComposicao(rawValue) {
+        const value = normalizeText(rawValue);
+        if (!value) return 1;
+        const regex = /(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)\s*%/gi;
+        let found = false;
+        let total = 0;
+        let match;
+        while ((match = regex.exec(value)) !== null) {
+          found = true;
+          const qtd = Number.parseFloat(String(match[1]).replace(",", "."));
+          const pct = Number.parseFloat(String(match[2]).replace(",", "."));
+          if (Number.isFinite(qtd) && Number.isFinite(pct)) {
+            total += qtd * (pct / 100);
+          }
+        }
+        if (found && total > 0) return total;
+        const fallback = Number.parseFloat(value.replace(",", "."));
+        if (Number.isFinite(fallback) && fallback > 0) return fallback;
+        return 1;
+      }
+
+      function calculateTotal() {
+        const qtd = Number.parseInt(document.getElementById("id_quantidade_servidores").value || "0", 10);
+        const unit = parseCurrency(document.getElementById("id_valor_unitario").value);
+        const composicao = parseComposicao(document.getElementById("id_composicao_diarias").value);
+        if (!qtd || !unit) return;
+        const total = qtd * unit * composicao;
+        document.getElementById("id_valor_total_calculado").value = total.toFixed(2).replace(".", ",");
+      }
+
+      ["id_quantidade_servidores", "id_valor_unitario", "id_composicao_diarias"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("input", calculateTotal);
+      });
+
+      function toggleCoordenadorMunicipal() {
+        const field = document.getElementById("id_possui_coordenador_municipal");
+        const block = document.getElementById("coordenadorMunicipalBlock");
+        const enabled = field && String(field.value).toLowerCase() === "sim";
+        block.style.display = enabled ? "block" : "none";
+      }
+      document.getElementById("id_possui_coordenador_municipal").addEventListener("change", toggleCoordenadorMunicipal);
+
+      setupAtividadesComMetas();
+      setupSimpleEditor("recursos", "recursosItems", "id_recursos_json");
+      setupLocaisEditor();
+      toggleCoordenadorMunicipal();
+      calculateTotal();
+      showStep(1);
+    })();
+  </script>
+{% endblock %}

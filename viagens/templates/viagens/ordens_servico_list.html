@@ -1,0 +1,64 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Ordens de Servico{% endblock %}
+
+{% block breadcrumb %}
+  Documentos <span class="breadcrumb-sep">/</span> Ordens de Servico
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Ordens de Servico</h2>
+      <p class="page-subtitle">Oficios sem plano de trabalho.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Oficio</th>
+          <th>Protocolo</th>
+          <th>Periodo</th>
+          <th>Destinos</th>
+          <th>Status</th>
+          <th>Acoes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.oficio.numero_formatado|default:row.oficio.oficio|default:row.oficio.id }}</td>
+            <td>{{ row.oficio.protocolo_formatado|default:row.oficio.protocolo|default:"-" }}</td>
+            <td>{{ row.data_inicio|date:"d/m/Y" }} a {{ row.data_fim|date:"d/m/Y" }}</td>
+            <td>{{ row.destinos }}</td>
+            <td>{{ row.status }}</td>
+            <td>
+              <a href="{% url 'ordem_servico_editar' row.oficio.id %}">Criar/Editar</a> |
+              <a href="{% url 'ordem_servico_download_docx' row.oficio.id %}">DOCX</a> |
+              <a href="{% url 'ordem_servico_download_pdf' row.oficio.id %}">PDF</a> |
+              <a href="{% url 'oficio_documentos' row.oficio.id %}">Oficio</a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="6">Nenhum oficio sem plano de trabalho encontrado.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="wizard-actions">
+      {% if page_obj.has_previous %}
+        <a class="btn-clear" href="?page={{ page_obj.previous_page_number }}">Pagina anterior</a>
+      {% endif %}
+      <span>Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn-clear" href="?page={{ page_obj.next_page_number }}">Proxima pagina</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}

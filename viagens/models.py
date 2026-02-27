@@ -1,3 +1,6 @@
+import re
+from decimal import Decimal, InvalidOperation
+
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
@@ -212,6 +215,46 @@ class OficioCounter(models.Model):
 
     def __str__(self) -> str:
         return f"{self.ano}: {self.last_numero}"
+
+
+class PlanoTrabalhoCounter(models.Model):
+    ano = models.PositiveIntegerField(unique=True)
+    last_num = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"Plano {self.ano}: {self.last_num}"
+
+
+class OrdemServicoCounter(models.Model):
+    ano = models.PositiveIntegerField(unique=True)
+    last_num = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"Ordem {self.ano}: {self.last_num}"
+
+
+def get_next_plano_num(ano: int) -> int:
+    with transaction.atomic():
+        counter, _ = PlanoTrabalhoCounter.objects.select_for_update().get_or_create(
+            ano=int(ano),
+            defaults={"last_num": 0},
+        )
+        counter.last_num += 1
+        counter.save(update_fields=["last_num", "updated_at"])
+        return int(counter.last_num)
+
+
+def get_next_ordem_num(ano: int) -> int:
+    with transaction.atomic():
+        counter, _ = OrdemServicoCounter.objects.select_for_update().get_or_create(
+            ano=int(ano),
+            defaults={"last_num": 0},
+        )
+        counter.last_num += 1
+        counter.save(update_fields=["last_num", "updated_at"])
+        return int(counter.last_num)
 
 
 class TermoAutorizacao(models.Model):
@@ -620,6 +663,325 @@ class Oficio(models.Model):
                 update_fields.add("nome_instituicao_custeio")
             kwargs["update_fields"] = list(update_fields)
         super().save(*args, **kwargs)
+
+
+class PlanoTrabalho(models.Model):
+    oficio = models.OneToOneField(
+        Oficio,
+        on_delete=models.CASCADE,
+        related_name="plano_trabalho",
+    )
+    numero = models.PositiveIntegerField()
+    ano = models.PositiveIntegerField()
+    sigla_unidade = models.CharField(max_length=30, blank=True, default="ASCOM")
+    programa_projeto = models.CharField(max_length=200, blank=True, default="")
+    solicitantes_json = models.JSONField(default=list, blank=True)
+    destino = models.CharField(max_length=200, blank=True, default="")
+    destinos_json = models.JSONField(default=list, blank=True)
+    solicitante = models.CharField(max_length=200, blank=True, default="")
+    contexto_solicitacao = models.TextField(blank=True, default="")
+    local = models.CharField(max_length=120, default="")
+    data_inicio = models.DateField()
+    data_fim = models.DateField()
+    horario_inicio = models.TimeField(null=True, blank=True)
+    horario_fim = models.TimeField(null=True, blank=True)
+    horario_atendimento = models.CharField(max_length=120, blank=True, default="")
+    efetivo_json = models.JSONField(default=list, blank=True)
+    efetivo_formatado = models.CharField(max_length=200, blank=True, default="")
+    unidade_movel = models.BooleanField(default=False)
+    estrutura_apoio = models.TextField(blank=True, default="")
+    efetivo_por_dia = models.PositiveIntegerField(default=0)
+    quantidade_servidores = models.PositiveIntegerField(default=0)
+    composicao_diarias = models.CharField(max_length=200, blank=True, default="")
+    valor_unitario = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    valor_total_calculado = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    valor_total = models.CharField(max_length=120, blank=True, default="")
+    possui_coordenador_municipal = models.BooleanField(default=False)
+    coordenador_plano = models.ForeignKey(
+        Viajante,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="planos_trabalho_coordenados",
+    )
+    coordenador_municipal = models.ForeignKey(
+        "CoordenadorMunicipal",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="planos_trabalho",
+    )
+    coordenador_nome = models.CharField(max_length=200, blank=True, default="")
+    coordenador_cargo = models.CharField(max_length=200, blank=True, default="")
+    texto_override = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ano", "numero"],
+                name="uniq_plano_trabalho_numero_por_ano",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Plano de Trabalho {self.numero}/{self.ano}"
+
+    @property
+    def titulo_formatado(self) -> str:
+        sigla = (self.sigla_unidade or "").strip().upper()
+        suffix = f"/{sigla}" if sigla else ""
+        return f"PLANO DE TRABALHO N\u00ba{int(self.numero or 0):02d}/{int(self.ano or 0)}{suffix}"
+
+    @staticmethod
+    def _parse_decimal(value) -> Decimal | None:
+        if value in (None, ""):
+            return None
+
+    @staticmethod
+    def _format_hora_ptbr(value) -> str:
+        if value is None:
+            return ""
+        if value.minute:
+            return value.strftime("%Hh%M")
+        return value.strftime("%Hh")
+        if isinstance(value, Decimal):
+            return value
+        try:
+            normalized = str(value).strip().replace(".", "").replace(",", ".")
+            return Decimal(normalized)
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+
+    def _composicao_fator(self) -> Decimal:
+        raw = (self.composicao_diarias or "").strip()
+        if not raw:
+            return Decimal("1")
+        pattern = re.compile(
+            r"(?P<qtd>\d+(?:[.,]\d+)?)\s*x\s*(?P<pct>\d+(?:[.,]\d+)?)\s*%",
+            re.IGNORECASE,
+        )
+        fator = Decimal("0")
+        found = False
+        for match in pattern.finditer(raw):
+            found = True
+            qtd = self._parse_decimal(match.group("qtd")) or Decimal("0")
+            pct = self._parse_decimal(match.group("pct")) or Decimal("0")
+            fator += qtd * (pct / Decimal("100"))
+        if found and fator > 0:
+            return fator
+        fallback = self._parse_decimal(raw)
+        if fallback and fallback > 0:
+            return fallback
+        return Decimal("1")
+
+    def calcular_valor_total(self) -> Decimal | None:
+        unitario = self._parse_decimal(self.valor_unitario)
+        qtd_servidores = int(self.quantidade_servidores or 0)
+        if not unitario or unitario <= 0 or qtd_servidores <= 0:
+            return None
+        fator = self._composicao_fator()
+        total = (unitario * Decimal(qtd_servidores) * fator).quantize(Decimal("0.01"))
+        if total <= 0:
+            return None
+        return total
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+
+        if self.data_inicio and self.data_fim and self.data_fim < self.data_inicio:
+            errors["data_fim"] = "A data final deve ser igual ou posterior \u00e0 data inicial."
+
+        if not self.possui_coordenador_municipal:
+            self.coordenador_municipal = None
+
+        if self.valor_unitario is not None and self.valor_unitario < 0:
+            errors["valor_unitario"] = "Informe um valor unit\u00e1rio v\u00e1lido."
+        if self.valor_total_calculado is not None and self.valor_total_calculado < 0:
+            errors["valor_total_calculado"] = "Informe um valor total v\u00e1lido."
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self.ano:
+            self.ano = timezone.localdate().year
+        if not (self.sigla_unidade or "").strip():
+            self.sigla_unidade = "ASCOM"
+        if self.horario_inicio and self.horario_fim:
+            inicio = self._format_hora_ptbr(self.horario_inicio)
+            fim = self._format_hora_ptbr(self.horario_fim)
+            if inicio and fim:
+                self.horario_atendimento = f"das {inicio} as {fim}"
+
+        if self.coordenador_plano:
+            if not (self.coordenador_nome or "").strip():
+                self.coordenador_nome = self.coordenador_plano.nome
+            if not (self.coordenador_cargo or "").strip():
+                self.coordenador_cargo = self.coordenador_plano.cargo
+
+        unitario_decimal = self._parse_decimal(self.valor_unitario)
+        if unitario_decimal is not None:
+            self.valor_unitario = unitario_decimal.quantize(Decimal("0.01"))
+
+        total = self.calcular_valor_total()
+        if total is not None:
+            self.valor_total_calculado = total
+        total_decimal = self._parse_decimal(self.valor_total_calculado)
+        if total_decimal is not None:
+            self.valor_total_calculado = total_decimal.quantize(Decimal("0.01"))
+            bruto = f"{self.valor_total_calculado:.2f}".replace(".", ",")
+            self.valor_total = f"R$ {bruto}"
+
+        if not (self.efetivo_formatado or "").strip() and self.quantidade_servidores:
+            self.efetivo_formatado = f"{int(self.quantidade_servidores)} servidores."
+        if not self.efetivo_por_dia and self.quantidade_servidores:
+            self.efetivo_por_dia = int(self.quantidade_servidores)
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class CoordenadorMunicipal(models.Model):
+    nome = models.CharField(max_length=200)
+    cargo = models.CharField(max_length=200)
+    cidade = models.CharField(max_length=120)
+    ativo = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("nome",)
+
+    def __str__(self) -> str:
+        return f"{self.nome} - {self.cidade}"
+
+    def clean(self) -> None:
+        super().clean()
+        self.nome = " ".join((self.nome or "").split())
+        self.cargo = " ".join((self.cargo or "").split())
+        self.cidade = " ".join((self.cidade or "").split())
+        errors: dict[str, str] = {}
+        if not self.nome:
+            errors["nome"] = "Informe o nome do coordenador municipal."
+        if not self.cargo:
+            errors["cargo"] = "Informe o cargo do coordenador municipal."
+        if not self.cidade:
+            errors["cidade"] = "Informe a cidade do coordenador municipal."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.nome = " ".join((self.nome or "").split())
+        self.cargo = " ".join((self.cargo or "").split())
+        self.cidade = " ".join((self.cidade or "").split())
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class PlanoTrabalhoMeta(models.Model):
+    plano = models.ForeignKey(
+        PlanoTrabalho,
+        on_delete=models.CASCADE,
+        related_name="metas",
+    )
+    ordem = models.PositiveIntegerField(default=1)
+    descricao = models.CharField(max_length=350)
+
+    class Meta:
+        ordering = ("ordem", "id")
+
+    def __str__(self) -> str:
+        return f"Meta {self.ordem} - Plano {self.plano_id}"
+
+
+class PlanoTrabalhoAtividade(models.Model):
+    plano = models.ForeignKey(
+        PlanoTrabalho,
+        on_delete=models.CASCADE,
+        related_name="atividades",
+    )
+    ordem = models.PositiveIntegerField(default=1)
+    descricao = models.CharField(max_length=350)
+
+    class Meta:
+        ordering = ("ordem", "id")
+
+    def __str__(self) -> str:
+        return f"Atividade {self.ordem} - Plano {self.plano_id}"
+
+
+class PlanoTrabalhoRecurso(models.Model):
+    plano = models.ForeignKey(
+        PlanoTrabalho,
+        on_delete=models.CASCADE,
+        related_name="recursos",
+    )
+    ordem = models.PositiveIntegerField(default=1)
+    descricao = models.CharField(max_length=350)
+
+    class Meta:
+        ordering = ("ordem", "id")
+
+    def __str__(self) -> str:
+        return f"Recurso {self.ordem} - Plano {self.plano_id}"
+
+
+class PlanoTrabalhoLocalAtuacao(models.Model):
+    plano = models.ForeignKey(
+        PlanoTrabalho,
+        on_delete=models.CASCADE,
+        related_name="locais_atuacao",
+    )
+    ordem = models.PositiveIntegerField(default=1)
+    data = models.DateField(null=True, blank=True)
+    local = models.CharField(max_length=240)
+
+    class Meta:
+        ordering = ("ordem", "id")
+
+    def __str__(self) -> str:
+        return f"Local {self.ordem} - Plano {self.plano_id}"
+
+
+class OrdemServico(models.Model):
+    oficio = models.OneToOneField(
+        Oficio,
+        on_delete=models.CASCADE,
+        related_name="ordem_servico",
+    )
+    numero = models.PositiveIntegerField()
+    ano = models.PositiveIntegerField()
+    referencia = models.CharField(max_length=200, default="Diligências")
+    determinante_nome = models.CharField(max_length=200, blank=True, default="")
+    determinante_cargo = models.CharField(max_length=200, blank=True, default="")
+    finalidade = models.TextField(blank=True, default="")
+    texto_override = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ano", "numero"],
+                name="uniq_ordem_servico_numero_por_ano",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Ordem de Servico {self.numero}/{self.ano}"
 
 
 class Trecho(models.Model):

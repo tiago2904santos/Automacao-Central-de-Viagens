@@ -1,0 +1,150 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Documentos do oficio{% endblock %}
+
+{% block breadcrumb %}
+  Oficios <span class="breadcrumb-sep">/</span> Documentos
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Central de Documentos</h2>
+      <p class="page-subtitle">
+        Oficio {{ oficio.numero_formatado|default:oficio.oficio|default:oficio.id }}
+      </p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear btn-small" href="{% url 'oficios_lista' %}">Voltar para oficios</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="{% if message.tags == 'error' %}error{% else %}success{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if justificativa_pendente %}
+    <div class="error">
+      Justificativa pendente: o oficio nao pode ser gerado/baixado enquanto a justificativa estiver vazia.
+      <a href="{% url 'justificativa_form' oficio.id %}?next={% url 'oficio_documentos' oficio.id %}">Preencher justificativa</a>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="wizard-actions documentos-central-actions">
+      <form method="post" action="{% url 'oficio_documentos_gerar_todos' oficio.id %}">
+        {% csrf_token %}
+        <button class="btn-primary" type="submit" {% if justificativa_pendente %}disabled aria-disabled="true"{% endif %}>
+          Gerar todos os documentos
+        </button>
+      </form>
+      <a class="btn-clear" href="{% url 'planos_trabalho_list' %}">Planos</a>
+      <a class="btn-clear" href="{% url 'ordens_servico_list' %}">Ordens</a>
+      <a class="btn-clear" href="{% url 'justificativas_list' %}">Justificativas</a>
+    </div>
+  </div>
+
+  <div class="document-tabs" role="tablist" aria-label="Abas de documentos">
+    <a class="btn-clear{% if active_tab == 'oficio' %} is-active{% endif %}" href="{% url 'oficio_documentos' oficio.id %}?tab=oficio">
+      Oficio
+    </a>
+    <a class="btn-clear{% if active_tab == 'termo' %} is-active{% endif %}" href="{% url 'oficio_documentos' oficio.id %}?tab=termo">
+      Termo
+    </a>
+    <a class="btn-clear{% if active_tab == 'plano' %} is-active{% endif %}" href="{% url 'oficio_documentos' oficio.id %}?tab=plano">
+      Plano de Trabalho
+    </a>
+    {% if not tem_plano %}
+      <a class="btn-clear{% if active_tab == 'ordem' %} is-active{% endif %}" href="{% url 'oficio_documentos' oficio.id %}?tab=ordem">
+        Ordem de Servico
+      </a>
+    {% endif %}
+    {% if exige_justificativa %}
+      <a class="btn-clear{% if active_tab == 'justificativa' %} is-active{% endif %}" href="{% url 'oficio_documentos' oficio.id %}?tab=justificativa">
+        Justificativa
+      </a>
+    {% endif %}
+  </div>
+
+  <section class="sub-card">
+    {% if active_tab == "oficio" %}
+      <div class="sub-card-title">Oficio</div>
+      {% if justificativa_pendente %}
+        <p class="error">
+          A geracao do oficio esta bloqueada ate o preenchimento da justificativa.
+        </p>
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'justificativa_form' oficio.id %}?next={% url 'oficio_documentos' oficio.id %}">
+            Preencher justificativa
+          </a>
+        </div>
+      {% else %}
+        <p>Gerar e baixar oficio em DOCX ou PDF.</p>
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'oficio_download_docx' oficio.id %}">Baixar DOCX</a>
+          <a class="btn-clear" href="{% url 'oficio_download_pdf' oficio.id %}">Baixar PDF</a>
+        </div>
+      {% endif %}
+    {% elif active_tab == "termo" %}
+      <div class="sub-card-title">Termo de Autorizacao</div>
+      <p>Gerar e baixar termo em DOCX ou PDF.</p>
+      <div class="wizard-actions">
+        <a class="btn-clear" href="{% url 'oficio_download_termo_autorizacao' oficio.id %}">Baixar DOCX</a>
+        <a class="btn-clear" href="{% url 'oficio_download_termo_autorizacao_pdf' oficio.id %}">Baixar PDF</a>
+      </div>
+    {% elif active_tab == "plano" %}
+      <div class="sub-card-title">Plano de Trabalho</div>
+      {% if tem_plano and plano_trabalho %}
+        <p>Plano {{ plano_trabalho.numero }}/{{ plano_trabalho.ano }} ja cadastrado.</p>
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'plano_trabalho_editar' oficio.id %}">Editar</a>
+          <a class="btn-clear" href="{% url 'plano_trabalho_download_docx' oficio.id %}">Baixar DOCX</a>
+          <a class="btn-clear" href="{% url 'plano_trabalho_download_pdf' oficio.id %}">Baixar PDF</a>
+        </div>
+      {% else %}
+        <p>Este oficio ainda nao possui plano de trabalho.</p>
+        <div class="wizard-actions">
+          <a class="btn-primary" href="{% url 'plano_trabalho_editar' oficio.id %}">Criar Plano de Trabalho</a>
+        </div>
+      {% endif %}
+    {% elif active_tab == "ordem" and not tem_plano %}
+      <div class="sub-card-title">Ordem de Servico</div>
+      {% if tem_ordem and ordem_servico %}
+        <p>Ordem {{ ordem_servico.numero }}/{{ ordem_servico.ano }} ja cadastrada.</p>
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'ordem_servico_editar' oficio.id %}">Editar</a>
+          <a class="btn-clear" href="{% url 'ordem_servico_download_docx' oficio.id %}">Baixar DOCX</a>
+          <a class="btn-clear" href="{% url 'ordem_servico_download_pdf' oficio.id %}">Baixar PDF</a>
+        </div>
+      {% else %}
+        <p>Este oficio nao possui plano de trabalho, portanto usa ordem de servico.</p>
+        <div class="wizard-actions">
+          <a class="btn-primary" href="{% url 'ordem_servico_editar' oficio.id %}">Criar Ordem de Servico</a>
+        </div>
+      {% endif %}
+    {% elif active_tab == "justificativa" and exige_justificativa %}
+      <div class="sub-card-title">Justificativa</div>
+      {% if justificativa_ok %}
+        <p class="success">Justificativa preenchida.</p>
+        <div class="wizard-actions">
+          <a class="btn-clear" href="{% url 'justificativa_form' oficio.id %}?next={% url 'oficio_documentos' oficio.id %}">
+            Editar/Ver
+          </a>
+        </div>
+      {% else %}
+        <p class="error">
+          Pendente{% if antecedencia is not None %}: antecedencia {{ antecedencia }} dia(s){% endif %}.
+        </p>
+        <div class="wizard-actions">
+          <a class="btn-primary" href="{% url 'justificativa_form' oficio.id %}?next={% url 'oficio_documentos' oficio.id %}">
+            Preencher
+          </a>
+        </div>
+      {% endif %}
+    {% endif %}
+  </section>
+{% endblock %}
