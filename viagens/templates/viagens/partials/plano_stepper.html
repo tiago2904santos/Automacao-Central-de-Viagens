@@ -1,0 +1,59 @@
+<nav class="stepper plano-stepper" aria-label="Etapas do plano de trabalho">
+  {% if current_step == 1 %}
+    <button class="stepper-step is-active" type="button" disabled>
+      <span class="stepper-index">1</span>
+      Identificacao e evento
+    </button>
+  {% else %}
+    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step1' oficio.id %}">
+      <span class="stepper-index">1</span>
+      Identificacao e evento
+    </a>
+  {% endif %}
+
+  {% if current_step == 2 %}
+    <button class="stepper-step is-active" type="button" disabled>
+      <span class="stepper-index">2</span>
+      Equipe e estrutura
+    </button>
+  {% elif current_step > 2 %}
+    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step2' oficio.id %}">
+      <span class="stepper-index">2</span>
+      Equipe e estrutura
+    </a>
+  {% else %}
+    <a class="stepper-step" href="{% url 'plano_trabalho_step2' oficio.id %}">
+      <span class="stepper-index">2</span>
+      Equipe e estrutura
+    </a>
+  {% endif %}
+
+  {% if current_step == 3 %}
+    <button class="stepper-step is-active" type="button" disabled>
+      <span class="stepper-index">3</span>
+      Financeiro e recursos
+    </button>
+  {% elif current_step > 3 %}
+    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step3' oficio.id %}">
+      <span class="stepper-index">3</span>
+      Financeiro e recursos
+    </a>
+  {% else %}
+    <a class="stepper-step" href="{% url 'plano_trabalho_step3' oficio.id %}">
+      <span class="stepper-index">3</span>
+      Financeiro e recursos
+    </a>
+  {% endif %}
+
+  {% if current_step == 4 %}
+    <button class="stepper-step is-active" type="button" disabled>
+      <span class="stepper-index">4</span>
+      Resumo
+    </button>
+  {% else %}
+    <a class="stepper-step" href="{% url 'plano_trabalho_resumo' oficio.id %}">
+      <span class="stepper-index">4</span>
+      Resumo
+    </a>
+  {% endif %}
+</nav>

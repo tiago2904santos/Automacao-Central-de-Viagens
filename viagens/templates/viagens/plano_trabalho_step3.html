@@ -9,31 +9,8 @@
 
 {% block content %}
   <link rel="stylesheet" href="{% static 'css/diarias.css' %}" />
-  <style>
-    #recursosRows { display: grid; gap: 8px; margin-top: 10px; }
-    .editor-item { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-    @media (max-width: 768px) {
-      .editor-item { grid-template-columns: 1fr; }
-    }
-  </style>
-  <nav class="stepper" aria-label="Etapas">
-    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step1' oficio.id %}">
-      <span class="stepper-index">1</span>
-      Identificacao e evento
-    </a>
-    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step2' oficio.id %}">
-      <span class="stepper-index">2</span>
-      Equipe e estrutura
-    </a>
-    <button class="stepper-step is-active" type="button" disabled>
-      <span class="stepper-index">3</span>
-      Financeiro e recursos
-    </button>
-    <a class="stepper-step" href="{% url 'plano_trabalho_resumo' oficio.id %}">
-      <span class="stepper-index">4</span>
-      Resumo
-    </a>
-  </nav>
+  <link rel="stylesheet" href="{% static 'viagens/plano_wizard.css' %}" />
+  {% include "viagens/partials/plano_stepper.html" with oficio=oficio current_step=3 %}
 
   <div class="page-header">
     <div>
@@ -42,10 +19,11 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card plano-wizard-card">
     <form method="post" id="planoStep3Form">
       {% csrf_token %}
       {{ form.recursos_json }}
+      {% include "viagens/partials/plano_form_errors.html" with form=form %}
 
       <section class="sub-card">
         <div class="sub-card-title">Integracao com diarias</div>
@@ -104,7 +82,7 @@
 
       <div class="wizard-actions">
         <a class="btn-clear" href="{% url 'plano_trabalho_step2' oficio.id %}">Voltar</a>
-        <button class="btn-primary" type="submit">Avancar</button>
+        <button class="btn-primary" type="submit">Continuar</button>
       </div>
     </form>
   </div>

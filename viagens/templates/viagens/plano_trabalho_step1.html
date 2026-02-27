@@ -8,42 +8,8 @@
 {% endblock %}
 
 {% block content %}
-  <style>
-    .destinos-list { display: grid; gap: 12px; margin-top: 10px; }
-    .destino-item { border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; background: #fff; }
-    .destino-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .destino-actions { display: flex; align-items: center; gap: 10px; }
-    .drag-handle { cursor: grab; }
-    .destinos-actions { margin-top: 10px; }
-    .termo-date-panel { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin: 12px 0; }
-    .termo-date-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
-    .termo-date-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; }
-    .termo-date-card.is-hidden { display: none; }
-    .termo-switch { display: inline-flex; align-items: center; gap: 10px; margin-top: 8px; }
-    .termo-switch-input { position: absolute; opacity: 0; pointer-events: none; }
-    .termo-switch-track { width: 44px; height: 24px; border-radius: 999px; background: #cbd5e1; position: relative; display: inline-block; }
-    .termo-switch-track::after { content: ""; width: 18px; height: 18px; border-radius: 50%; background: #fff; position: absolute; top: 3px; left: 3px; transition: transform .2s ease; }
-    .termo-switch-input:checked + .termo-switch-track { background: #2563eb; }
-    .termo-switch-input:checked + .termo-switch-track::after { transform: translateX(20px); }
-  </style>
-  <nav class="stepper" aria-label="Etapas">
-    <button class="stepper-step is-active" type="button" disabled>
-      <span class="stepper-index">1</span>
-      Identificacao e evento
-    </button>
-    <a class="stepper-step" href="{% url 'plano_trabalho_step2' oficio.id %}">
-      <span class="stepper-index">2</span>
-      Equipe e estrutura
-    </a>
-    <a class="stepper-step" href="{% url 'plano_trabalho_step3' oficio.id %}">
-      <span class="stepper-index">3</span>
-      Financeiro e recursos
-    </a>
-    <a class="stepper-step" href="{% url 'plano_trabalho_resumo' oficio.id %}">
-      <span class="stepper-index">4</span>
-      Resumo
-    </a>
-  </nav>
+  <link rel="stylesheet" href="{% static 'viagens/plano_wizard.css' %}" />
+  {% include "viagens/partials/plano_stepper.html" with oficio=oficio current_step=1 %}
 
   <div class="page-header">
     <div>
@@ -52,9 +18,10 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card plano-wizard-card">
     <form method="post" id="planoStep1Form">
       {% csrf_token %}
+      {% include "viagens/partials/plano_form_errors.html" with form=form extra_error=erros.destinos %}
       <section class="grid">
         <label>
           Numero do plano
@@ -187,7 +154,7 @@
 
       <div class="wizard-actions">
         <a class="btn-clear" href="{% url 'oficio_documentos' oficio.id %}">Voltar</a>
-        <button class="btn-primary" type="submit">Avancar</button>
+        <button class="btn-primary" type="submit">Continuar</button>
       </div>
     </form>
   </div>

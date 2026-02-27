@@ -9,24 +9,8 @@
 
 {% block content %}
   <link rel="stylesheet" href="{% static 'css/diarias.css' %}" />
-  <nav class="stepper" aria-label="Etapas">
-    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step1' oficio.id %}">
-      <span class="stepper-index">1</span>
-      Identificacao e evento
-    </a>
-    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step2' oficio.id %}">
-      <span class="stepper-index">2</span>
-      Equipe e estrutura
-    </a>
-    <a class="stepper-step is-done" href="{% url 'plano_trabalho_step3' oficio.id %}">
-      <span class="stepper-index">3</span>
-      Financeiro e recursos
-    </a>
-    <button class="stepper-step is-active" type="button" disabled>
-      <span class="stepper-index">4</span>
-      Resumo
-    </button>
-  </nav>
+  <link rel="stylesheet" href="{% static 'viagens/plano_wizard.css' %}" />
+  {% include "viagens/partials/plano_stepper.html" with oficio=oficio current_step=4 %}
 
   <div class="page-header">
     <div>
@@ -35,11 +19,11 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card plano-wizard-card">
     <form method="post">
       {% csrf_token %}
 
-      <section class="grid">
+      <section class="grid plano-summary-grid">
         <div class="sub-card">
           <div class="sub-card-title">Identificacao</div>
           <div class="preview-line"><span class="preview-label">Plano</span><span class="preview-value">{{ numero_plano_formatado }}</span></div>
@@ -68,14 +52,14 @@
         </div>
       </section>
 
-      <section class="grid">
+      <section class="grid plano-summary-grid">
         <div class="sub-card">
           <div class="sub-card-title">Diarias</div>
           {% with totais=diarias_resultado.totais %}
             <div class="preview-line"><span class="preview-label">Quantidade</span><span class="preview-value">{{ totais.total_diarias|default:"-" }}</span></div>
             <div class="preview-line"><span class="preview-label">Valor por servidor</span><span class="preview-value">{{ totais.valor_por_servidor|default:"-" }}</span></div>
             <div class="preview-line"><span class="preview-label">Valor unitario da diaria</span><span class="preview-value">{{ totais.valor_unitario_referencia|default:"-" }}</span></div>
-            <div class="preview-line"><span class="preview-label">Valor total</span><span class="preview-value">{{ totais.total_valor|default:"-" }}</span></div>
+            <div class="preview-line plano-summary-total"><span class="preview-label">Valor total</span><span class="preview-value">{{ totais.total_valor|default:"-" }}</span></div>
             <div class="preview-line"><span class="preview-label">Valor por extenso</span><span class="preview-value">{{ totais.valor_extenso|default:"-" }}</span></div>
           {% endwith %}
         </div>
