@@ -7,6 +7,7 @@ import re
 import shutil
 import zipfile
 import tempfile
+import unicodedata
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -696,8 +697,14 @@ def get_config_oficio() -> dict[str, str]:
 
 
 def _remove_paragraph(paragraph) -> None:
-    # Desativado por seguranca: nao remover nos/estrutura OOXML.
-    return
+    try:
+        element = paragraph._element
+        parent = element.getparent()
+        if parent is not None:
+            parent.remove(element)
+    except Exception:
+        # fallback seguro: limpa o texto se nao conseguir remover o no
+        _replace_paragraph_text(paragraph, "")
 
 
 # Helper para substituir texto preservando o parágrafo (python-docx)
@@ -741,6 +748,84 @@ def _iter_all_paragraphs(doc: DocxDocument):
                 for cell in row.cells:
                     for p in cell.paragraphs:
                         yield p
+
+
+def _normalize_placeholder_lookup(value: str) -> str:
+    text = " ".join(str(value or "").split()).strip().casefold()
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFKD", text)
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = normalized.replace("-", "_").replace(" ", "_")
+    normalized = re.sub(r"[^a-z0-9_]", "", normalized)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    return normalized
+
+
+def extract_placeholders_from_doc(doc: DocxDocument) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for paragraph in _iter_all_paragraphs(doc):
+        full_text = "".join(run.text for run in paragraph.runs)
+        if "{{" not in full_text:
+            continue
+        for match in PLACEHOLDER_RE.finditer(full_text):
+            key = " ".join((match.group(1) or "").split()).strip()
+            if not key:
+                continue
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def remove_optional_placeholder_paragraphs(
+    doc: DocxDocument,
+    *,
+    resolved_mapping: dict[str, str],
+    optional_placeholders: set[str],
+) -> None:
+    optional_normalized = {_normalize_placeholder_lookup(key) for key in optional_placeholders}
+    if not optional_normalized:
+        return
+
+    paragraphs = list(_iter_all_paragraphs(doc))
+    for paragraph in paragraphs:
+        full_text = "".join(run.text for run in paragraph.runs)
+        if "{{" not in full_text:
+            continue
+
+        keys = [
+            " ".join((match.group(1) or "").split()).strip()
+            for match in PLACEHOLDER_RE.finditer(full_text)
+        ]
+        keys = [key for key in keys if key]
+        if not keys:
+            continue
+
+        normalized_keys = {_normalize_placeholder_lookup(key) for key in keys}
+        if not (normalized_keys & optional_normalized):
+            continue
+
+        # Remove somente quando todos os placeholders do paragrafo resolveram para vazio.
+        all_empty = all(not str(resolved_mapping.get(key, "")).strip() for key in keys)
+        if not all_empty:
+            continue
+        _remove_paragraph(paragraph)
+
+
+def apply_document_text_hygiene(doc: DocxDocument) -> None:
+    for paragraph in _iter_all_paragraphs(doc):
+        full_text = "".join(run.text for run in paragraph.runs)
+        if not full_text:
+            continue
+
+        normalized = full_text.replace("\r\n", "\n").replace("\r", "\n")
+        normalized = re.sub(r"\bdas\s+das\b", "das", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"\bde\s+de\b", "de", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"[ \t]+", " ", normalized)
+        normalized = re.sub(r"\s+([,.;:!?])", r"\1", normalized)
+        normalized = normalized.replace("Nao informado.", "Não informado.")
+
+        if normalized != full_text:
+            _replace_paragraph_text(paragraph, normalized)
 
 
 def _apply_config_header_footer(doc: DocxDocument, cfg: OficioConfig) -> None:

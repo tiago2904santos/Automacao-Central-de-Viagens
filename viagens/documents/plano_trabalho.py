@@ -29,12 +29,17 @@ from viagens.services.diarias_unified import (
 )
 from viagens.documents.document import (
     _find_unresolved_placeholders,
+    apply_document_text_hygiene,
+    extract_placeholders_from_doc,
+    remove_optional_placeholder_paragraphs,
     safe_replace_placeholders,
 )
 from viagens.services.plano_trabalho import (
     ATIVIDADES_ORDEM_FIXA,
     META_POR_ATIVIDADE,
+    PLANO_DOCX_OPTIONAL_PLACEHOLDERS,
     build_plano_placeholders,
+    resolve_plano_docx_placeholders,
     validate_required_placeholders,
 )
 
@@ -276,7 +281,24 @@ def build_plano_trabalho_docx_bytes(oficio: Oficio) -> BytesIO:
             f"Template do plano nao encontrado: {template_path}"
         )
     doc = DocxFactory(str(template_path))
-    safe_replace_placeholders(doc, placeholders)
+    template_placeholders = extract_placeholders_from_doc(doc)
+    resolved_placeholders, missing_required_template = resolve_plano_docx_placeholders(
+        template_placeholders.keys(),
+        placeholders,
+    )
+    if missing_required_template:
+        raise ValueError(
+            "Plano de trabalho incompleto. Campos obrigatorios ausentes no template: "
+            + ", ".join(sorted(missing_required_template))
+        )
+
+    remove_optional_placeholder_paragraphs(
+        doc,
+        resolved_mapping=resolved_placeholders,
+        optional_placeholders=PLANO_DOCX_OPTIONAL_PLACEHOLDERS,
+    )
+    safe_replace_placeholders(doc, resolved_placeholders)
+    apply_document_text_hygiene(doc)
 
     buf = BytesIO()
     doc.save(buf)

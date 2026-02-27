@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import date, time
 from decimal import Decimal, InvalidOperation
 from typing import Iterable
@@ -125,6 +126,29 @@ DEFAULT_UNIDADE_MOVEL_TEXTO = (
     "Unidade movel da PCPR equipada para atendimento e confeccao de documentos."
 )
 
+# Placeholders legados detectados no template DOCX real e seus equivalentes canonicos.
+PLANO_DOCX_PLACEHOLDER_ALIASES: dict[str, str] = {
+    "coordenação formatada": "coordenacao_formatada",
+    "coordenacao formatada": "coordenacao_formatada",
+    "coordenação_formatada": "coordenacao_formatada",
+    "coordenacao_formatada": "coordenacao_formatada",
+    "metas_formatada": "metas_formatadas",
+    "metas_formatadas": "metas_formatadas",
+    "atividades_formatada": "atividades_formatada",
+    "atividades_formatadas": "atividades_formatada",
+    "recursos_formatado": "recursos_formatados",
+    "recursos_formatados": "recursos_formatados",
+    "numero_plano_trabalho": "numero_plano_trabalho",
+    "diarias_x": "composicao_diarias",
+    "valor_total_por_extenso": "valor_total_extenso",
+    "valor_unitario_por_extenso": "valor_unitario_extenso",
+    "unidade_movel": "unidade_movel",
+}
+
+PLANO_DOCX_OPTIONAL_PLACEHOLDERS = {
+    "unidade_movel",
+}
+
 
 def format_data_extenso_br(value: date | None) -> str:
     if not value:
@@ -201,6 +225,99 @@ def format_valor_extenso(value) -> str:
     if decimal_value is None:
         return ""
     return valor_por_extenso_ptbr(decimal_value)
+
+
+def normalize_placeholder_key(value: str) -> str:
+    text = " ".join(str(value or "").split()).strip().casefold()
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFKD", text)
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = normalized.replace("-", "_").replace(" ", "_")
+    normalized = re.sub(r"[^a-z0-9_]", "", normalized)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    return normalized
+
+
+def apply_text_hygiene(value: str | None) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not text:
+        return ""
+
+    cleaned_lines: list[str] = []
+    for raw_line in text.split("\n"):
+        line = re.sub(r"[ \t]+", " ", raw_line).strip()
+        line = re.sub(r"\s+([,.;:!?])", r"\1", line)
+        line = re.sub(r"\bdas\s+das\b", "das", line, flags=re.IGNORECASE)
+        line = re.sub(r"\bde\s+de\b", "de", line, flags=re.IGNORECASE)
+        line = line.replace("Nao informado.", "Não informado.")
+        cleaned_lines.append(line)
+
+    normalized_lines: list[str] = []
+    prev_blank = False
+    for line in cleaned_lines:
+        is_blank = not line.strip()
+        if is_blank and prev_blank:
+            continue
+        normalized_lines.append(line if not is_blank else "")
+        prev_blank = is_blank
+
+    return "\n".join(normalized_lines).strip()
+
+
+def resolve_plano_docx_placeholders(
+    template_placeholders: Iterable[str],
+    placeholders: dict[str, str],
+) -> tuple[dict[str, str], list[str]]:
+    canonical_by_normalized: dict[str, str] = {}
+    for key in placeholders.keys():
+        normalized = normalize_placeholder_key(key)
+        if normalized and normalized not in canonical_by_normalized:
+            canonical_by_normalized[normalized] = key
+
+    alias_by_normalized: dict[str, str] = {}
+    for alias, canonical in PLANO_DOCX_PLACEHOLDER_ALIASES.items():
+        normalized_alias = normalize_placeholder_key(alias)
+        if normalized_alias:
+            alias_by_normalized[normalized_alias] = canonical
+
+    required_normalized = {normalize_placeholder_key(key) for key in REQUIRED_PLACEHOLDERS}
+    missing_required: list[str] = []
+    resolved_mapping: dict[str, str] = {}
+
+    for raw_key in template_placeholders:
+        trimmed = " ".join(str(raw_key or "").split()).strip()
+        normalized = normalize_placeholder_key(trimmed)
+        canonical_key = ""
+
+        if trimmed in placeholders:
+            canonical_key = trimmed
+        elif normalized in canonical_by_normalized:
+            canonical_key = canonical_by_normalized[normalized]
+        else:
+            alias_target = (
+                PLANO_DOCX_PLACEHOLDER_ALIASES.get(trimmed)
+                or alias_by_normalized.get(normalized, "")
+            )
+            if alias_target in placeholders:
+                canonical_key = alias_target
+            elif alias_target:
+                alias_target_normalized = normalize_placeholder_key(alias_target)
+                canonical_key = canonical_by_normalized.get(alias_target_normalized, "")
+
+        raw_value = placeholders.get(canonical_key, "") if canonical_key else ""
+        value = apply_text_hygiene(str(raw_value))
+        resolved_mapping[trimmed] = value
+
+        normalized_canonical = normalize_placeholder_key(canonical_key or trimmed)
+        if (
+            normalized_canonical in required_normalized
+            and not value.strip()
+            and trimmed not in missing_required
+        ):
+            missing_required.append(trimmed)
+
+    return resolved_mapping, missing_required
 
 
 def _ordered_descriptions(items: Iterable) -> list[str]:
