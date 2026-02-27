@@ -5094,6 +5094,18 @@ def _plano_resumo_context(plano: PlanoTrabalho, oficio: Oficio) -> dict[str, obj
     ]
     diarias = _plano_diarias_resultado(plano, oficio) or {}
     recursos = [item.descricao for item in plano.recursos.all().order_by("ordem", "id")]
+    atividades = [
+        " ".join((item.descricao or "").split())
+        for item in plano.atividades.all().order_by("ordem", "id")
+        if " ".join((item.descricao or "").split())
+    ]
+    metas = [
+        " ".join((item.descricao or "").split())
+        for item in plano.metas.all().order_by("ordem", "id")
+        if " ".join((item.descricao or "").split())
+    ]
+    if atividades and not metas:
+        metas = metas_from_atividades(atividades)
     return {
         "plano": plano,
         "oficio": oficio,
@@ -5111,6 +5123,8 @@ def _plano_resumo_context(plano: PlanoTrabalho, oficio: Oficio) -> dict[str, obj
         "efetivo_total_label": format_total_servidores(efetivo_total),
         "unidade_movel": plano.unidade_movel,
         "coordenacao_formatada": build_coordenacao_formatada(plano),
+        "atividades": atividades,
+        "metas": metas,
         "diarias_resultado": diarias,
         "recursos": recursos,
         "data_resumo_extenso": format_data_extenso_br(timezone.localdate()),
@@ -5507,9 +5521,23 @@ def plano_trabalho_step2(request, oficio_id: int):
     )
     if not efetivo_rows:
         efetivo_rows = _default_efetivo_rows_from_oficio(oficio)
+    atividades = [
+        " ".join((item.descricao or "").split())
+        for item in plano.atividades.all().order_by("ordem", "id")
+        if " ".join((item.descricao or "").split())
+    ]
+    metas = [
+        " ".join((item.descricao or "").split())
+        for item in plano.metas.all().order_by("ordem", "id")
+        if " ".join((item.descricao or "").split())
+    ]
+    if atividades and not metas:
+        metas = metas_from_atividades(atividades)
 
     initial = {
         "efetivo_json": json.dumps(efetivo_rows, ensure_ascii=False),
+        "atividades_json": _serialize_ordered_text_items(atividades),
+        "metas_json": _serialize_ordered_text_items(metas),
         "unidade_movel": "sim" if plano.unidade_movel else "nao",
         "coordenador_plano": plano.coordenador_plano_id or "",
         "coordenador_plano_nome": plano.get_coordenador_administrativo_nome(),
@@ -5575,6 +5603,16 @@ def plano_trabalho_step2(request, oficio_id: int):
                     plano.coordenador_municipal = None
                     plano.possui_coordenador_municipal = False
                 plano.save()
+                _sync_plano_ordered_text_items(
+                    plano,
+                    model_cls=PlanoTrabalhoAtividade,
+                    values=form.parsed_atividades,
+                )
+                _sync_plano_ordered_text_items(
+                    plano,
+                    model_cls=PlanoTrabalhoMeta,
+                    values=form.parsed_metas,
+                )
             return redirect("plano_trabalho_step3", oficio_id=oficio.id)
     else:
         form = PlanoTrabalhoStep2Form(

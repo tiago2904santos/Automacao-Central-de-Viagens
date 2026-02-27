@@ -22,6 +22,8 @@
     <form method="post" id="planoStep2Form">
       {% csrf_token %}
       {{ form.efetivo_json }}
+      {{ form.atividades_json }}
+      {{ form.metas_json }}
       {{ cargo_options|json_script:"planoCargoOptions" }}
       {% include "viagens/partials/plano_form_errors.html" with form=form %}
 
@@ -39,6 +41,29 @@
         <div class="preview-line">
           <span class="preview-label">Total de servidores</span>
           <span class="preview-value" id="efetivoTotalPreview">0 servidores</span>
+        </div>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Conteudo do plano</div>
+        <p class="field-help">Informe ao menos uma atividade e uma meta. Use itens curtos e objetivos.</p>
+        <div class="grid">
+          <div class="full">
+            <label class="full">Atividades</label>
+            <div id="atividadesRows"></div>
+            <div class="field-actions">
+              <button class="btn-clear btn-small" type="button" id="addAtividadeBtn">+ Adicionar atividade</button>
+            </div>
+            {% if form.atividades_json.errors %}<span class="error">{{ form.atividades_json.errors|join:", " }}</span>{% endif %}
+          </div>
+          <div class="full">
+            <label class="full">Metas</label>
+            <div id="metasRows"></div>
+            <div class="field-actions">
+              <button class="btn-clear btn-small" type="button" id="addMetaBtn">+ Adicionar meta</button>
+            </div>
+            {% if form.metas_json.errors %}<span class="error">{{ form.metas_json.errors|join:", " }}</span>{% endif %}
+          </div>
         </div>
       </section>
 
@@ -125,6 +150,12 @@
       const rowsContainer = document.getElementById("efetivoRows");
       const addBtn = document.getElementById("addEfetivoBtn");
       const totalPreview = document.getElementById("efetivoTotalPreview");
+      const atividadesInput = document.getElementById("id_atividades_json");
+      const metasInput = document.getElementById("id_metas_json");
+      const atividadesRows = document.getElementById("atividadesRows");
+      const metasRows = document.getElementById("metasRows");
+      const addAtividadeBtn = document.getElementById("addAtividadeBtn");
+      const addMetaBtn = document.getElementById("addMetaBtn");
 
       const cargoOptions = (() => {
         if (!optionsNode || !optionsNode.textContent) return [];
@@ -232,6 +263,98 @@
       addBtn?.addEventListener("click", () => {
         rows.push({ cargo_id: "", quantidade: "" });
         render();
+      });
+
+      function initTextListEditor({
+        hiddenInputField,
+        rowsElement,
+        addButton,
+        placeholder,
+      }) {
+        if (!hiddenInputField || !rowsElement) return;
+
+        function parseListPayload() {
+          try {
+            const parsed = JSON.parse(hiddenInputField.value || "[]");
+            if (!Array.isArray(parsed)) return [];
+            return parsed.map((item) => {
+              if (typeof item === "string") return { descricao: item };
+              if (item && typeof item === "object") {
+                return { descricao: item.descricao || item.texto || "" };
+              }
+              return { descricao: "" };
+            });
+          } catch (_err) {
+            return [];
+          }
+        }
+
+        let localRows = parseListPayload();
+        if (!localRows.length) localRows = [{ descricao: "" }];
+
+        function escapeAttr(value) {
+          return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;");
+        }
+
+        function syncHiddenField() {
+          hiddenInputField.value = JSON.stringify(
+            localRows.map((row) => ({
+              descricao: String(row.descricao || "").replace(/\s+/g, " ").trim(),
+            }))
+          );
+        }
+
+        function renderRows() {
+          rowsElement.innerHTML = "";
+          localRows.forEach((row, index) => {
+            const wrapper = document.createElement("div");
+            wrapper.className = "editor-item";
+            wrapper.innerHTML = `
+              <input type="text" class="input-field" placeholder="${escapeAttr(placeholder)}" value="${escapeAttr(row.descricao)}" />
+              <button type="button" class="btn-clear" data-action="remove">Remover</button>
+            `;
+            const input = wrapper.querySelector("input");
+            const removeBtn = wrapper.querySelector("[data-action='remove']");
+            input.addEventListener("input", () => {
+              localRows[index] = { descricao: input.value };
+              syncHiddenField();
+            });
+            removeBtn.addEventListener("click", () => {
+              if (localRows.length <= 1) {
+                localRows[0] = { descricao: "" };
+              } else {
+                localRows.splice(index, 1);
+              }
+              renderRows();
+            });
+            rowsElement.appendChild(wrapper);
+          });
+          syncHiddenField();
+        }
+
+        addButton?.addEventListener("click", () => {
+          localRows.push({ descricao: "" });
+          renderRows();
+        });
+
+        renderRows();
+      }
+
+      initTextListEditor({
+        hiddenInputField: atividadesInput,
+        rowsElement: atividadesRows,
+        addButton: addAtividadeBtn,
+        placeholder: "Atividade",
+      });
+      initTextListEditor({
+        hiddenInputField: metasInput,
+        rowsElement: metasRows,
+        addButton: addMetaBtn,
+        placeholder: "Meta",
       });
 
       render();

@@ -216,7 +216,7 @@ def _ordered_descriptions(items: Iterable) -> list[str]:
 def format_lista_bullets(values: list[str], *, bullet: str = "-") -> str:
     cleaned = [" ".join(str(value).split()) for value in values if " ".join(str(value).split())]
     if not cleaned:
-        return "-"
+        return "Nao informado."
     return "\n".join(f"{bullet} {value}" for value in cleaned)
 
 
@@ -476,7 +476,25 @@ def metas_from_atividades(atividades: list[str]) -> list[str]:
 
 
 def format_atividades_formatada(atividades: list[str]) -> str:
-    ordered = normalize_atividades_selecionadas(atividades)
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in atividades:
+        text = " ".join(str(item or "").split())
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(text)
+    if not cleaned:
+        return format_lista_bullets([], bullet="\u2022")
+
+    all_known = all(item in ATIVIDADES_ORDEM_FIXA for item in cleaned)
+    if all_known:
+        ordered = normalize_atividades_selecionadas(cleaned)
+    else:
+        ordered = cleaned
     return format_lista_bullets(ordered, bullet="\u2022")
 
 

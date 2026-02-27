@@ -54,6 +54,34 @@
 
       <section class="grid plano-summary-grid">
         <div class="sub-card">
+          <div class="sub-card-title">Atividades</div>
+          {% if atividades %}
+            <ul>
+              {% for atividade in atividades %}
+                <li>{{ atividade }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p>Nao informado.</p>
+          {% endif %}
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-title">Metas</div>
+          {% if metas %}
+            <ul>
+              {% for meta in metas %}
+                <li>{{ meta }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p>Nao informado.</p>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="grid plano-summary-grid">
+        <div class="sub-card">
           <div class="sub-card-title">Diarias</div>
           {% with totais=diarias_resultado.totais %}
             <div class="preview-line"><span class="preview-label">Quantidade</span><span class="preview-value">{{ totais.total_diarias|default:"-" }}</span></div>

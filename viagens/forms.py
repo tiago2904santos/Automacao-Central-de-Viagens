@@ -837,6 +837,8 @@ class PlanoTrabalhoStep1Form(forms.Form):
 
 class PlanoTrabalhoStep2Form(forms.Form):
     efetivo_json = forms.CharField(required=True, widget=forms.HiddenInput())
+    atividades_json = forms.CharField(required=False, widget=forms.HiddenInput())
+    metas_json = forms.CharField(required=False, widget=forms.HiddenInput())
     unidade_movel = forms.TypedChoiceField(
         choices=(("nao", "Nao"), ("sim", "Sim")),
         coerce=lambda value: str(value).strip().lower() == "sim",
@@ -878,11 +880,59 @@ class PlanoTrabalhoStep2Form(forms.Form):
             self.initial["coordenador_plano_nome"] = DEFAULT_COORDENADOR_PLANO_NOME
         if not self.initial.get("coordenador_plano_cargo"):
             self.initial["coordenador_plano_cargo"] = DEFAULT_COORDENADOR_PLANO_CARGO
+        if not (self.initial.get("atividades_json") or "").strip():
+            self.initial["atividades_json"] = "[]"
+        if not (self.initial.get("metas_json") or "").strip():
+            self.initial["metas_json"] = "[]"
         for field in self.fields.values():
             css = field.widget.attrs.get("class", "")
             field.widget.attrs["class"] = f"{css} input-field".strip()
 
         self._parsed_efetivo: list[dict[str, object]] = []
+        self._parsed_atividades: list[str] = []
+        self._parsed_metas: list[str] = []
+
+    def _parse_ordered_text_items(self, field_name: str, *, label: str) -> list[str]:
+        raw_payload = (self.cleaned_data.get(field_name) or "").strip()
+        if not raw_payload:
+            return []
+        try:
+            parsed = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            self.add_error(field_name, f"Nao foi possivel ler a lista de {label}.")
+            return []
+        if not isinstance(parsed, list):
+            self.add_error(field_name, f"Formato invalido para lista de {label}.")
+            return []
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        has_blank = False
+        has_duplicate = False
+        for item in parsed:
+            if isinstance(item, str):
+                raw_text = item
+            elif isinstance(item, dict):
+                raw_text = item.get("descricao", "") or item.get("texto", "")
+            else:
+                has_blank = True
+                continue
+            text = " ".join(str(raw_text).split())
+            if not text:
+                has_blank = True
+                continue
+            key = text.casefold()
+            if key in seen:
+                has_duplicate = True
+                continue
+            seen.add(key)
+            normalized.append(text)
+
+        if has_blank:
+            self.add_error(field_name, f"Remova itens vazios da lista de {label}.")
+        if has_duplicate:
+            self.add_error(field_name, f"Nao repita itens na lista de {label}.")
+        return normalized
 
     def clean(self):
         cleaned_data = super().clean()
@@ -962,6 +1012,27 @@ class PlanoTrabalhoStep2Form(forms.Form):
         self._parsed_efetivo = efetivo_rows
         cleaned_data["efetivo_json"] = json.dumps(efetivo_rows, ensure_ascii=False)
 
+        self._parsed_atividades = self._parse_ordered_text_items(
+            "atividades_json",
+            label="atividades",
+        )
+        self._parsed_metas = self._parse_ordered_text_items(
+            "metas_json",
+            label="metas",
+        )
+        if not self._parsed_atividades:
+            self.add_error("atividades_json", "Informe ao menos 1 atividade.")
+        if not self._parsed_metas:
+            self.add_error("metas_json", "Informe ao menos 1 meta.")
+        cleaned_data["atividades_json"] = json.dumps(
+            [{"descricao": value} for value in self._parsed_atividades],
+            ensure_ascii=False,
+        )
+        cleaned_data["metas_json"] = json.dumps(
+            [{"descricao": value} for value in self._parsed_metas],
+            ensure_ascii=False,
+        )
+
         coordenador_plano = cleaned_data.get("coordenador_plano")
         nome = " ".join((cleaned_data.get("coordenador_plano_nome") or "").split())
         cargo = " ".join((cleaned_data.get("coordenador_plano_cargo") or "").split())
@@ -1012,6 +1083,14 @@ class PlanoTrabalhoStep2Form(forms.Form):
     @property
     def parsed_efetivo(self) -> list[dict[str, object]]:
         return list(self._parsed_efetivo)
+
+    @property
+    def parsed_atividades(self) -> list[str]:
+        return list(self._parsed_atividades)
+
+    @property
+    def parsed_metas(self) -> list[str]:
+        return list(self._parsed_metas)
 
 
 class PlanoTrabalhoStep3Form(forms.Form):

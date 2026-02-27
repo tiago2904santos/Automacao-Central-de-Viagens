@@ -11,9 +11,11 @@ from docx import Document
 from viagens.documents.plano_trabalho import build_plano_trabalho_docx_bytes
 from viagens.forms import PlanoTrabalhoStep1Form
 from viagens.models import Cargo, Cidade, Estado, Oficio, PlanoTrabalho, Trecho, Viajante
+from viagens.services.oficio_config import get_oficio_config
 from viagens.services.diarias_unified import parse_decimal_br
 from viagens.services.plano_trabalho import (
     DEFAULT_COORDENADOR_PLANO_NOME,
+    build_plano_placeholders,
     efetivo_total_servidores,
     format_horario_atendimento,
     format_total_servidores,
@@ -65,6 +67,10 @@ class PlanoTrabalhoWizardTests(TestCase):
             chegada_data=date(2026, 3, 12),
             chegada_hora=time(12, 0),
         )
+        self.atividade_a = "Atividade institucional A"
+        self.atividade_b = "Atividade institucional B"
+        self.meta_a = "Meta institucional A"
+        self.meta_b = "Meta institucional B"
 
     def _post_step1(self, *, solicitantes: list[str], nome_pcpr: str = "") -> None:
         response = self.client.post(
@@ -96,6 +102,25 @@ class PlanoTrabalhoWizardTests(TestCase):
             chunks.extend(paragraph.text for paragraph in section.footer.paragraphs)
         return "\n".join(chunks)
 
+    def _conteudo_plano_payload(
+        self,
+        *,
+        atividades: list[str] | None = None,
+        metas: list[str] | None = None,
+    ) -> dict[str, str]:
+        atividades_values = atividades if atividades is not None else [self.atividade_a]
+        metas_values = metas if metas is not None else [self.meta_a]
+        return {
+            "atividades_json": json.dumps(
+                [{"descricao": item} for item in atividades_values],
+                ensure_ascii=False,
+            ),
+            "metas_json": json.dumps(
+                [{"descricao": item} for item in metas_values],
+                ensure_ascii=False,
+            ),
+        }
+
     def test_step1_persistencia_campos_evento(self) -> None:
         self._post_step1(solicitantes=["PCPR na Comunidade"], nome_pcpr="Prefeitura Municipal")
         plano = PlanoTrabalho.objects.get(oficio=self.oficio)
@@ -117,6 +142,7 @@ class PlanoTrabalhoWizardTests(TestCase):
                         {"cargo_id": self.cargo_escrivao.id, "quantidade": 2},
                     ]
                 ),
+                **self._conteudo_plano_payload(),
                 "unidade_movel": "nao",
                 "coordenador_plano": str(self.servidor.id),
                 "coordenador_plano_nome": "IGNORAR",
@@ -137,6 +163,7 @@ class PlanoTrabalhoWizardTests(TestCase):
                 "efetivo_json": json.dumps(
                     [{"cargo_id": self.cargo_delegado.id, "quantidade": 1}]
                 ),
+                **self._conteudo_plano_payload(),
                 "unidade_movel": "sim",
                 "coordenador_plano": str(self.servidor.id),
                 "coordenador_plano_nome": self.servidor.nome,
@@ -162,6 +189,7 @@ class PlanoTrabalhoWizardTests(TestCase):
                 "efetivo_json": json.dumps(
                     [{"cargo_id": self.cargo_delegado.id, "quantidade": 1}]
                 ),
+                **self._conteudo_plano_payload(),
                 "unidade_movel": "nao",
                 "coordenador_plano": str(self.servidor.id),
                 "coordenador_plano_nome": self.servidor.nome,
@@ -191,6 +219,7 @@ class PlanoTrabalhoWizardTests(TestCase):
                 "efetivo_json": json.dumps(
                     [{"cargo_id": self.cargo_delegado.id, "quantidade": 2}]
                 ),
+                **self._conteudo_plano_payload(),
                 "unidade_movel": "sim",
                 "coordenador_plano": str(self.servidor.id),
                 "coordenador_plano_nome": self.servidor.nome,
@@ -313,6 +342,7 @@ class PlanoTrabalhoWizardTests(TestCase):
                         {"cargo_id": self.cargo_delegado.id, "quantidade": 2},
                     ]
                 ),
+                **self._conteudo_plano_payload(),
                 "unidade_movel": "nao",
                 "coordenador_plano": str(self.servidor.id),
                 "coordenador_plano_nome": "IGNORAR",
@@ -335,6 +365,10 @@ class PlanoTrabalhoWizardTests(TestCase):
                         {"cargo_id": self.cargo_escrivao.id, "quantidade": 2},
                     ]
                 ),
+                **self._conteudo_plano_payload(
+                    atividades=[self.atividade_a, self.atividade_b],
+                    metas=[self.meta_a, self.meta_b],
+                ),
                 "unidade_movel": "nao",
                 "coordenador_plano": str(self.servidor.id),
                 "coordenador_plano_nome": "IGNORAR",
@@ -346,9 +380,9 @@ class PlanoTrabalhoWizardTests(TestCase):
 
         response_back = self.client.get(reverse("plano_trabalho_step2", args=[self.oficio.id]))
         self.assertEqual(response_back.status_code, 200)
-        payload = json.loads(response_back.context["form"].initial["efetivo_json"])
+        payload_efetivo = json.loads(response_back.context["form"].initial["efetivo_json"])
         self.assertEqual(
-            payload,
+            payload_efetivo,
             [
                 {
                     "cargo_id": self.cargo_delegado.id,
@@ -362,6 +396,67 @@ class PlanoTrabalhoWizardTests(TestCase):
                 },
             ],
         )
+        payload_atividades = json.loads(response_back.context["form"].initial["atividades_json"])
+        payload_metas = json.loads(response_back.context["form"].initial["metas_json"])
+        self.assertEqual(
+            payload_atividades,
+            [{"descricao": self.atividade_a}, {"descricao": self.atividade_b}],
+        )
+        self.assertEqual(
+            payload_metas,
+            [{"descricao": self.meta_a}, {"descricao": self.meta_b}],
+        )
+
+    def test_step2_bloqueia_item_vazio_em_metas_ou_atividades(self) -> None:
+        self._post_step1(solicitantes=["Parana em Acao"])
+        response = self.client.post(
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
+            {
+                "efetivo_json": json.dumps(
+                    [{"cargo_id": self.cargo_delegado.id, "quantidade": 1}]
+                ),
+                "atividades_json": json.dumps(
+                    [{"descricao": "Atividade valida"}, {"descricao": ""}],
+                    ensure_ascii=False,
+                ),
+                "metas_json": json.dumps(
+                    [{"descricao": "Meta valida"}],
+                    ensure_ascii=False,
+                ),
+                "unidade_movel": "nao",
+                "coordenador_plano": str(self.servidor.id),
+                "coordenador_plano_nome": self.servidor.nome,
+                "coordenador_plano_cargo": self.servidor.cargo,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertIn("atividades_json", form.errors)
+        self.assertIn("Remova itens vazios", form.errors["atividades_json"][0])
+
+    def test_step2_bloqueia_quando_sem_metas(self) -> None:
+        self._post_step1(solicitantes=["Parana em Acao"])
+        response = self.client.post(
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
+            {
+                "efetivo_json": json.dumps(
+                    [{"cargo_id": self.cargo_delegado.id, "quantidade": 1}]
+                ),
+                "atividades_json": json.dumps(
+                    [{"descricao": "Atividade valida"}],
+                    ensure_ascii=False,
+                ),
+                "metas_json": json.dumps([], ensure_ascii=False),
+                "unidade_movel": "nao",
+                "coordenador_plano": str(self.servidor.id),
+                "coordenador_plano_nome": self.servidor.nome,
+                "coordenador_plano_cargo": self.servidor.cargo,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertIn("metas_json", form.errors)
+        self.assertIn("Informe ao menos 1 meta", form.errors["metas_json"][0])
 
     def test_step3_endpoint_calculo_diarias_retorna_valor_por_servidor(self) -> None:
         self._post_step1(solicitantes=["Parana em Acao"])
@@ -371,6 +466,7 @@ class PlanoTrabalhoWizardTests(TestCase):
                 "efetivo_json": json.dumps(
                     [{"cargo_id": self.cargo_delegado.id, "quantidade": 3}]
                 ),
+                **self._conteudo_plano_payload(),
                 "unidade_movel": "nao",
                 "coordenador_plano": str(self.servidor.id),
                 "coordenador_plano_nome": self.servidor.nome,
@@ -403,6 +499,7 @@ class PlanoTrabalhoWizardTests(TestCase):
                 "efetivo_json": json.dumps(
                     [{"cargo_id": self.cargo_delegado.id, "quantidade": 2}]
                 ),
+                **self._conteudo_plano_payload(),
                 "unidade_movel": "sim",
                 "coordenador_plano": str(self.servidor.id),
                 "coordenador_plano_nome": self.servidor.nome,
@@ -428,3 +525,29 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertIsNotNone(plano.valor_total_calculado)
         self.assertIsNotNone(plano.valor_unitario)
         self.assertGreater(parse_decimal_br(str(plano.valor_total_calculado)) or 0, 0)
+
+    def test_contexto_docx_metas_e_atividades_nao_usam_hifen(self) -> None:
+        self._post_step1(solicitantes=["Parana em Acao"])
+        response_step2 = self.client.post(
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
+            {
+                "efetivo_json": json.dumps(
+                    [{"cargo_id": self.cargo_delegado.id, "quantidade": 2}]
+                ),
+                **self._conteudo_plano_payload(
+                    atividades=[self.atividade_a, self.atividade_b],
+                    metas=[self.meta_a, self.meta_b],
+                ),
+                "unidade_movel": "nao",
+                "coordenador_plano": str(self.servidor.id),
+                "coordenador_plano_nome": self.servidor.nome,
+                "coordenador_plano_cargo": self.servidor.cargo,
+            },
+        )
+        self.assertEqual(response_step2.status_code, 302)
+        plano = PlanoTrabalho.objects.get(oficio=self.oficio)
+        placeholders = build_plano_placeholders(plano, self.oficio, get_oficio_config())
+        self.assertNotEqual(placeholders["atividades_formatada"], "-")
+        self.assertNotEqual(placeholders["metas_formatadas"], "-")
+        self.assertIn("• Atividade institucional A", placeholders["atividades_formatada"])
+        self.assertIn("• Meta institucional A", placeholders["metas_formatadas"])

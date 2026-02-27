@@ -141,6 +141,20 @@
   gap: 0.5rem;
 }
 
+#atividadesRows,
+#metasRows {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+}
+
+#atividadesRows .editor-item,
+#metasRows .editor-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+}
+
 .plano-summary-grid {
   align-items: stretch;
 }
@@ -153,7 +167,9 @@
 
 @media (max-width: 768px) {
   #efetivoRows .editor-item,
-  #recursosRows .editor-item {
+  #recursosRows .editor-item,
+  #atividadesRows .editor-item,
+  #metasRows .editor-item {
     grid-template-columns: 1fr;
   }
 
