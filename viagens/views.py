@@ -5276,6 +5276,18 @@ def oficio_documentos_gerar_todos(request, oficio_id: int):
     return redirect("oficio_documentos", oficio_id=oficio.id)
 
 
+def _criar_oficio_base_documento() -> Oficio:
+    return Oficio.objects.create(status=Oficio.Status.DRAFT)
+
+
+@require_http_methods(["GET", "POST"])
+def plano_trabalho_criar(request):
+    oficio = _criar_oficio_base_documento()
+    _ensure_plano_wizard_instance(oficio)
+    messages.success(request, "Plano de trabalho criado. Continue o preenchimento na etapa 1.")
+    return redirect("plano_trabalho_step1", oficio_id=oficio.id)
+
+
 @require_GET
 def planos_trabalho_list(request):
     ano_raw = (request.GET.get("ano") or "").strip()
@@ -5722,15 +5734,36 @@ def plano_trabalho_download_pdf(request, oficio_id: int):
 
 @require_GET
 def justificativas_list(request):
+    q = (request.GET.get("q") or "").strip()
     status_filter = (request.GET.get("status") or "pendentes").strip().lower()
     if status_filter not in {"pendentes", "completas"}:
         status_filter = "pendentes"
+
+    params = request.GET.copy()
+    params.pop("page", None)
+    querystring = params.urlencode()
 
     oficios = (
         Oficio.objects.select_related("cidade_destino", "estado_destino")
         .prefetch_related("trechos")
         .order_by("-created_at")
     )
+    if q:
+        q_oficio = normalize_oficio_num(q)
+        q_protocolo = normalize_protocolo_num(q)
+        query = (
+            models.Q(oficio__icontains=q)
+            | models.Q(protocolo__icontains=q)
+            | models.Q(destino__icontains=q)
+            | models.Q(assunto__icontains=q)
+            | models.Q(cidade_destino__nome__icontains=q)
+            | models.Q(estado_destino__sigla__icontains=q)
+        )
+        if q_oficio:
+            query |= models.Q(oficio__icontains=q_oficio)
+        if q_protocolo:
+            query |= models.Q(protocolo__icontains=q_protocolo)
+        oficios = oficios.filter(query).distinct()
 
     rows: list[dict[str, object]] = []
     for oficio in oficios:
@@ -5765,7 +5798,18 @@ def justificativas_list(request):
             "rows": page_obj,
             "page_obj": page_obj,
             "status_filter": status_filter,
+            "q": q,
+            "querystring": querystring,
         },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def justificativa_criar(request):
+    oficio = _criar_oficio_base_documento()
+    messages.success(request, "Justificativa criada. Continue o preenchimento.")
+    return redirect(
+        f"{reverse('justificativa_form', args=[oficio.id])}?next={reverse('justificativas_list')}"
     )
 
 
@@ -5824,12 +5868,34 @@ def justificativa_form(request, oficio_id: int):
 
 @require_GET
 def ordens_servico_list(request):
+    q = (request.GET.get("q") or "").strip()
+    params = request.GET.copy()
+    params.pop("page", None)
+    querystring = params.urlencode()
+
     oficios = (
         Oficio.objects.filter(plano_trabalho__isnull=True)
         .select_related("cidade_destino", "estado_destino")
         .prefetch_related("trechos")
         .order_by("-created_at")
     )
+    if q:
+        q_oficio = normalize_oficio_num(q)
+        q_protocolo = normalize_protocolo_num(q)
+        query = (
+            models.Q(oficio__icontains=q)
+            | models.Q(protocolo__icontains=q)
+            | models.Q(destino__icontains=q)
+            | models.Q(assunto__icontains=q)
+            | models.Q(cidade_destino__nome__icontains=q)
+            | models.Q(estado_destino__sigla__icontains=q)
+        )
+        if q_oficio:
+            query |= models.Q(oficio__icontains=q_oficio)
+        if q_protocolo:
+            query |= models.Q(protocolo__icontains=q_protocolo)
+        oficios = oficios.filter(query).distinct()
+
     rows: list[dict[str, object]] = []
     for oficio in oficios:
         ordem = _get_ordem_servico(oficio)
@@ -5852,8 +5918,28 @@ def ordens_servico_list(request):
         {
             "rows": page_obj,
             "page_obj": page_obj,
+            "q": q,
+            "querystring": querystring,
         },
     )
+
+
+@require_http_methods(["GET", "POST"])
+def ordem_servico_criar(request):
+    oficio = _criar_oficio_base_documento()
+    ano = int(oficio.ano or timezone.localdate().year)
+    initial = _ordem_initial_data(oficio)
+    OrdemServico.objects.create(
+        oficio=oficio,
+        numero=get_next_ordem_num(ano),
+        ano=ano,
+        referencia=str(initial.get("referencia") or "Diligencias"),
+        determinante_nome=str(initial.get("determinante_nome") or ""),
+        determinante_cargo=str(initial.get("determinante_cargo") or ""),
+        finalidade=str(initial.get("finalidade") or ""),
+    )
+    messages.success(request, "Ordem de servico criada. Continue o preenchimento.")
+    return redirect("ordem_servico_editar", oficio_id=oficio.id)
 
 
 @require_http_methods(["GET", "POST"])

@@ -20,6 +20,11 @@ urlpatterns = [
     path("oficios/etapa-4/", views.oficio_step4, name="oficio_step4"),
     path("planos-trabalho/", views.planos_trabalho_list, name="planos_trabalho_list"),
     path(
+        "planos-trabalho/criar/",
+        views.plano_trabalho_criar,
+        name="plano_trabalho_criar",
+    ),
+    path(
         "planos-trabalho/oficio/<int:oficio_id>/editar/",
         views.plano_trabalho_editar,
         name="plano_trabalho_editar",
@@ -61,11 +66,21 @@ urlpatterns = [
     ),
     path("justificativas/", views.justificativas_list, name="justificativas_list"),
     path(
+        "justificativas/criar/",
+        views.justificativa_criar,
+        name="justificativa_criar",
+    ),
+    path(
         "justificativas/oficio/<int:oficio_id>/",
         views.justificativa_form,
         name="justificativa_form",
     ),
     path("ordens-servico/", views.ordens_servico_list, name="ordens_servico_list"),
+    path(
+        "ordens-servico/criar/",
+        views.ordem_servico_criar,
+        name="ordem_servico_criar",
+    ),
     path(
         "ordens-servico/oficio/<int:oficio_id>/editar/",
         views.ordem_servico_editar,

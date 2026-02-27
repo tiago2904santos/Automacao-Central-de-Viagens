@@ -12,89 +12,101 @@
       <h2 class="page-title">Planos de Trabalho</h2>
       <p class="page-subtitle">Lista de planos e pendencias por oficio.</p>
     </div>
+    <div class="page-actions">
+      <a class="btn-primary" href="{% url 'plano_trabalho_criar' %}">+ Criar plano de trabalho</a>
+    </div>
   </div>
 
-  <div class="card">
-    <form method="get" class="grid">
-      <label>
-        Ano
-        <input class="input-field" type="text" name="ano" value="{{ filters.ano }}" />
-      </label>
-      <label>
-        Oficio
-        <input class="input-field" type="text" name="oficio" value="{{ filters.oficio }}" />
-      </label>
-      <label>
-        Protocolo
-        <input class="input-field" type="text" name="protocolo" value="{{ filters.protocolo }}" />
-      </label>
-      <label>
-        Destino
-        <input class="input-field" type="text" name="destino" value="{{ filters.destino }}" />
-      </label>
-      <div class="wizard-actions">
-        <button class="btn-primary" type="submit">Filtrar</button>
-        <a class="btn-clear" href="{% url 'planos_trabalho_list' %}">Limpar</a>
+  <div class="list-card">
+    <div class="filter-bar">
+      <form method="get" class="filter-form">
+        <div class="filter-left">
+          <div class="filter-group">
+            <label>Ano</label>
+            <input type="text" name="ano" value="{{ filters.ano }}" />
+          </div>
+          <div class="filter-group">
+            <label>Oficio</label>
+            <input type="text" name="oficio" value="{{ filters.oficio }}" />
+          </div>
+          <div class="filter-group">
+            <label>Protocolo</label>
+            <input type="text" name="protocolo" value="{{ filters.protocolo }}" />
+          </div>
+          <div class="filter-group">
+            <label>Destino</label>
+            <input type="text" name="destino" value="{{ filters.destino }}" />
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button class="btn-primary" type="submit">Filtrar</button>
+          <a class="btn-clear" href="{% url 'planos_trabalho_list' %}">Limpar</a>
+        </div>
+      </form>
+    </div>
+
+    {% if rows %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Plano</th>
+            <th>Oficio</th>
+            <th>Protocolo</th>
+            <th>Periodo</th>
+            <th>Destinos</th>
+            <th>Status</th>
+            <th class="table-actions-header">Acoes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>
+                {% if row.plano %}
+                  {{ row.plano.numero }}/{{ row.plano.ano }}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td>{{ row.oficio.numero_formatado|default:row.oficio.oficio|default:row.oficio.id }}</td>
+              <td>{{ row.oficio.protocolo_formatado|default:row.oficio.protocolo|default:"-" }}</td>
+              <td>{{ row.data_inicio|date:"d/m/Y" }} a {{ row.data_fim|date:"d/m/Y" }}</td>
+              <td>{{ row.destinos }}</td>
+              <td>{{ row.status }}</td>
+              <td class="table-actions-cell">
+                <div class="table-actions table-actions--right">
+                  <a class="btn-edit btn-small" href="{% url 'plano_trabalho_editar' row.oficio.id %}">Abrir/Editar</a>
+                  <a class="btn-icon btn-icon--docx" href="{% url 'plano_trabalho_download_docx' row.oficio.id %}" aria-label="Baixar DOCX">W</a>
+                  <a class="btn-icon btn-icon--pdf" href="{% url 'plano_trabalho_download_pdf' row.oficio.id %}" aria-label="Baixar PDF">PDF</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <div>
+          <strong>Nenhum plano encontrado</strong>
+          <p>Crie um plano de trabalho para aparecer nesta lista.</p>
+        </div>
+        <a class="btn-primary" href="{% url 'plano_trabalho_criar' %}">Criar plano de trabalho</a>
       </div>
-    </form>
-  </div>
-
-  <div class="card">
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Plano</th>
-          <th>Oficio</th>
-          <th>Protocolo</th>
-          <th>Periodo</th>
-          <th>Destinos</th>
-          <th>Status</th>
-          <th>Acoes</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-          <tr>
-            <td>
-              {% if row.plano %}
-                {{ row.plano.numero }}/{{ row.plano.ano }}
-              {% else %}
-                -
-              {% endif %}
-            </td>
-            <td>{{ row.oficio.numero_formatado|default:row.oficio.oficio|default:row.oficio.id }}</td>
-            <td>{{ row.oficio.protocolo_formatado|default:row.oficio.protocolo|default:"-" }}</td>
-            <td>{{ row.data_inicio|date:"d/m/Y" }} a {{ row.data_fim|date:"d/m/Y" }}</td>
-            <td>{{ row.destinos }}</td>
-            <td>{{ row.status }}</td>
-            <td>
-              <a href="{% url 'plano_trabalho_editar' row.oficio.id %}">Ver/Editar</a> |
-              <a href="{% url 'plano_trabalho_download_docx' row.oficio.id %}">DOCX</a> |
-              <a href="{% url 'plano_trabalho_download_pdf' row.oficio.id %}">PDF</a> |
-              <a href="{% url 'oficio_documentos' row.oficio.id %}">Oficio</a>
-            </td>
-          </tr>
-        {% empty %}
-          <tr>
-            <td colspan="7">Nenhum registro encontrado.</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% endif %}
   </div>
 
   {% if page_obj.paginator.num_pages > 1 %}
-    <div class="wizard-actions">
+    <div class="pagination">
       {% if page_obj.has_previous %}
-        <a class="btn-clear" href="?page={{ page_obj.previous_page_number }}{% if querystring %}&{{ querystring }}{% endif %}">
-          Pagina anterior
-        </a>
+        <a class="btn-clear btn-small" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>
+      {% else %}
+        <span class="btn-clear btn-small is-disabled">Anterior</span>
       {% endif %}
-      <span>Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      <span class="pagination-info">Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
       {% if page_obj.has_next %}
-        <a class="btn-clear" href="?page={{ page_obj.next_page_number }}{% if querystring %}&{{ querystring }}{% endif %}">
-          Proxima pagina
-        </a>
+        <a class="btn-clear btn-small" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.next_page_number }}">Proxima</a>
+      {% else %}
+        <span class="btn-clear btn-small is-disabled">Proxima</span>
       {% endif %}
     </div>
   {% endif %}

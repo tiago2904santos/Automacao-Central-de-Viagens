@@ -12,52 +12,81 @@
       <h2 class="page-title">Ordens de Servico</h2>
       <p class="page-subtitle">Oficios sem plano de trabalho.</p>
     </div>
+    <div class="page-actions">
+      <a class="btn-primary" href="{% url 'ordem_servico_criar' %}">+ Criar ordem de servico</a>
+    </div>
   </div>
 
-  <div class="card">
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Oficio</th>
-          <th>Protocolo</th>
-          <th>Periodo</th>
-          <th>Destinos</th>
-          <th>Status</th>
-          <th>Acoes</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
+  <div class="list-card">
+    <div class="filter-bar">
+      <form method="get" class="filter-form">
+        <div class="filter-left">
+          <div class="filter-group">
+            <label>Buscar oficio</label>
+            <input type="text" name="q" value="{{ q }}" placeholder="Numero, protocolo, destino..." />
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button class="btn-primary" type="submit">Filtrar</button>
+          <a class="btn-clear" href="{% url 'ordens_servico_list' %}">Limpar</a>
+        </div>
+      </form>
+    </div>
+
+    {% if rows %}
+      <table class="table">
+        <thead>
           <tr>
-            <td>{{ row.oficio.numero_formatado|default:row.oficio.oficio|default:row.oficio.id }}</td>
-            <td>{{ row.oficio.protocolo_formatado|default:row.oficio.protocolo|default:"-" }}</td>
-            <td>{{ row.data_inicio|date:"d/m/Y" }} a {{ row.data_fim|date:"d/m/Y" }}</td>
-            <td>{{ row.destinos }}</td>
-            <td>{{ row.status }}</td>
-            <td>
-              <a href="{% url 'ordem_servico_editar' row.oficio.id %}">Criar/Editar</a> |
-              <a href="{% url 'ordem_servico_download_docx' row.oficio.id %}">DOCX</a> |
-              <a href="{% url 'ordem_servico_download_pdf' row.oficio.id %}">PDF</a> |
-              <a href="{% url 'oficio_documentos' row.oficio.id %}">Oficio</a>
-            </td>
+            <th>Oficio</th>
+            <th>Protocolo</th>
+            <th>Periodo</th>
+            <th>Destinos</th>
+            <th>Status</th>
+            <th class="table-actions-header">Acoes</th>
           </tr>
-        {% empty %}
-          <tr>
-            <td colspan="6">Nenhum oficio sem plano de trabalho encontrado.</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>{{ row.oficio.numero_formatado|default:row.oficio.oficio|default:row.oficio.id }}</td>
+              <td>{{ row.oficio.protocolo_formatado|default:row.oficio.protocolo|default:"-" }}</td>
+              <td>{{ row.data_inicio|date:"d/m/Y" }} a {{ row.data_fim|date:"d/m/Y" }}</td>
+              <td>{{ row.destinos }}</td>
+              <td>{{ row.status }}</td>
+              <td class="table-actions-cell">
+                <div class="table-actions table-actions--right">
+                  <a class="btn-edit btn-small" href="{% url 'ordem_servico_editar' row.oficio.id %}">Abrir/Editar</a>
+                  <a class="btn-icon btn-icon--docx" href="{% url 'ordem_servico_download_docx' row.oficio.id %}" aria-label="Baixar DOCX">W</a>
+                  <a class="btn-icon btn-icon--pdf" href="{% url 'ordem_servico_download_pdf' row.oficio.id %}" aria-label="Baixar PDF">PDF</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <div>
+          <strong>Nenhuma ordem encontrada</strong>
+          <p>Crie uma ordem de servico para aparecer nesta lista.</p>
+        </div>
+        <a class="btn-primary" href="{% url 'ordem_servico_criar' %}">Criar ordem de servico</a>
+      </div>
+    {% endif %}
   </div>
 
   {% if page_obj.paginator.num_pages > 1 %}
-    <div class="wizard-actions">
+    <div class="pagination">
       {% if page_obj.has_previous %}
-        <a class="btn-clear" href="?page={{ page_obj.previous_page_number }}">Pagina anterior</a>
+        <a class="btn-clear btn-small" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>
+      {% else %}
+        <span class="btn-clear btn-small is-disabled">Anterior</span>
       {% endif %}
-      <span>Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      <span class="pagination-info">Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
       {% if page_obj.has_next %}
-        <a class="btn-clear" href="?page={{ page_obj.next_page_number }}">Proxima pagina</a>
+        <a class="btn-clear btn-small" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.next_page_number }}">Proxima</a>
+      {% else %}
+        <span class="btn-clear btn-small is-disabled">Proxima</span>
       {% endif %}
     </div>
   {% endif %}
