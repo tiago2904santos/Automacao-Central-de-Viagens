@@ -90,7 +90,7 @@ from .services.plano_trabalho import (
     normalize_atividades_selecionadas,
     normalize_solicitantes,
     parse_horario_atendimento_intervalo,
-    permite_coordenador_municipal,
+    has_coordenador_municipal,
 )
 from .services.justificativas import (
     JUSTIFICATIVA_TEMPLATES,
@@ -4994,10 +4994,8 @@ def _ensure_plano_wizard_instance(oficio: Oficio) -> PlanoTrabalho:
     labels = destinos_labels(destinos_norm)
     efetivo_rows_default = _default_efetivo_rows_from_oficio(oficio)
     qtd_servidores = efetivo_total_servidores(efetivo_rows_default) or int(oficio.viajantes.count() or 0)
-    cfg = get_oficio_config()
-    assinante = getattr(cfg, "assinante", None)
-    coordenador_nome = (getattr(assinante, "nome", "") or "").strip() or DEFAULT_COORDENADOR_PLANO_NOME
-    coordenador_cargo = (getattr(assinante, "cargo", "") or "").strip() or DEFAULT_COORDENADOR_PLANO_CARGO
+    coordenador_nome = DEFAULT_COORDENADOR_PLANO_NOME
+    coordenador_cargo = DEFAULT_COORDENADOR_PLANO_CARGO
 
     with transaction.atomic():
         plano = PlanoTrabalho.objects.create(
@@ -5024,7 +5022,7 @@ def _ensure_plano_wizard_instance(oficio: Oficio) -> PlanoTrabalho:
             estrutura_apoio="",
             composicao_diarias=(oficio.quantidade_diarias or "").strip() or "1 x 100%",
             valor_total=(oficio.valor_diarias or "").strip(),
-            coordenador_plano=assinante if isinstance(assinante, Viajante) else None,
+            coordenador_plano=None,
             coordenador_nome=coordenador_nome,
             coordenador_cargo=coordenador_cargo,
             possui_coordenador_municipal=False,
@@ -5464,7 +5462,7 @@ def plano_trabalho_step1(request, oficio_id: int):
                 plano.horario_atendimento = form.cleaned_data["horario_atendimento"]
                 plano.sigla_unidade = _derive_sigla_unidade_from_config()
                 plano.possui_coordenador_municipal = False
-                if not permite_coordenador_municipal(solicitantes):
+                if not has_coordenador_municipal(solicitantes):
                     plano.coordenador_municipal = None
                 _sync_plano_destinos(plano, destinos_payload)
                 plano.save()
@@ -5501,7 +5499,7 @@ def plano_trabalho_step2(request, oficio_id: int):
     solicitantes = normalize_solicitantes(
         plano.solicitantes_json if isinstance(plano.solicitantes_json, list) else []
     )
-    permite_municipal = permite_coordenador_municipal(solicitantes)
+    permite_municipal = has_coordenador_municipal(solicitantes)
     _default_efetivo_rows_from_oficio(oficio)
     cargo_options = _cargo_options_for_plano_step2()
     efetivo_rows = normalize_efetivo_payload(
@@ -5514,8 +5512,8 @@ def plano_trabalho_step2(request, oficio_id: int):
         "efetivo_json": json.dumps(efetivo_rows, ensure_ascii=False),
         "unidade_movel": "sim" if plano.unidade_movel else "nao",
         "coordenador_plano": plano.coordenador_plano_id or "",
-        "coordenador_plano_nome": plano.coordenador_nome or DEFAULT_COORDENADOR_PLANO_NOME,
-        "coordenador_plano_cargo": plano.coordenador_cargo or DEFAULT_COORDENADOR_PLANO_CARGO,
+        "coordenador_plano_nome": plano.get_coordenador_administrativo_nome(),
+        "coordenador_plano_cargo": plano.get_coordenador_administrativo_cargo(),
         "coordenador_municipal": plano.coordenador_municipal_id or "",
         "coordenador_municipal_nome": "",
         "coordenador_municipal_cargo": "",

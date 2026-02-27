@@ -846,8 +846,8 @@ class PlanoTrabalhoStep2Form(forms.Form):
         queryset=Viajante.objects.order_by("nome"),
         required=False,
     )
-    coordenador_plano_nome = forms.CharField(required=True)
-    coordenador_plano_cargo = forms.CharField(required=True)
+    coordenador_plano_nome = forms.CharField(required=False)
+    coordenador_plano_cargo = forms.CharField(required=False)
     coordenador_municipal = forms.ModelChoiceField(
         queryset=CoordenadorMunicipal.objects.order_by("nome"),
         required=False,
@@ -966,12 +966,14 @@ class PlanoTrabalhoStep2Form(forms.Form):
         nome = " ".join((cleaned_data.get("coordenador_plano_nome") or "").split())
         cargo = " ".join((cleaned_data.get("coordenador_plano_cargo") or "").split())
         if coordenador_plano:
-            nome = coordenador_plano.nome
-            cargo = coordenador_plano.cargo
+            nome = " ".join((coordenador_plano.nome or "").split()) or nome
+            cargo = " ".join((coordenador_plano.cargo or "").split()) or cargo
+
         if not nome:
             self.add_error("coordenador_plano_nome", "Informe o nome do coordenador do plano.")
         if not cargo:
             self.add_error("coordenador_plano_cargo", "Informe o cargo do coordenador do plano.")
+
         cleaned_data["coordenador_plano_nome"] = nome or DEFAULT_COORDENADOR_PLANO_NOME
         cleaned_data["coordenador_plano_cargo"] = cargo or DEFAULT_COORDENADOR_PLANO_CARGO
 
@@ -986,6 +988,11 @@ class PlanoTrabalhoStep2Form(forms.Form):
             cleaned_data["coordenador_municipal_cidade"] = ""
         else:
             preenchimento_parcial = bool(novo_nome or novo_cargo or novo_cidade)
+            if not coord_municipal and not (novo_nome and novo_cargo and novo_cidade):
+                self.add_error(
+                    "coordenador_municipal",
+                    "Para solicitacao PCPR na Comunidade, selecione ou cadastre o coordenador municipal.",
+                )
             if preenchimento_parcial and not (novo_nome and novo_cargo and novo_cidade):
                 self.add_error(
                     "coordenador_municipal_nome",

@@ -236,8 +236,12 @@ def normalize_solicitantes(values: list[str] | tuple[str, ...] | None) -> list[s
     return [item for item in SOLICITANTES_ORDEM_FIXA if item in selected]
 
 
-def permite_coordenador_municipal(solicitantes: list[str] | tuple[str, ...] | None) -> bool:
+def has_coordenador_municipal(solicitantes: list[str] | tuple[str, ...] | None) -> bool:
     return SOLICITANTE_PCPR in normalize_solicitantes(solicitantes)
+
+
+def permite_coordenador_municipal(solicitantes: list[str] | tuple[str, ...] | None) -> bool:
+    return has_coordenador_municipal(solicitantes)
 
 
 def formatar_solicitante_exibicao(
@@ -595,18 +599,17 @@ def build_atuacao_formatada(plano: PlanoTrabalho) -> str:
 
 
 def build_coordenacao_formatada(plano: PlanoTrabalho) -> str:
-    cargo_admin = (
-        (plano.coordenador_plano.cargo if plano.coordenador_plano else "")
-        or plano.coordenador_cargo
-        or DEFAULT_COORDENADOR_PLANO_CARGO
-    )
-    nome_admin = (
-        (plano.coordenador_plano.nome if plano.coordenador_plano else "")
-        or plano.coordenador_nome
-        or DEFAULT_COORDENADOR_PLANO_NOME
-    )
+    cargo_admin = " ".join((plano.get_coordenador_administrativo_cargo() or "").split())
+    nome_admin = " ".join((plano.get_coordenador_administrativo_nome() or "").split())
+    coordenador_admin = " ".join(part for part in (cargo_admin, nome_admin) if part).strip()
+    if not coordenador_admin:
+        coordenador_admin = " ".join(
+            part
+            for part in (DEFAULT_COORDENADOR_PLANO_CARGO, DEFAULT_COORDENADOR_PLANO_NOME)
+            if part
+        ).strip()
     paragrafo_admin = (
-        f"Fica designada como Coordenadora Administrativa do Plano a {cargo_admin} {nome_admin}, a qual "
+        f"Fica designada como Coordenadora Administrativa do Plano a {coordenador_admin}, a qual "
         "ficara responsavel pelo acompanhamento da execucao administrativa do presente Plano de Trabalho, "
         "organizacao das escalas de servidores, controle de materiais e equipamentos, consolidacao de dados "
         "estatisticos, elaboracao de relatorio final e demais providencias necessarias ao regular cumprimento da acao."

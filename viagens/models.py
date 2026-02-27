@@ -767,6 +767,32 @@ class PlanoTrabalho(models.Model):
         suffix = f"/{sigla}" if sigla else ""
         return f"PLANO DE TRABALHO N\u00ba{int(self.numero or 0):02d}/{int(self.ano or 0)}{suffix}"
 
+    def get_coordenador_administrativo_nome(self) -> str:
+        from viagens.services.plano_trabalho import DEFAULT_COORDENADOR_PLANO_NOME
+
+        if self.coordenador_plano and (self.coordenador_plano.nome or "").strip():
+            return " ".join((self.coordenador_plano.nome or "").split())
+        nome = " ".join((self.coordenador_nome or "").split())
+        return nome or DEFAULT_COORDENADOR_PLANO_NOME
+
+    def get_coordenador_administrativo_cargo(self) -> str:
+        from viagens.services.plano_trabalho import DEFAULT_COORDENADOR_PLANO_CARGO
+
+        if self.coordenador_plano and (self.coordenador_plano.cargo or "").strip():
+            return " ".join((self.coordenador_plano.cargo or "").split())
+        cargo = " ".join((self.coordenador_cargo or "").split())
+        return cargo or DEFAULT_COORDENADOR_PLANO_CARGO
+
+    def get_coordenador_administrativo_display(self) -> str:
+        cargo = self.get_coordenador_administrativo_cargo()
+        nome = self.get_coordenador_administrativo_nome()
+        return " ".join(part for part in (cargo, nome) if part).strip()
+
+    def get_coordenacao_formatada(self) -> str:
+        from viagens.services.plano_trabalho import build_coordenacao_formatada
+
+        return build_coordenacao_formatada(self)
+
     @staticmethod
     def _parse_decimal(value) -> Decimal | None:
         if value in (None, ""):
@@ -854,10 +880,11 @@ class PlanoTrabalho(models.Model):
                 self.horario_atendimento = horario_formatado
 
         if self.coordenador_plano:
-            if not (self.coordenador_nome or "").strip():
-                self.coordenador_nome = self.coordenador_plano.nome
-            if not (self.coordenador_cargo or "").strip():
-                self.coordenador_cargo = self.coordenador_plano.cargo
+            self.coordenador_nome = " ".join((self.coordenador_plano.nome or "").split())
+            self.coordenador_cargo = " ".join((self.coordenador_plano.cargo or "").split())
+        else:
+            self.coordenador_nome = " ".join((self.coordenador_nome or "").split())
+            self.coordenador_cargo = " ".join((self.coordenador_cargo or "").split())
 
         unitario_decimal = self._parse_decimal(self.valor_unitario)
         if unitario_decimal is not None:

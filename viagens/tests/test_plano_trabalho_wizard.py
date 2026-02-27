@@ -13,9 +13,11 @@ from viagens.forms import PlanoTrabalhoStep1Form
 from viagens.models import Cargo, Cidade, Estado, Oficio, PlanoTrabalho, Trecho, Viajante
 from viagens.services.diarias_unified import parse_decimal_br
 from viagens.services.plano_trabalho import (
+    DEFAULT_COORDENADOR_PLANO_NOME,
     efetivo_total_servidores,
     format_horario_atendimento,
     format_total_servidores,
+    has_coordenador_municipal,
 )
 
 
@@ -152,8 +154,37 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertEqual(plano.coordenador_municipal.nome, "Carlos Lima")
         self.assertTrue(plano.unidade_movel)
 
-    def test_step3_resumo_e_docx_sem_placeholders(self) -> None:
+    def test_step2_exige_coordenador_municipal_quando_pcpr(self) -> None:
         self._post_step1(solicitantes=["PCPR na Comunidade"], nome_pcpr="Prefeitura")
+        response = self.client.post(
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
+            {
+                "efetivo_json": json.dumps(
+                    [{"cargo_id": self.cargo_delegado.id, "quantidade": 1}]
+                ),
+                "unidade_movel": "nao",
+                "coordenador_plano": str(self.servidor.id),
+                "coordenador_plano_nome": self.servidor.nome,
+                "coordenador_plano_cargo": self.servidor.cargo,
+                "coordenador_municipal": "",
+                "coordenador_municipal_nome": "",
+                "coordenador_municipal_cargo": "",
+                "coordenador_municipal_cidade": "",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertIn("coordenador_municipal", form.errors)
+
+    def test_step2_default_coordenador_administrativo_juliana(self) -> None:
+        self._post_step1(solicitantes=["Parana em Acao"])
+        response = self.client.get(reverse("plano_trabalho_step2", args=[self.oficio.id]))
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(form.initial["coordenador_plano_nome"], DEFAULT_COORDENADOR_PLANO_NOME)
+
+    def test_step3_resumo_e_docx_sem_placeholders(self) -> None:
+        self._post_step1(solicitantes=["Parana em Acao"])
         response_step2 = self.client.post(
             reverse("plano_trabalho_step2", args=[self.oficio.id]),
             {
@@ -254,6 +285,13 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertEqual(format_total_servidores(1), "1 servidor")
         self.assertEqual(format_total_servidores(2), "2 servidores")
 
+    def test_regra_automatica_coordenador_municipal_por_solicitante(self) -> None:
+        self.assertTrue(has_coordenador_municipal(["PCPR na Comunidade"]))
+        self.assertFalse(has_coordenador_municipal(["Parana em Acao"]))
+        self.assertTrue(
+            has_coordenador_municipal(["Parana em Acao", "PCPR na Comunidade"])
+        )
+
     def test_efetivo_total_soma_itens_validos(self) -> None:
         total = efetivo_total_servidores(
             [
@@ -326,7 +364,7 @@ class PlanoTrabalhoWizardTests(TestCase):
         )
 
     def test_step3_endpoint_calculo_diarias_retorna_valor_por_servidor(self) -> None:
-        self._post_step1(solicitantes=["PCPR na Comunidade"], nome_pcpr="Prefeitura")
+        self._post_step1(solicitantes=["Parana em Acao"])
         response_step2 = self.client.post(
             reverse("plano_trabalho_step2", args=[self.oficio.id]),
             {
@@ -358,7 +396,7 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertTrue(totais["total_geral"])
 
     def test_docx_deriva_financeiro_mesmo_sem_campos_manuais(self) -> None:
-        self._post_step1(solicitantes=["PCPR na Comunidade"], nome_pcpr="Prefeitura")
+        self._post_step1(solicitantes=["Parana em Acao"])
         response_step2 = self.client.post(
             reverse("plano_trabalho_step2", args=[self.oficio.id]),
             {
