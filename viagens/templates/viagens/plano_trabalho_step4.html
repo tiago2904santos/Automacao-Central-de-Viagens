@@ -35,13 +35,13 @@
 
         <div class="sub-card">
           <div class="sub-card-title">Equipe e coordenacao</div>
-          <div class="preview-line"><span class="preview-label">Total de servidores</span><span class="preview-value">{{ efetivo_total }}</span></div>
+          <div class="preview-line"><span class="preview-label">Total de servidores</span><span class="preview-value">{{ efetivo_total_label }}</span></div>
           <div class="preview-line"><span class="preview-label">Unidade movel</span><span class="preview-value">{% if unidade_movel %}Sim{% else %}Nao{% endif %}</span></div>
           {% if efetivo_rows %}
             {% for row in efetivo_rows %}
               <div class="preview-line">
                 <span class="preview-label">{{ row.cargo }}</span>
-                <span class="preview-value">{{ row.quantidade }}</span>
+                <span class="preview-value">{{ row.quantidade_label }}</span>
               </div>
             {% endfor %}
           {% endif %}

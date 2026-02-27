@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_time
 
 from viagens.models import (
+    Cargo,
     Oficio,
     OficioConfig,
     PlanoTrabalho,
@@ -340,21 +341,87 @@ def formatar_horario_intervalo(
     return format_horario_atendimento(horario_inicio, horario_fim)
 
 
+def _normalize_cargo_key(value: str) -> str:
+    return " ".join((value or "").strip().split()).casefold()
+
+
+def pluralize_pt(quantity: int, singular: str, plural: str | None = None) -> str:
+    resolved_plural = plural if plural is not None else f"{singular}s"
+    return f"{quantity} {singular if quantity == 1 else resolved_plural}"
+
+
+def format_total_servidores(total: int) -> str:
+    return pluralize_pt(int(total or 0), "servidor", "servidores")
+
+
 def normalize_efetivo_payload(raw_values: list[dict] | None) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    for item in raw_values or []:
+    source = raw_values or []
+    if not isinstance(source, list):
+        return []
+
+    cargo_ids: set[int] = set()
+    cargo_keys: set[str] = set()
+    for item in source:
         if not isinstance(item, dict):
             continue
-        cargo = " ".join(str(item.get("cargo", "")).split())
-        qtd_raw = str(item.get("quantidade", "")).strip()
-        if not cargo:
+        cargo_id_raw = str(item.get("cargo_id", "")).strip()
+        if cargo_id_raw.isdigit():
+            cargo_ids.add(int(cargo_id_raw))
+        cargo_nome = " ".join(str(item.get("cargo", "")).split())
+        if cargo_nome:
+            cargo_keys.add(_normalize_cargo_key(cargo_nome))
+
+    cargos_by_id: dict[int, Cargo] = {}
+    cargos_by_key: dict[str, Cargo] = {}
+    if cargo_ids:
+        cargos_by_id = Cargo.objects.in_bulk(cargo_ids)
+    if cargo_keys:
+        for cargo in Cargo.objects.exclude(nome="").only("id", "nome"):
+            key = _normalize_cargo_key(cargo.nome)
+            if key:
+                cargos_by_key[key] = cargo
+
+    rows: list[dict[str, object]] = []
+    row_index_by_key: dict[str, int] = {}
+    for item in source:
+        if not isinstance(item, dict):
             continue
+        qtd_raw = str(item.get("quantidade", "")).strip()
         if not qtd_raw.isdigit():
             continue
         quantidade = int(qtd_raw)
         if quantidade <= 0:
             continue
-        rows.append({"cargo": cargo, "quantidade": quantidade})
+
+        cargo_id: int | None = None
+        cargo_nome = " ".join(str(item.get("cargo", "")).split())
+        cargo_id_raw = str(item.get("cargo_id", "")).strip()
+        if cargo_id_raw.isdigit():
+            cargo_id = int(cargo_id_raw)
+        cargo_obj = cargos_by_id.get(cargo_id or 0)
+        if not cargo_obj and cargo_nome:
+            cargo_obj = cargos_by_key.get(_normalize_cargo_key(cargo_nome))
+        if cargo_obj:
+            cargo_id = cargo_obj.id
+            cargo_nome = cargo_obj.nome
+
+        if not cargo_nome:
+            continue
+
+        row_key = f"id:{cargo_id}" if cargo_id else f"nome:{_normalize_cargo_key(cargo_nome)}"
+        existing_index = row_index_by_key.get(row_key)
+        if existing_index is not None:
+            rows[existing_index]["quantidade"] = int(rows[existing_index]["quantidade"]) + quantidade
+            continue
+
+        row: dict[str, object] = {
+            "cargo": cargo_nome,
+            "quantidade": quantidade,
+        }
+        if cargo_id:
+            row["cargo_id"] = cargo_id
+        row_index_by_key[row_key] = len(rows)
+        rows.append(row)
     return rows
 
 
@@ -700,14 +767,18 @@ def build_plano_placeholders(
     )
 
     efetivo_rows = plano.efetivo_json if isinstance(plano.efetivo_json, list) else []
-    efetivo = formatar_efetivo_resumo(efetivo_rows) or " ".join((plano.efetivo_formatado or "").split())
+    efetivo_resumo_por_cargo = formatar_efetivo_resumo(efetivo_rows)
+    efetivo = " ".join((plano.efetivo_formatado or "").split())
     quantidade_int = efetivo_total_servidores(efetivo_rows)
     if quantidade_int <= 0:
         quantidade_int = int(plano.quantidade_servidores or plano.efetivo_por_dia or 0)
     if quantidade_int <= 0:
         quantidade_int = int(oficio.viajantes.count())
-    if not efetivo and quantidade_int > 0:
-        efetivo = f"{quantidade_int} servidores."
+    quantidade_label = format_total_servidores(quantidade_int) if quantidade_int > 0 else ""
+    if efetivo_resumo_por_cargo and quantidade_label:
+        efetivo = f"{quantidade_label} ({efetivo_resumo_por_cargo})"
+    elif not efetivo and quantidade_label:
+        efetivo = quantidade_label
     quantidade_servidores = str(quantidade_int)
 
     locais_pagina_01 = destinos_json_labels or _locais_para_pagina_01(plano, oficio)
@@ -738,6 +809,7 @@ def build_plano_placeholders(
         "locais_formatados": format_locais_atuacao(plano),
         "horario_atendimento": horario,
         "quantidade_de_servidores": quantidade_servidores,
+        "quantidade_de_servidores_extenso": quantidade_label,
         "efetivo_formatado": efetivo,
         "estrutura_formatada": estrutura_formatada,
         "valor_total": format_monetario_br(valor_total_decimal),

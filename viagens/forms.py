@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from .models import (
+    Cargo,
     Cidade,
     CoordenadorMunicipal,
     Estado,
@@ -858,6 +859,9 @@ class PlanoTrabalhoStep2Form(forms.Form):
     def __init__(self, *args, **kwargs):
         self.permite_municipal = bool(kwargs.pop("permite_municipal", False))
         super().__init__(*args, **kwargs)
+        cargos = list(Cargo.objects.filter(ativo=True).order_by("ordem", "nome"))
+        self.cargo_options = [{"id": cargo.id, "nome": cargo.nome} for cargo in cargos]
+        self._cargo_map = {cargo.id: cargo for cargo in cargos}
         self.fields["coordenador_plano"].widget.attrs.update(
             {
                 "data-autocomplete-url": "/api/servidores/",
@@ -883,15 +887,78 @@ class PlanoTrabalhoStep2Form(forms.Form):
     def clean(self):
         cleaned_data = super().clean()
         raw_payload = (cleaned_data.get("efetivo_json") or "").strip()
+        errors_added: set[str] = set()
+
+        def add_efetivo_error(message: str) -> None:
+            if message not in errors_added:
+                self.add_error("efetivo_json", message)
+                errors_added.add(message)
+
         try:
             parsed_payload = json.loads(raw_payload) if raw_payload else []
         except json.JSONDecodeError:
-            self.add_error("efetivo_json", "Nao foi possivel ler o efetivo informado.")
+            add_efetivo_error("Nao foi possivel ler o efetivo informado.")
+            parsed_payload = []
+        if not isinstance(parsed_payload, list):
+            add_efetivo_error("Formato invalido para os itens de efetivo.")
             parsed_payload = []
 
-        efetivo_rows = normalize_efetivo_payload(parsed_payload if isinstance(parsed_payload, list) else [])
+        if not self._cargo_map:
+            add_efetivo_error("Nao ha cargos oficiais cadastrados para montar o efetivo.")
+
+        efetivo_rows: list[dict[str, object]] = []
+        seen_cargo_ids: set[int] = set()
+        for item in parsed_payload:
+            if not isinstance(item, dict):
+                add_efetivo_error("Cada item do efetivo deve conter cargo e quantidade.")
+                continue
+
+            cargo_id_raw = str(item.get("cargo_id", "")).strip()
+            quantidade_raw = str(item.get("quantidade", "")).strip()
+
+            # Linha vazia (placeholder no frontend): ignorar.
+            if not cargo_id_raw and not quantidade_raw:
+                continue
+            if not cargo_id_raw:
+                add_efetivo_error("Selecione um cargo para cada linha do efetivo.")
+                continue
+            if not quantidade_raw:
+                add_efetivo_error("Informe a quantidade para cada cargo selecionado.")
+                continue
+            if not re.match(r"^-?\d+$", quantidade_raw):
+                add_efetivo_error("Quantidade deve ser um numero inteiro.")
+                continue
+
+            quantidade = int(quantidade_raw)
+            if quantidade < 0:
+                add_efetivo_error("Quantidade deve ser maior ou igual a zero.")
+                continue
+            if quantidade == 0:
+                continue
+
+            if not cargo_id_raw.isdigit():
+                add_efetivo_error("Cargo invalido para o efetivo.")
+                continue
+            cargo_id = int(cargo_id_raw)
+            cargo = self._cargo_map.get(cargo_id)
+            if cargo is None:
+                add_efetivo_error("Cargo selecionado nao existe mais.")
+                continue
+            if cargo_id in seen_cargo_ids:
+                add_efetivo_error("Cargo ja adicionado no efetivo.")
+                continue
+            seen_cargo_ids.add(cargo_id)
+            efetivo_rows.append(
+                {
+                    "cargo_id": cargo.id,
+                    "cargo": cargo.nome,
+                    "quantidade": quantidade,
+                }
+            )
+
+        efetivo_rows = normalize_efetivo_payload(efetivo_rows)
         if not efetivo_rows:
-            self.add_error("efetivo_json", "Informe ao menos um item de efetivo.")
+            add_efetivo_error("Informe ao menos um item de efetivo.")
         self._parsed_efetivo = efetivo_rows
         cleaned_data["efetivo_json"] = json.dumps(efetivo_rows, ensure_ascii=False)
 

@@ -70,9 +70,32 @@ class Viajante(models.Model):
 
 class Cargo(models.Model):
     nome = models.CharField(max_length=120, unique=True)
+    ordem = models.PositiveIntegerField(default=0)
+    ativo = models.BooleanField(default=True)
+    is_coordenador = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ("ordem", "nome")
 
     def __str__(self) -> str:
         return self.nome
+
+
+class Efetivo(models.Model):
+    cargo = models.OneToOneField(
+        Cargo,
+        on_delete=models.CASCADE,
+        related_name="efetivo",
+    )
+    quantidade = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("cargo__ordem", "cargo__nome")
+
+    def __str__(self) -> str:
+        return f"{self.cargo.nome}: {self.quantidade}"
 
 
 class Veiculo(models.Model):
@@ -850,7 +873,9 @@ class PlanoTrabalho(models.Model):
             self.valor_total = f"R$ {bruto}"
 
         if not (self.efetivo_formatado or "").strip() and self.quantidade_servidores:
-            self.efetivo_formatado = f"{int(self.quantidade_servidores)} servidores."
+            from .services.plano_trabalho import format_total_servidores
+
+            self.efetivo_formatado = format_total_servidores(int(self.quantidade_servidores))
         if not self.efetivo_por_dia and self.quantidade_servidores:
             self.efetivo_por_dia = int(self.quantidade_servidores)
 

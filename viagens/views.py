@@ -76,8 +76,8 @@ from .services.plano_trabalho import (
     format_data_extenso_br,
     format_lista_portugues,
     format_periodo_evento_extenso,
-    formatar_efetivo_resumo,
     formatar_horario_intervalo,
+    format_total_servidores,
     formatar_solicitante_exibicao,
     normalize_destinos_payload,
     normalize_efetivo_payload,
@@ -576,6 +576,31 @@ def _ensure_cargo_exists(nome: str) -> None:
         return
 
 
+def _cargo_options_for_plano_step2() -> list[dict[str, object]]:
+    options: list[dict[str, object]] = []
+    try:
+        cargos = list(Cargo.objects.filter(ativo=True).exclude(nome="").order_by("ordem", "nome"))
+    except (OperationalError, ProgrammingError):
+        cargos = []
+    for cargo in cargos:
+        options.append({"id": cargo.id, "nome": cargo.nome})
+    return options
+
+
+def _default_efetivo_rows_from_oficio(oficio: Oficio) -> list[dict[str, object]]:
+    counts: dict[int, dict[str, object]] = {}
+    for viajante in oficio.viajantes.all():
+        cargo_nome = _resolver_cargo_nome(viajante.cargo or "")
+        if not cargo_nome:
+            continue
+        _ensure_cargo_exists(cargo_nome)
+        cargo = _buscar_cargo_por_key(cargo_nome)
+        if not cargo:
+            continue
+        if cargo.id not in counts:
+            counts[cargo.id] = {"cargo_id": cargo.id, "cargo": cargo.nome, "quantidade": 0}
+        counts[cargo.id]["quantidade"] = int(counts[cargo.id]["quantidade"]) + 1
+    return sorted(counts.values(), key=lambda item: str(item.get("cargo", "")).casefold())
 
 
 def _get_combustivel_choices() -> list[str]:
@@ -4964,7 +4989,8 @@ def _ensure_plano_wizard_instance(oficio: Oficio) -> PlanoTrabalho:
     destinos_payload = _plano_default_destinos_payload(oficio)
     destinos_norm = normalize_destinos_payload(destinos_payload)
     labels = destinos_labels(destinos_norm)
-    qtd_servidores = int(oficio.viajantes.count() or 0)
+    efetivo_rows_default = _default_efetivo_rows_from_oficio(oficio)
+    qtd_servidores = efetivo_total_servidores(efetivo_rows_default) or int(oficio.viajantes.count() or 0)
     cfg = get_oficio_config()
     assinante = getattr(cfg, "assinante", None)
     coordenador_nome = (getattr(assinante, "nome", "") or "").strip() or DEFAULT_COORDENADOR_PLANO_NOME
@@ -4987,14 +5013,8 @@ def _ensure_plano_wizard_instance(oficio: Oficio) -> PlanoTrabalho:
             horario_inicio=parse_time("09:00"),
             horario_fim=parse_time("17:00"),
             horario_atendimento="das 09h as 17h",
-            efetivo_json=(
-                [{"cargo": "Servidores", "quantidade": qtd_servidores}]
-                if qtd_servidores > 0
-                else []
-            ),
-            efetivo_formatado=(
-                f"Servidores: {qtd_servidores}" if qtd_servidores > 0 else ""
-            ),
+            efetivo_json=efetivo_rows_default,
+            efetivo_formatado=(format_total_servidores(qtd_servidores) if qtd_servidores > 0 else ""),
             efetivo_por_dia=qtd_servidores,
             quantidade_servidores=qtd_servidores,
             unidade_movel=False,
@@ -5058,6 +5078,15 @@ def _plano_resumo_context(plano: PlanoTrabalho, oficio: Oficio) -> dict[str, obj
     efetivo_rows = normalize_efetivo_payload(
         plano.efetivo_json if isinstance(plano.efetivo_json, list) else []
     )
+    efetivo_total = efetivo_total_servidores(efetivo_rows) or int(plano.quantidade_servidores or 0)
+    efetivo_rows_preview = [
+        {
+            "cargo": row.get("cargo", ""),
+            "quantidade": int(row.get("quantidade") or 0),
+            "quantidade_label": format_total_servidores(int(row.get("quantidade") or 0)),
+        }
+        for row in efetivo_rows
+    ]
     diarias = _plano_diarias_resultado(plano, oficio) or {}
     recursos = [item.descricao for item in plano.recursos.all().order_by("ordem", "id")]
     return {
@@ -5072,8 +5101,9 @@ def _plano_resumo_context(plano: PlanoTrabalho, oficio: Oficio) -> dict[str, obj
             or plano.horario_atendimento
             or "-"
         ),
-        "efetivo_rows": efetivo_rows,
-        "efetivo_total": efetivo_total_servidores(efetivo_rows) or int(plano.quantidade_servidores or 0),
+        "efetivo_rows": efetivo_rows_preview,
+        "efetivo_total": efetivo_total,
+        "efetivo_total_label": format_total_servidores(efetivo_total),
         "unidade_movel": plano.unidade_movel,
         "coordenacao_formatada": build_coordenacao_formatada(plano),
         "diarias_resultado": diarias,
@@ -5465,11 +5495,13 @@ def plano_trabalho_step2(request, oficio_id: int):
         plano.solicitantes_json if isinstance(plano.solicitantes_json, list) else []
     )
     permite_municipal = permite_coordenador_municipal(solicitantes)
+    _default_efetivo_rows_from_oficio(oficio)
+    cargo_options = _cargo_options_for_plano_step2()
     efetivo_rows = normalize_efetivo_payload(
         plano.efetivo_json if isinstance(plano.efetivo_json, list) else []
     )
-    if not efetivo_rows and plano.quantidade_servidores:
-        efetivo_rows = [{"cargo": "Servidores", "quantidade": int(plano.quantidade_servidores)}]
+    if not efetivo_rows:
+        efetivo_rows = _default_efetivo_rows_from_oficio(oficio)
 
     initial = {
         "efetivo_json": json.dumps(efetivo_rows, ensure_ascii=False),
@@ -5497,7 +5529,9 @@ def plano_trabalho_step2(request, oficio_id: int):
                 plano.efetivo_json = efetivo_payload
                 plano.quantidade_servidores = total_servidores
                 plano.efetivo_por_dia = total_servidores
-                plano.efetivo_formatado = formatar_efetivo_resumo(efetivo_payload)
+                plano.efetivo_formatado = (
+                    format_total_servidores(total_servidores) if total_servidores > 0 else ""
+                )
                 plano.unidade_movel = bool(form.cleaned_data["unidade_movel"])
                 if plano.unidade_movel:
                     plano.estrutura_apoio = DEFAULT_UNIDADE_MOVEL_TEXTO
@@ -5551,6 +5585,7 @@ def plano_trabalho_step2(request, oficio_id: int):
             "plano": plano,
             "form": form,
             "permite_municipal": permite_municipal,
+            "cargo_options": cargo_options,
             "numero_plano_formatado": f"{int(plano.numero or 0):02d}/{int(plano.ano or timezone.localdate().year)}",
         },
     )

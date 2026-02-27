@@ -10,8 +10,12 @@ from docx import Document
 
 from viagens.documents.plano_trabalho import build_plano_trabalho_docx_bytes
 from viagens.forms import PlanoTrabalhoStep1Form
-from viagens.models import Cidade, Estado, Oficio, PlanoTrabalho, Trecho, Viajante
-from viagens.services.plano_trabalho import format_horario_atendimento
+from viagens.models import Cargo, Cidade, Estado, Oficio, PlanoTrabalho, Trecho, Viajante
+from viagens.services.plano_trabalho import (
+    efetivo_total_servidores,
+    format_horario_atendimento,
+    format_total_servidores,
+)
 
 
 class PlanoTrabalhoWizardTests(TestCase):
@@ -26,6 +30,8 @@ class PlanoTrabalhoWizardTests(TestCase):
             cpf="00000000000",
             cargo="Delegado",
         )
+        self.cargo_delegado = Cargo.objects.create(nome="Delegado")
+        self.cargo_escrivao = Cargo.objects.create(nome="Escrivao")
         self.oficio = Oficio.objects.create(
             oficio="901/2026",
             protocolo="121234567",
@@ -104,8 +110,8 @@ class PlanoTrabalhoWizardTests(TestCase):
             {
                 "efetivo_json": json.dumps(
                     [
-                        {"cargo": "Delegado", "quantidade": 1},
-                        {"cargo": "Escrivao", "quantidade": 2},
+                        {"cargo_id": self.cargo_delegado.id, "quantidade": 1},
+                        {"cargo_id": self.cargo_escrivao.id, "quantidade": 2},
                     ]
                 ),
                 "unidade_movel": "nao",
@@ -125,7 +131,9 @@ class PlanoTrabalhoWizardTests(TestCase):
         response = self.client.post(
             reverse("plano_trabalho_step2", args=[self.oficio.id]),
             {
-                "efetivo_json": json.dumps([{"cargo": "Delegado", "quantidade": 1}]),
+                "efetivo_json": json.dumps(
+                    [{"cargo_id": self.cargo_delegado.id, "quantidade": 1}]
+                ),
                 "unidade_movel": "sim",
                 "coordenador_plano": str(self.servidor.id),
                 "coordenador_plano_nome": self.servidor.nome,
@@ -148,7 +156,9 @@ class PlanoTrabalhoWizardTests(TestCase):
         response_step2 = self.client.post(
             reverse("plano_trabalho_step2", args=[self.oficio.id]),
             {
-                "efetivo_json": json.dumps([{"cargo": "Delegado", "quantidade": 2}]),
+                "efetivo_json": json.dumps(
+                    [{"cargo_id": self.cargo_delegado.id, "quantidade": 2}]
+                ),
                 "unidade_movel": "sim",
                 "coordenador_plano": str(self.servidor.id),
                 "coordenador_plano_nome": self.servidor.nome,
@@ -237,4 +247,79 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertEqual(
             format_horario_atendimento(time(22, 0), time(1, 0)),
             "das 22h às 01h do dia seguinte",
+        )
+
+    def test_format_total_servidores_pluralizacao(self) -> None:
+        self.assertEqual(format_total_servidores(1), "1 servidor")
+        self.assertEqual(format_total_servidores(2), "2 servidores")
+
+    def test_efetivo_total_soma_itens_validos(self) -> None:
+        total = efetivo_total_servidores(
+            [
+                {"cargo_id": self.cargo_delegado.id, "quantidade": 1},
+                {"cargo_id": self.cargo_escrivao.id, "quantidade": 2},
+                {"cargo_id": self.cargo_delegado.id, "quantidade": 0},
+            ]
+        )
+        self.assertEqual(total, 3)
+
+    def test_step2_bloqueia_cargo_duplicado(self) -> None:
+        self._post_step1(solicitantes=["Parana em Acao"])
+        response = self.client.post(
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
+            {
+                "efetivo_json": json.dumps(
+                    [
+                        {"cargo_id": self.cargo_delegado.id, "quantidade": 1},
+                        {"cargo_id": self.cargo_delegado.id, "quantidade": 2},
+                    ]
+                ),
+                "unidade_movel": "nao",
+                "coordenador_plano": str(self.servidor.id),
+                "coordenador_plano_nome": "IGNORAR",
+                "coordenador_plano_cargo": "IGNORAR",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertIn("efetivo_json", form.errors)
+        self.assertIn("Cargo ja adicionado", form.errors["efetivo_json"][0])
+
+    def test_step2_persistencia_mantem_itens_ao_voltar(self) -> None:
+        self._post_step1(solicitantes=["Parana em Acao"])
+        response_step2 = self.client.post(
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
+            {
+                "efetivo_json": json.dumps(
+                    [
+                        {"cargo_id": self.cargo_delegado.id, "quantidade": 1},
+                        {"cargo_id": self.cargo_escrivao.id, "quantidade": 2},
+                    ]
+                ),
+                "unidade_movel": "nao",
+                "coordenador_plano": str(self.servidor.id),
+                "coordenador_plano_nome": "IGNORAR",
+                "coordenador_plano_cargo": "IGNORAR",
+            },
+        )
+        self.assertEqual(response_step2.status_code, 302)
+        self.assertIn(reverse("plano_trabalho_step3", args=[self.oficio.id]), response_step2.url)
+
+        response_back = self.client.get(reverse("plano_trabalho_step2", args=[self.oficio.id]))
+        self.assertEqual(response_back.status_code, 200)
+        payload = json.loads(response_back.context["form"].initial["efetivo_json"])
+        self.assertEqual(
+            payload,
+            [
+                {
+                    "cargo_id": self.cargo_delegado.id,
+                    "cargo": self.cargo_delegado.nome,
+                    "quantidade": 1,
+                },
+                {
+                    "cargo_id": self.cargo_escrivao.id,
+                    "cargo": self.cargo_escrivao.nome,
+                    "quantidade": 2,
+                },
+            ],
         )

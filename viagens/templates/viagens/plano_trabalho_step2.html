@@ -22,11 +22,15 @@
     <form method="post" id="planoStep2Form">
       {% csrf_token %}
       {{ form.efetivo_json }}
+      {{ cargo_options|json_script:"planoCargoOptions" }}
       {% include "viagens/partials/plano_form_errors.html" with form=form %}
 
       <section class="sub-card">
         <div class="sub-card-title">Efetivo</div>
-        <p class="field-help">Informe cargo/função e quantidade. O total de servidores sera calculado automaticamente.</p>
+        <p class="field-help">Selecione cargos oficiais e informe apenas as quantidades. O total de servidores sera calculado automaticamente.</p>
+        {% if not cargo_options %}
+          <p class="error">Nao ha cargos oficiais cadastrados. Cadastre ao menos um cargo para continuar.</p>
+        {% endif %}
         <div id="efetivoRows"></div>
         <div class="field-actions">
           <button class="btn-clear btn-small" type="button" id="addEfetivoBtn">+ Adicionar linha</button>
@@ -34,7 +38,7 @@
         {% if form.efetivo_json.errors %}<span class="error">{{ form.efetivo_json.errors|join:", " }}</span>{% endif %}
         <div class="preview-line">
           <span class="preview-label">Total de servidores</span>
-          <span class="preview-value" id="efetivoTotalPreview">0</span>
+          <span class="preview-value" id="efetivoTotalPreview">0 servidores</span>
         </div>
       </section>
 
@@ -114,10 +118,30 @@
     (function () {
       const form = document.getElementById("planoStep2Form");
       if (!form) return;
+
+      const optionsNode = document.getElementById("planoCargoOptions");
       const hiddenInput = document.getElementById("id_efetivo_json");
       const rowsContainer = document.getElementById("efetivoRows");
       const addBtn = document.getElementById("addEfetivoBtn");
       const totalPreview = document.getElementById("efetivoTotalPreview");
+
+      const cargoOptions = (() => {
+        if (!optionsNode || !optionsNode.textContent) return [];
+        try {
+          const parsed = JSON.parse(optionsNode.textContent);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (_err) {
+          return [];
+        }
+      })();
+
+      const pluralize = (value, singular, plural) => `${value} ${value === 1 ? singular : plural}`;
+      const escapeHtml = (value) =>
+        String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;");
 
       function parsePayload() {
         try {
@@ -129,60 +153,83 @@
       }
 
       let rows = parsePayload();
-      if (!rows.length) rows = [{ cargo: "", quantidade: "" }];
+      if (!rows.length) rows = [{ cargo_id: "", quantidade: "" }];
 
-      function normalizeText(value) {
-        return String(value || "").replace(/\s+/g, " ").trim();
+      function buildCargoOptions(selectedId) {
+        const selected = String(selectedId || "");
+        const html = ['<option value="">Selecione um cargo</option>'];
+        cargoOptions.forEach((option) => {
+          const id = String(option.id || "");
+          const nome = escapeHtml(option.nome || "");
+          const selectedAttr = id === selected ? " selected" : "";
+          html.push(`<option value="${id}"${selectedAttr}>${nome}</option>`);
+        });
+        return html.join("");
       }
 
       function syncHidden() {
-        const clean = rows
-          .map((row) => ({
-            cargo: normalizeText(row.cargo),
-            quantidade: String(row.quantidade || "").trim(),
-          }))
-          .filter((row) => row.cargo && /^\d+$/.test(row.quantidade) && Number(row.quantidade) > 0);
-        hiddenInput.value = JSON.stringify(clean);
-        const total = clean.reduce((acc, row) => acc + Number(row.quantidade || 0), 0);
-        totalPreview.textContent = String(total);
+        const payload = rows.map((row) => ({
+          cargo_id: String(row.cargo_id || "").trim(),
+          quantidade: String(row.quantidade || "").trim(),
+        }));
+        hiddenInput.value = JSON.stringify(payload);
+
+        const total = payload.reduce((acc, row) => {
+          if (!row.cargo_id || !/^\d+$/.test(row.quantidade)) return acc;
+          const qtd = Number(row.quantidade || 0);
+          return qtd > 0 ? acc + qtd : acc;
+        }, 0);
+        totalPreview.textContent = pluralize(total, "servidor", "servidores");
       }
 
       function render() {
         rowsContainer.innerHTML = "";
+        if (!cargoOptions.length) {
+          addBtn?.setAttribute("disabled", "disabled");
+        } else {
+          addBtn?.removeAttribute("disabled");
+        }
+
         rows.forEach((row, index) => {
           const wrapper = document.createElement("div");
           wrapper.className = "editor-item";
           wrapper.innerHTML = `
-            <input type="text" class="input-field" placeholder="Cargo/funcao" value="${String(row.cargo || "").replace(/"/g, "&quot;")}" />
-            <input type="number" class="input-field" min="1" step="1" placeholder="Qtd" value="${String(row.quantidade || "").replace(/"/g, "&quot;")}" />
+            <select class="input-field">${buildCargoOptions(row.cargo_id)}</select>
+            <input type="number" class="input-field" min="0" step="1" placeholder="Quantidade" value="${escapeHtml(row.quantidade)}" />
             <button type="button" class="btn-clear" data-action="remove">Remover</button>
           `;
-          const cargoInput = wrapper.querySelector("input[type='text']");
+
+          const cargoInput = wrapper.querySelector("select");
           const qtdInput = wrapper.querySelector("input[type='number']");
           const removeBtn = wrapper.querySelector("[data-action='remove']");
-          cargoInput.addEventListener("input", () => {
-            rows[index].cargo = cargoInput.value;
+
+          cargoInput.addEventListener("change", () => {
+            rows[index].cargo_id = cargoInput.value;
             syncHidden();
           });
+
           qtdInput.addEventListener("input", () => {
             rows[index].quantidade = qtdInput.value;
             syncHidden();
           });
+
           removeBtn.addEventListener("click", () => {
             if (rows.length <= 1) {
-              rows[0] = { cargo: "", quantidade: "" };
+              rows[0] = { cargo_id: "", quantidade: "" };
             } else {
               rows.splice(index, 1);
             }
             render();
           });
+
           rowsContainer.appendChild(wrapper);
         });
+
         syncHidden();
       }
 
       addBtn?.addEventListener("click", () => {
-        rows.push({ cargo: "", quantidade: "" });
+        rows.push({ cargo_id: "", quantidade: "" });
         render();
       });
 
