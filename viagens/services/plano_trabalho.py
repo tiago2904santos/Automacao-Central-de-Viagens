@@ -292,8 +292,16 @@ def parse_horario_atendimento_intervalo(raw: str) -> tuple[time | None, time | N
     text = " ".join(str(raw or "").split())
     if not text:
         return (None, None)
-    pattern = re.compile(r"(\d{1,2}h(?:\d{2})?)\s*(?:as|às)\s*(\d{1,2}h(?:\d{2})?)", re.I)
-    match = pattern.search(text.replace("das ", "").replace("de ", ""))
+    cleaned_text = (
+        text.replace(" do dia seguinte", "")
+        .replace("das ", "")
+        .replace("de ", "")
+    )
+    pattern = re.compile(
+        "(\\d{1,2}h(?:\\d{2})?)\\s*(?:às|as)\\s*(\\d{1,2}h(?:\\d{2})?)",
+        re.I,
+    )
+    match = pattern.search(cleaned_text)
     if not match:
         return (None, None)
     start_raw = match.group(1).replace("h", ":")
@@ -305,11 +313,13 @@ def parse_horario_atendimento_intervalo(raw: str) -> tuple[time | None, time | N
     return (parse_time(start_raw), parse_time(end_raw))
 
 
-def formatar_horario_intervalo(
+def format_horario_atendimento(
     horario_inicio: time | None,
     horario_fim: time | None,
 ) -> str:
     if not horario_inicio or not horario_fim:
+        return ""
+    if horario_inicio == horario_fim:
         return ""
     if horario_inicio.minute:
         inicio = horario_inicio.strftime("%Hh%M")
@@ -319,7 +329,15 @@ def formatar_horario_intervalo(
         fim = horario_fim.strftime("%Hh%M")
     else:
         fim = horario_fim.strftime("%Hh")
-    return f"das {inicio} as {fim}"
+    sufixo = " do dia seguinte" if horario_fim < horario_inicio else ""
+    return f"das {inicio} \u00e0s {fim}{sufixo}"
+
+
+def formatar_horario_intervalo(
+    horario_inicio: time | None,
+    horario_fim: time | None,
+) -> str:
+    return format_horario_atendimento(horario_inicio, horario_fim)
 
 
 def normalize_efetivo_payload(raw_values: list[dict] | None) -> list[dict[str, object]]:
@@ -366,7 +384,7 @@ def normalize_horario_atendimento(raw_horario: str) -> str:
         return text
     if lowered.startswith("de "):
         return text
-    if "às" in lowered or " as " in lowered:
+    if "\u00e0s" in lowered or " as " in lowered:
         return f"das {text}"
     return text
 
@@ -772,3 +790,5 @@ def validate_required_placeholders(placeholders: dict[str, str]) -> list[str]:
         if not value:
             missing.append(key)
     return missing
+
+

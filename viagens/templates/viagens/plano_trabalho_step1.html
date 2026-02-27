@@ -73,6 +73,9 @@
 
       <section class="sub-card">
         <div class="sub-card-title">Horario de atendimento</div>
+        <p class="field-help">
+          Se o horario final for menor que o inicial, o sistema considerara termino no dia seguinte.
+        </p>
         <div class="grid">
           <label>
             Hora inicial
@@ -264,7 +267,18 @@
       const updateHorarioPreview = () => {
         const ini = formatHora(inicioInput?.value || "");
         const fim = formatHora(fimInput?.value || "");
-        previewInput.value = ini && fim ? `das ${ini} as ${fim}` : "-";
+        if (!ini || !fim) {
+          previewInput.value = "-";
+          return;
+        }
+        const iniRaw = inicioInput?.value || "";
+        const fimRaw = fimInput?.value || "";
+        const toMinutes = (raw) => {
+          const [h, m] = String(raw || "00:00").split(":");
+          return (Number(h || 0) * 60) + Number(m || 0);
+        };
+        const sufixo = toMinutes(fimRaw) < toMinutes(iniRaw) ? " do dia seguinte" : "";
+        previewInput.value = `das ${ini} às ${fim}${sufixo}`;
       };
 
       const updateSolicitantePcpr = () => {

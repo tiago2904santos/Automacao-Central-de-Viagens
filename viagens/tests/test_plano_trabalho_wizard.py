@@ -9,7 +9,9 @@ from django.urls import reverse
 from docx import Document
 
 from viagens.documents.plano_trabalho import build_plano_trabalho_docx_bytes
+from viagens.forms import PlanoTrabalhoStep1Form
 from viagens.models import Cidade, Estado, Oficio, PlanoTrabalho, Trecho, Viajante
+from viagens.services.plano_trabalho import format_horario_atendimento
 
 
 class PlanoTrabalhoWizardTests(TestCase):
@@ -92,7 +94,7 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertEqual(plano.solicitante, "Prefeitura Municipal")
         self.assertEqual(plano.data_inicio, date(2026, 3, 12))
         self.assertEqual(plano.data_fim, date(2026, 3, 14))
-        self.assertEqual(plano.horario_atendimento, "das 09h as 17h")
+        self.assertEqual(plano.horario_atendimento, "das 09h às 17h")
         self.assertEqual(len(plano.destinos_json), 2)
 
     def test_step2_sem_coordenador_municipal_quando_nao_pcpr(self) -> None:
@@ -184,4 +186,55 @@ class PlanoTrabalhoWizardTests(TestCase):
         text = self._doc_text(payload)
         self.assertNotIn("{{", text)
         self.assertNotIn("}}", text)
-        self.assertIn("das 09h as 17h", text)
+        self.assertIn("das 09h às 17h", text)
+
+    def test_step1_aceita_horario_com_virada_de_dia(self) -> None:
+        response = self.client.post(
+            reverse("plano_trabalho_step1", args=[self.oficio.id]),
+            {
+                "solicitantes": ["PCPR na Comunidade"],
+                "solicitante_pcpr_nome": "Prefeitura Municipal",
+                "data_unica": "",
+                "data_inicio": "2026-03-12",
+                "data_fim": "2026-03-14",
+                "horario_inicio": "17:00",
+                "horario_fim": "02:00",
+                "destinos-TOTAL_FORMS": "1",
+                "destinos-order": "0",
+                "destinos-0-uf": "PR",
+                "destinos-0-cidade": str(self.cidade_foz.id),
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        plano = PlanoTrabalho.objects.get(oficio=self.oficio)
+        self.assertEqual(plano.horario_atendimento, "das 17h às 02h do dia seguinte")
+
+    def test_step1_form_invalido_quando_horarios_iguais(self) -> None:
+        form = PlanoTrabalhoStep1Form(
+            data={
+                "solicitantes": ["PCPR na Comunidade"],
+                "solicitante_pcpr_nome": "Prefeitura",
+                "data_unica": "",
+                "data_inicio": "2026-03-12",
+                "data_fim": "2026-03-13",
+                "horario_inicio": "17:00",
+                "horario_fim": "17:00",
+            }
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("horario_fim", form.errors)
+        self.assertIn("nao pode ser igual", form.errors["horario_fim"][0])
+
+    def test_format_horario_atendimento_com_e_sem_dia_seguinte(self) -> None:
+        self.assertEqual(
+            format_horario_atendimento(time(8, 0), time(17, 0)),
+            "das 08h às 17h",
+        )
+        self.assertEqual(
+            format_horario_atendimento(time(17, 0), time(2, 0)),
+            "das 17h às 02h do dia seguinte",
+        )
+        self.assertEqual(
+            format_horario_atendimento(time(22, 0), time(1, 0)),
+            "das 22h às 01h do dia seguinte",
+        )

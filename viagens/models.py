@@ -821,10 +821,14 @@ class PlanoTrabalho(models.Model):
         if not (self.sigla_unidade or "").strip():
             self.sigla_unidade = "ASCOM"
         if self.horario_inicio and self.horario_fim:
-            inicio = self._format_hora_ptbr(self.horario_inicio)
-            fim = self._format_hora_ptbr(self.horario_fim)
-            if inicio and fim:
-                self.horario_atendimento = f"das {inicio} as {fim}"
+            from .services.plano_trabalho import formatar_horario_intervalo
+
+            horario_formatado = formatar_horario_intervalo(
+                self.horario_inicio,
+                self.horario_fim,
+            )
+            if horario_formatado:
+                self.horario_atendimento = horario_formatado
 
         if self.coordenador_plano:
             if not (self.coordenador_nome or "").strip():

@@ -822,8 +822,11 @@ class PlanoTrabalhoStep1Form(forms.Form):
 
         horario_inicio = cleaned_data.get("horario_inicio")
         horario_fim = cleaned_data.get("horario_fim")
-        if horario_inicio and horario_fim and horario_fim <= horario_inicio:
-            self.add_error("horario_fim", "O horario final deve ser posterior ao inicial.")
+        if horario_inicio and horario_fim and horario_fim == horario_inicio:
+            self.add_error(
+                "horario_fim",
+                "Horario final nao pode ser igual ao inicial.",
+            )
         cleaned_data["horario_atendimento"] = formatar_horario_intervalo(
             horario_inicio,
             horario_fim,
