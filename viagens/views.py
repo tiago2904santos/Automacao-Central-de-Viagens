@@ -66,6 +66,7 @@ from .services.diarias_unified import (
     calculate_diarias_from_markers,
     calculate_diarias_from_periods_payload,
     derive_financeiro_diarias,
+    normalize_diarias_resultado,
     parse_decimal_br,
 )
 from .services.oficio_helpers import build_assunto, infer_tipo_destino, valor_por_extenso_ptbr
@@ -432,7 +433,7 @@ def _calculate_periodized_diarias_for_trechos(
 
 
 def _diarias_totais_fields(resultado: dict) -> tuple[str, str, str]:
-    totais = resultado.get("totais", {}) if isinstance(resultado, dict) else {}
+    totais = normalize_diarias_resultado(resultado).get("totais", {})
     quantidade_diarias = str(totais.get("total_diarias", "") or "")
     valor_diarias = str(totais.get("total_valor", "") or "")
     valor_extenso = str(totais.get("valor_extenso", "") or "")
@@ -5133,7 +5134,7 @@ def _plano_resumo_context(plano: PlanoTrabalho, oficio: Oficio) -> dict[str, obj
         }
         for row in efetivo_rows
     ]
-    diarias = _plano_diarias_resultado(plano, oficio) or {}
+    diarias = normalize_diarias_resultado(_plano_diarias_resultado(plano, oficio))
     recursos = [item.descricao for item in plano.recursos.all().order_by("ordem", "id")]
     atividades = [
         " ".join((item.descricao or "").split())
@@ -5608,7 +5609,13 @@ def plano_trabalho_step3(request, oficio_id: int):
         id=oficio_id,
     )
     plano = _ensure_plano_wizard_instance(oficio)
-    diarias_resultado = _plano_diarias_resultado(plano, oficio) or {}
+    diarias_erro_inicial = ""
+    try:
+        diarias_resultado = _plano_diarias_resultado_or_error(plano, oficio)
+    except ValueError as exc:
+        diarias_erro_inicial = str(exc)
+        diarias_resultado = None
+    diarias_resultado = normalize_diarias_resultado(diarias_resultado)
     financeiro_diarias = derive_financeiro_diarias(diarias_resultado)
 
     recursos = [item.descricao for item in plano.recursos.all().order_by("ordem", "id")]
@@ -5636,8 +5643,12 @@ def plano_trabalho_step3(request, oficio_id: int):
             try:
                 diarias_resultado = _plano_diarias_resultado_or_error(plano, oficio)
             except ValueError as exc:
-                form.add_error(None, str(exc))
+                diarias_erro_inicial = str(exc)
+                diarias_resultado = normalize_diarias_resultado(None)
+                financeiro_diarias = derive_financeiro_diarias(diarias_resultado)
+                form.add_error(None, diarias_erro_inicial)
             else:
+                diarias_resultado = normalize_diarias_resultado(diarias_resultado)
                 financeiro_diarias = derive_financeiro_diarias(diarias_resultado)
                 valor_unitario_decimal = (
                     parse_decimal_br(financeiro_diarias.get("valor_unitario"))
@@ -5667,6 +5678,7 @@ def plano_trabalho_step3(request, oficio_id: int):
             "form": form,
             "diarias_resultado": diarias_resultado,
             "financeiro_diarias": financeiro_diarias,
+            "diarias_erro_inicial": diarias_erro_inicial,
             "plano_diarias_calcular_url": reverse(
                 "plano_trabalho_calcular_diarias",
                 args=[oficio.id],
@@ -5686,7 +5698,17 @@ def plano_trabalho_calcular_diarias(request, oficio_id: int):
     try:
         resultado = _plano_diarias_resultado_or_error(plano, oficio)
     except ValueError as exc:
-        return JsonResponse({"error": str(exc)}, status=400)
+        resultado = normalize_diarias_resultado(None)
+        return JsonResponse(
+            {
+                "error": str(exc),
+                "periodos": resultado.get("periodos", []),
+                "totais": resultado.get("totais", {}),
+                "financeiro": derive_financeiro_diarias(resultado),
+            },
+            status=400,
+        )
+    resultado = normalize_diarias_resultado(resultado)
     return JsonResponse(
         {
             "periodos": resultado.get("periodos", []),

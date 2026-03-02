@@ -34,30 +34,30 @@
         <div class="field-actions" style="margin-top:0; margin-bottom:0.75rem;">
           <button class="btn-clear btn-small" type="button" id="recalcularDiariasPlanoBtn">Recalcular diarias</button>
         </div>
-        <div class="diarias-alert" id="planoDiariasError" hidden></div>
+        <div class="diarias-alert" id="planoDiariasError"{% if not diarias_erro_inicial %} hidden{% endif %}>{{ diarias_erro_inicial }}</div>
 
         {% with totais=diarias_resultado.totais %}
           <div class="diarias-summary-grid" id="planoDiariasGrid">
             <article class="diarias-summary-card">
               <span class="diarias-summary-label">Total geral</span>
-              <strong class="diarias-summary-value" id="planoDiariasTotalGeral">{{ totais.total_geral|default:totais.total_valor|default:"-" }}</strong>
+              <strong class="diarias-summary-value" id="planoDiariasTotalGeral">{% if totais %}{% firstof totais.total_geral totais.total_valor "-" %}{% else %}-{% endif %}</strong>
             </article>
             <article class="diarias-summary-card">
               <span class="diarias-summary-label">Valor por servidor</span>
-              <strong class="diarias-summary-value" id="planoDiariasValorServidor">{{ totais.valor_por_servidor|default:"-" }}</strong>
+              <strong class="diarias-summary-value" id="planoDiariasValorServidor">{% if totais %}{{ totais.valor_por_servidor|default:"-" }}{% else %}-{% endif %}</strong>
             </article>
             <article class="diarias-summary-card">
               <span class="diarias-summary-label">Diarias por servidor</span>
-              <strong class="diarias-summary-value" id="planoDiariasQtdServidor">{{ totais.diarias_por_servidor|default:"-" }}</strong>
+              <strong class="diarias-summary-value" id="planoDiariasQtdServidor">{% if totais %}{{ totais.diarias_por_servidor|default:"-" }}{% else %}-{% endif %}</strong>
             </article>
             <article class="diarias-summary-card">
               <span class="diarias-summary-label">Valor unitario da diaria</span>
-              <strong class="diarias-summary-value" id="planoDiariasValorUnitario">{{ totais.valor_unitario|default:totais.valor_unitario_referencia|default:"-" }}</strong>
+              <strong class="diarias-summary-value" id="planoDiariasValorUnitario">{% if totais %}{% firstof totais.valor_unitario totais.valor_unitario_referencia "-" %}{% else %}-{% endif %}</strong>
             </article>
           </div>
           <div class="preview-line">
             <span class="preview-label">Valor por extenso</span>
-            <span class="preview-value" id="planoDiariasValorExtenso">{{ totais.valor_extenso|default:"-" }}</span>
+            <span class="preview-value" id="planoDiariasValorExtenso">{% if totais %}{{ totais.valor_extenso|default:"-" }}{% else %}-{% endif %}</span>
           </div>
         {% endwith %}
       </section>
@@ -109,6 +109,13 @@
         errorEl.textContent = message || "";
       };
 
+      const coerceObject = (value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          return {};
+        }
+        return value;
+      };
+
       const formatMoney = (value) => {
         const raw = String(value || "").trim();
         if (!raw) return "-";
@@ -122,8 +129,8 @@
       };
 
       const applyDiariasResult = (payload) => {
-        const totais = payload?.totais || {};
-        const financeiro = payload?.financeiro || {};
+        const totais = coerceObject(payload?.totais);
+        const financeiro = coerceObject(payload?.financeiro);
 
         if (totalEl) totalEl.textContent = formatMoney(totais.total_geral || totais.total_valor);
         if (valorServidorEl) valorServidorEl.textContent = formatMoney(totais.valor_por_servidor);
@@ -153,11 +160,12 @@
             headers: { Accept: "application/json" },
           });
           const payload = await response.json();
+          applyDiariasResult(payload);
           if (!response.ok) {
             throw new Error(payload?.error || "Nao foi possivel calcular as diarias.");
           }
-          applyDiariasResult(payload);
         } catch (error) {
+          applyDiariasResult({});
           clearFinanceFields();
           showError(error?.message || "Nao foi possivel calcular as diarias.");
         } finally {

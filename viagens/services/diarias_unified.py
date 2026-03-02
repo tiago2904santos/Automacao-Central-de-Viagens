@@ -40,9 +40,19 @@ def _format_decimal_br(value: Decimal | None) -> str:
     return f"{quantized:.2f}".replace(".", ",")
 
 
-def _normalize_diarias_resultado(resultado: dict) -> dict:
-    totais = resultado.get("totais", {}) if isinstance(resultado, dict) else {}
+def normalize_diarias_resultado(resultado: dict | None) -> dict:
+    normalized = dict(resultado) if isinstance(resultado, dict) else {}
+    totais = normalized.get("totais", {})
+    totais = dict(totais) if isinstance(totais, dict) else {}
     total_geral = str(totais.get("total_geral") or totais.get("total_valor") or "").strip()
+    total_diarias = str(
+        totais.get("total_diarias")
+        or totais.get("diarias_por_servidor")
+        or totais.get("quantidade_diarias_por_servidor")
+        or ""
+    ).strip()
+    total_horas = str(totais.get("total_horas") or "").strip()
+    valor_extenso = str(totais.get("valor_extenso") or "").strip()
     diarias_por_servidor = str(
         totais.get("diarias_por_servidor")
         or totais.get("quantidade_diarias_por_servidor")
@@ -55,7 +65,10 @@ def _normalize_diarias_resultado(resultado: dict) -> dict:
         or ""
     ).strip()
     valor_por_servidor = str(totais.get("valor_por_servidor") or "").strip()
-    servidores = int(totais.get("quantidade_servidores") or 0)
+    try:
+        servidores = int(totais.get("quantidade_servidores") or 0)
+    except (TypeError, ValueError):
+        servidores = 0
 
     total_decimal = parse_decimal_br(total_geral) or Decimal("0.00")
     if not valor_por_servidor and servidores > 0:
@@ -70,6 +83,9 @@ def _normalize_diarias_resultado(resultado: dict) -> dict:
             "total_geral": total_geral,
             "total_valor": total_geral,
             "valor_total": total_geral,
+            "total_diarias": total_diarias,
+            "total_horas": total_horas,
+            "valor_extenso": valor_extenso,
             "diarias_por_servidor": diarias_por_servidor,
             "quantidade_diarias_por_servidor": diarias_por_servidor,
             "valor_por_servidor": valor_por_servidor,
@@ -77,12 +93,15 @@ def _normalize_diarias_resultado(resultado: dict) -> dict:
             "valor_unitario_referencia": valor_unitario,
         }
     )
-    resultado["totais"] = totais
-    return resultado
+    normalized["totais"] = totais
+
+    periodos = normalized.get("periodos", [])
+    normalized["periodos"] = periodos if isinstance(periodos, list) else []
+    return normalized
 
 
 def derive_financeiro_diarias(resultado: dict | None) -> dict[str, str]:
-    totais = resultado.get("totais", {}) if isinstance(resultado, dict) else {}
+    totais = normalize_diarias_resultado(resultado).get("totais", {})
     return {
         "diarias_por_servidor": str(
             totais.get("diarias_por_servidor")
@@ -115,7 +134,7 @@ def calculate_diarias_from_markers(
         quantidade_servidores=servidores,
         valor_extenso_fn=valor_por_extenso_ptbr,
     )
-    return _normalize_diarias_resultado(resultado)
+    return normalize_diarias_resultado(resultado)
 
 
 def calculate_diarias_from_periods_payload(
@@ -130,5 +149,4 @@ def calculate_diarias_from_periods_payload(
         periods_payload,
         quantidade_servidores=servidores,
     )
-    return _normalize_diarias_resultado(resultado)
-
+    return normalize_diarias_resultado(resultado)

@@ -460,6 +460,36 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertIn("metas_json", form.errors)
         self.assertIn("Informe ao menos 1 meta", form.errors["metas_json"][0])
 
+    def test_step3_get_nao_quebra_quando_diarias_ainda_nao_podem_ser_calculadas(self) -> None:
+        self.oficio.trechos.all().delete()
+
+        response = self.client.get(reverse("plano_trabalho_step3", args=[self.oficio.id]))
+
+        self.assertEqual(response.status_code, 200)
+        totais = response.context["diarias_resultado"]["totais"]
+        self.assertIsInstance(totais, dict)
+        self.assertEqual(totais["total_geral"], "")
+        self.assertEqual(totais["total_valor"], "")
+        self.assertIn("valor_por_servidor", totais)
+        self.assertIn("diarias_por_servidor", totais)
+        self.assertContains(response, "Nao ha trechos validos para calcular as diarias do plano.")
+
+    def test_step3_endpoint_calculo_diarias_retorna_totais_dict_mesmo_em_erro(self) -> None:
+        self.oficio.trechos.all().delete()
+
+        response = self.client.get(
+            reverse("plano_trabalho_calcular_diarias", args=[self.oficio.id])
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["error"], "Nao ha trechos validos para calcular as diarias do plano.")
+        self.assertIsInstance(payload["totais"], dict)
+        self.assertEqual(payload["totais"]["total_geral"], "")
+        self.assertEqual(payload["totais"]["total_valor"], "")
+        self.assertIn("valor_por_servidor", payload["totais"])
+        self.assertIn("diarias_por_servidor", payload["totais"])
+
     def test_step3_endpoint_calculo_diarias_retorna_valor_por_servidor(self) -> None:
         self._post_step1(solicitantes=["Parana em Acao"])
         response_step2 = self.client.post(
