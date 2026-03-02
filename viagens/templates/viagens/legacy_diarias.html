@@ -1,0 +1,60 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Calculadora de Diarias{% endblock %}
+
+{% block breadcrumb %}
+  Diarias <span class="breadcrumb-sep">/</span> Calculadora
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Calculadora de Diarias</h2>
+      <p class="page-subtitle">Calculo simples com periodo inclusivo e meia diaria opcional.</p>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <form method="post" novalidate>
+        {% csrf_token %}
+        <div class="grid">
+          <label>
+            Data de saida
+            {{ form.data_saida }}
+            {% if form.data_saida.errors %}<span class="error">{{ form.data_saida.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            Data de retorno
+            {{ form.data_retorno }}
+            {% if form.data_retorno.errors %}<span class="error">{{ form.data_retorno.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label>
+            Valor da diaria
+            {{ form.valor_diaria }}
+            {% if form.valor_diaria.errors %}<span class="error">{{ form.valor_diaria.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label class="checkbox-item">
+            {{ form.meia_diaria }}
+            <span>Aplicar meia diaria</span>
+          </label>
+        </div>
+        <div class="wizard-actions">
+          <button type="submit" class="btn-primary">Calcular</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Resultado</h3>
+      {% if resultado %}
+        <div class="preview">
+          <p>Dias (inclusivo): <strong>{{ resultado.dias }}</strong></p>
+          <p>Total: <strong>R$ {{ resultado.total_formatado }}</strong></p>
+        </div>
+      {% else %}
+        <p>Preencha os campos e clique em calcular.</p>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

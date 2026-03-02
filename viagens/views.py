@@ -19,7 +19,7 @@ from django.db import models, transaction
 from django.db.utils import OperationalError, ProgrammingError
 from django.db.models import Count, Q
 from django.db.models.functions import ExtractMonth, TruncDate
-from django.forms import inlineformset_factory
+from django.forms import formset_factory, inlineformset_factory
 from django.forms.models import BaseInlineFormSet
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -30,8 +30,11 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_GET, require_http_methods
 from .forms import (
     JustificativaForm,
+    DiariasSimplesForm,
+    EfetivoLinhaForm,
     MotoristaSelectForm,
     MotoristaTransporteForm,
+    NovoCargoForm,
     OficioNumeracaoForm,
     OrdemServicoForm,
     PlanoTrabalhoStep1Form,
@@ -45,6 +48,7 @@ from .models import (
     Cargo,
     Cidade,
     CoordenadorMunicipal,
+    Efetivo,
     Estado,
     Oficio,
     OficioCounter,
@@ -61,7 +65,7 @@ from .models import (
     Viajante,
     Veiculo,
 )
-from .diarias import PeriodMarker
+from .diarias import PeriodMarker, calculate_simple_diarias_total
 from .services.diarias_unified import (
     calculate_diarias_from_markers,
     calculate_diarias_from_periods_payload,
@@ -2278,6 +2282,130 @@ def dashboard_data_api(request):
     year = int(request.GET.get("ano", timezone.localdate().year))
     payload = _dashboard_payload(year)
     return JsonResponse(payload)
+
+
+def _efetivo_resumo_context() -> dict[str, object]:
+    efetivos = list(
+        Efetivo.objects.select_related("cargo")
+        .filter(cargo__ativo=True)
+        .order_by("cargo__ordem", "cargo__nome")
+    )
+    total_coordenadores = sum(
+        int(item.quantidade or 0) for item in efetivos if bool(item.cargo.is_coordenador)
+    )
+    total_servidores = sum(
+        int(item.quantidade or 0) for item in efetivos if not bool(item.cargo.is_coordenador)
+    )
+    total_geral = total_servidores + total_coordenadores
+    return {
+        "efetivos": efetivos,
+        "total_servidores": total_servidores,
+        "total_coordenadores": total_coordenadores,
+        "total_geral": total_geral,
+        "resumo_servidores": format_total_servidores(total_servidores),
+        "resumo_coordenadores": (
+            f"{total_coordenadores} coordenador"
+            if total_coordenadores == 1
+            else f"{total_coordenadores} coordenadores"
+        ),
+        "resumo_total": f"{total_geral} pessoa" if total_geral == 1 else f"{total_geral} pessoas",
+    }
+
+
+@require_http_methods(["GET", "POST"])
+def efetivo(request):
+    for cargo in Cargo.objects.filter(ativo=True).order_by("ordem", "nome"):
+        Efetivo.objects.get_or_create(cargo=cargo)
+
+    resumo = _efetivo_resumo_context()
+    EfetivoFormSet = formset_factory(EfetivoLinhaForm, extra=0)
+    initial = [
+        {
+            "cargo_id": item.cargo_id,
+            "cargo_nome": item.cargo.nome,
+            "is_coordenador": "True" if item.cargo.is_coordenador else "",
+            "quantidade": int(item.quantidade or 0),
+        }
+        for item in resumo["efetivos"]
+    ]
+
+    if request.method == "POST":
+        formset = EfetivoFormSet(request.POST, prefix="efetivo")
+        cargo_form = NovoCargoForm(request.POST, prefix="novo")
+        if formset.is_valid() and cargo_form.is_valid():
+            for form in formset:
+                cargo_id = int(form.cleaned_data.get("cargo_id") or 0)
+                quantidade = int(form.cleaned_data.get("quantidade") or 0)
+                if cargo_id:
+                    Efetivo.objects.filter(cargo_id=cargo_id).update(quantidade=quantidade)
+
+            nome_cargo = cargo_form.cleaned_data.get("nome_cargo", "")
+            if nome_cargo:
+                cargo, _created = Cargo.objects.get_or_create(
+                    nome=nome_cargo,
+                    defaults={
+                        "ordem": (Cargo.objects.aggregate(max_ordem=models.Max("ordem")).get("max_ordem") or 0)
+                        + 1,
+                        "ativo": True,
+                        "is_coordenador": bool(cargo_form.cleaned_data.get("is_coordenador")),
+                    },
+                )
+                desired_is_coordenador = bool(cargo_form.cleaned_data.get("is_coordenador"))
+                if not cargo.ativo or cargo.is_coordenador != desired_is_coordenador:
+                    cargo.ativo = True
+                    cargo.is_coordenador = desired_is_coordenador
+                    cargo.save(update_fields=["ativo", "is_coordenador"])
+                Efetivo.objects.get_or_create(cargo=cargo)
+            return redirect("efetivo")
+    else:
+        formset = EfetivoFormSet(initial=initial, prefix="efetivo")
+        cargo_form = NovoCargoForm(prefix="novo")
+
+    resumo = _efetivo_resumo_context()
+    linhas = []
+    for item, form in zip(resumo["efetivos"], formset.forms):
+        linhas.append({"cargo": item.cargo, "form": form})
+
+    return render(
+        request,
+        "viagens/legacy_efetivo.html",
+        {
+            "formset": formset,
+            "cargo_form": cargo_form,
+            "linhas": linhas,
+            **resumo,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def diarias(request):
+    resultado = None
+    if request.method == "POST":
+        form = DiariasSimplesForm(request.POST)
+        if form.is_valid():
+            dias, total = calculate_simple_diarias_total(
+                form.cleaned_data["data_saida"],
+                form.cleaned_data["data_retorno"],
+                form.cleaned_data["valor_diaria"],
+                meia_diaria=bool(form.cleaned_data.get("meia_diaria")),
+            )
+            resultado = {
+                "dias": dias,
+                "total": total,
+                "total_formatado": f"{total:.2f}".replace(".", ","),
+            }
+    else:
+        form = DiariasSimplesForm()
+
+    return render(
+        request,
+        "viagens/legacy_diarias.html",
+        {
+            "form": form,
+            "resultado": resultado,
+        },
+    )
 
 
 @require_GET
@@ -5049,12 +5177,47 @@ def _plano_destinos_initial(plano: PlanoTrabalho, oficio: Oficio) -> list[dict[s
     return _build_destinos_display(_normalize_destinos_for_wizard(normalized))
 
 
+def _resolve_diarias_chegada_final(
+    plano: PlanoTrabalho,
+    oficio: Oficio,
+    trechos: list[Trecho],
+) -> tuple[date, time]:
+    fallback_data = oficio.retorno_chegada_data or plano.data_fim or timezone.localdate()
+    fallback_hora = oficio.retorno_chegada_hora or parse_time("18:00") or time.min
+
+    candidate_dates = [fallback_data]
+    if plano.data_fim:
+        candidate_dates.append(plano.data_fim)
+    for trecho in trechos:
+        if trecho.chegada_data:
+            candidate_dates.append(trecho.chegada_data)
+        elif trecho.saida_data:
+            candidate_dates.append(trecho.saida_data)
+    chegada_data = max(candidate_dates)
+    chegada_hora = fallback_hora
+
+    last_saida = None
+    for trecho in trechos:
+        if not trecho.saida_data:
+            continue
+        saida_hora = trecho.saida_hora or time.min
+        saida_dt = datetime.combine(trecho.saida_data, saida_hora)
+        if last_saida is None or saida_dt > last_saida:
+            last_saida = saida_dt
+
+    chegada_final = datetime.combine(chegada_data, chegada_hora)
+    if last_saida and chegada_final <= last_saida:
+        chegada_final = last_saida + timedelta(hours=1)
+        chegada_data = chegada_final.date()
+        chegada_hora = chegada_final.time().replace(microsecond=0)
+    return chegada_data, chegada_hora
+
+
 def _plano_diarias_resultado_or_error(plano: PlanoTrabalho, oficio: Oficio) -> dict:
     trechos = _oficio_trechos(oficio)
     if not trechos:
         raise ValueError("Nao ha trechos validos para calcular as diarias do plano.")
-    retorno_data = oficio.retorno_chegada_data or plano.data_fim
-    retorno_hora = oficio.retorno_chegada_hora or parse_time("18:00")
+    retorno_data, retorno_hora = _resolve_diarias_chegada_final(plano, oficio, trechos)
     return _calculate_periodized_diarias_for_trechos(
         trechos,
         retorno_data,
@@ -5068,6 +5231,68 @@ def _plano_diarias_resultado(plano: PlanoTrabalho, oficio: Oficio) -> dict | Non
         return _plano_diarias_resultado_or_error(plano, oficio)
     except ValueError:
         return None
+
+
+def _plano_diarias_diagnostico(plano: PlanoTrabalho, oficio: Oficio) -> dict[str, object]:
+    missing_requirements: list[str] = []
+    actions: list[dict[str, str]] = []
+    if not _oficio_trechos(oficio):
+        missing_requirements.append("trechos")
+        actions.append(
+            {
+                "label": "Cadastrar trechos no Oficio",
+                "url": reverse("oficio_edit_step3", args=[oficio.id]),
+            }
+        )
+
+    efetivo_rows = normalize_efetivo_payload(
+        plano.efetivo_json if isinstance(plano.efetivo_json, list) else []
+    )
+    total_servidores = efetivo_total_servidores(efetivo_rows) or int(plano.quantidade_servidores or 0)
+    if total_servidores < 1:
+        missing_requirements.append("efetivo")
+        actions.append(
+            {
+                "label": "Preencher Efetivo na Etapa 2",
+                "url": reverse("plano_trabalho_step2", args=[oficio.id]),
+            }
+        )
+
+    if not missing_requirements:
+        message = ""
+    elif len(missing_requirements) > 1:
+        message = (
+            "Para calcular as diarias, cadastre ao menos um trecho no Oficio "
+            "e informe o efetivo na Etapa 2."
+        )
+    elif missing_requirements[0] == "trechos":
+        message = "Cadastre ao menos um trecho no Oficio para calcular as diarias."
+    else:
+        message = "Preencha o efetivo na Etapa 2 para calcular as diarias."
+
+    return {
+        "missing_requirements": missing_requirements,
+        "actions": actions,
+        "message": message,
+        "can_calculate": not missing_requirements,
+    }
+
+
+def _resolve_plano_diarias_state(plano: PlanoTrabalho, oficio: Oficio) -> tuple[dict, str, dict[str, object]]:
+    diagnostico = _plano_diarias_diagnostico(plano, oficio)
+    if not diagnostico["can_calculate"]:
+        return normalize_diarias_resultado(None), str(diagnostico["message"] or ""), diagnostico
+    try:
+        resultado = _plano_diarias_resultado_or_error(plano, oficio)
+    except ValueError as exc:
+        diagnostico = {
+            "missing_requirements": [],
+            "actions": [],
+            "message": str(exc),
+            "can_calculate": False,
+        }
+        return normalize_diarias_resultado(None), str(exc), diagnostico
+    return normalize_diarias_resultado(resultado), "", diagnostico
 
 
 def _plano_legado_redirect_para_resumo(plano: PlanoTrabalho) -> bool:
@@ -5501,6 +5726,7 @@ def plano_trabalho_step2(request, oficio_id: int):
     ]
     if atividades and not metas:
         metas = metas_from_atividades(atividades)
+    efetivo_total_preview = efetivo_total_servidores(efetivo_rows) or int(plano.quantidade_servidores or 0)
 
     initial = {
         "efetivo_json": json.dumps(efetivo_rows, ensure_ascii=False),
@@ -5588,6 +5814,24 @@ def plano_trabalho_step2(request, oficio_id: int):
             permite_municipal=permite_municipal,
         )
 
+    coordenador_plano_options = [
+        {
+            "id": item["id"],
+            "nome": " ".join((item.get("nome") or "").split()),
+            "cargo": " ".join((item.get("cargo") or "").split()),
+        }
+        for item in form.fields["coordenador_plano"].queryset.values("id", "nome", "cargo")
+    ]
+    coordenador_municipal_options = [
+        {
+            "id": item["id"],
+            "nome": " ".join((item.get("nome") or "").split()),
+            "cargo": " ".join((item.get("cargo") or "").split()),
+            "cidade": " ".join((item.get("cidade") or "").split()),
+        }
+        for item in form.fields["coordenador_municipal"].queryset.values("id", "nome", "cargo", "cidade")
+    ]
+
     return render(
         request,
         "viagens/plano_trabalho_step2.html",
@@ -5597,6 +5841,9 @@ def plano_trabalho_step2(request, oficio_id: int):
             "form": form,
             "permite_municipal": permite_municipal,
             "cargo_options": cargo_options,
+            "coordenador_plano_options": coordenador_plano_options,
+            "coordenador_municipal_options": coordenador_municipal_options,
+            "efetivo_total_preview": format_total_servidores(efetivo_total_preview),
             "numero_plano_formatado": f"{int(plano.numero or 0):02d}/{int(plano.ano or timezone.localdate().year)}",
         },
     )
@@ -5609,13 +5856,10 @@ def plano_trabalho_step3(request, oficio_id: int):
         id=oficio_id,
     )
     plano = _ensure_plano_wizard_instance(oficio)
-    diarias_erro_inicial = ""
-    try:
-        diarias_resultado = _plano_diarias_resultado_or_error(plano, oficio)
-    except ValueError as exc:
-        diarias_erro_inicial = str(exc)
-        diarias_resultado = None
-    diarias_resultado = normalize_diarias_resultado(diarias_resultado)
+    diarias_resultado, diarias_erro_inicial, diarias_diagnostico = _resolve_plano_diarias_state(
+        plano,
+        oficio,
+    )
     financeiro_diarias = derive_financeiro_diarias(diarias_resultado)
 
     recursos = [item.descricao for item in plano.recursos.all().order_by("ordem", "id")]
@@ -5640,32 +5884,41 @@ def plano_trabalho_step3(request, oficio_id: int):
     if request.method == "POST":
         form = PlanoTrabalhoStep3Form(request.POST, initial=initial)
         if form.is_valid():
-            try:
-                diarias_resultado = _plano_diarias_resultado_or_error(plano, oficio)
-            except ValueError as exc:
-                diarias_erro_inicial = str(exc)
-                diarias_resultado = normalize_diarias_resultado(None)
-                financeiro_diarias = derive_financeiro_diarias(diarias_resultado)
-                form.add_error(None, diarias_erro_inicial)
-            else:
-                diarias_resultado = normalize_diarias_resultado(diarias_resultado)
-                financeiro_diarias = derive_financeiro_diarias(diarias_resultado)
-                valor_unitario_decimal = (
-                    parse_decimal_br(financeiro_diarias.get("valor_unitario"))
-                    or parse_decimal_br(financeiro_diarias.get("valor_por_servidor"))
-                )
-                total_decimal = parse_decimal_br(financeiro_diarias.get("total_geral"))
-                with transaction.atomic():
-                    plano.composicao_diarias = financeiro_diarias.get("diarias_por_servidor", "")
-                    plano.valor_unitario = valor_unitario_decimal
-                    plano.valor_total_calculado = total_decimal
-                    plano.save()
-                    _sync_plano_ordered_text_items(
-                        plano,
-                        model_cls=PlanoTrabalhoRecurso,
-                        values=form.parsed_recursos,
+            if diarias_diagnostico["can_calculate"]:
+                try:
+                    diarias_resultado = _plano_diarias_resultado_or_error(plano, oficio)
+                except ValueError as exc:
+                    diarias_erro_inicial = str(exc)
+                    diarias_diagnostico = {
+                        "missing_requirements": [],
+                        "actions": [],
+                        "message": diarias_erro_inicial,
+                        "can_calculate": False,
+                    }
+                    diarias_resultado = normalize_diarias_resultado(None)
+                    financeiro_diarias = derive_financeiro_diarias(diarias_resultado)
+                    form.add_error(None, diarias_erro_inicial)
+                else:
+                    diarias_resultado = normalize_diarias_resultado(diarias_resultado)
+                    financeiro_diarias = derive_financeiro_diarias(diarias_resultado)
+                    valor_unitario_decimal = (
+                        parse_decimal_br(financeiro_diarias.get("valor_unitario"))
+                        or parse_decimal_br(financeiro_diarias.get("valor_por_servidor"))
                     )
-                return redirect("plano_trabalho_resumo", oficio_id=oficio.id)
+                    total_decimal = parse_decimal_br(financeiro_diarias.get("total_geral"))
+                    with transaction.atomic():
+                        plano.composicao_diarias = financeiro_diarias.get("diarias_por_servidor", "")
+                        plano.valor_unitario = valor_unitario_decimal
+                        plano.valor_total_calculado = total_decimal
+                        plano.save()
+                        _sync_plano_ordered_text_items(
+                            plano,
+                            model_cls=PlanoTrabalhoRecurso,
+                            values=form.parsed_recursos,
+                        )
+                    return redirect("plano_trabalho_resumo", oficio_id=oficio.id)
+            else:
+                form.add_error(None, diarias_erro_inicial)
     else:
         form = PlanoTrabalhoStep3Form(initial=initial)
 
@@ -5679,6 +5932,7 @@ def plano_trabalho_step3(request, oficio_id: int):
             "diarias_resultado": diarias_resultado,
             "financeiro_diarias": financeiro_diarias,
             "diarias_erro_inicial": diarias_erro_inicial,
+            "diarias_acoes_iniciais": diarias_diagnostico.get("actions", []),
             "plano_diarias_calcular_url": reverse(
                 "plano_trabalho_calcular_diarias",
                 args=[oficio.id],
@@ -5695,25 +5949,26 @@ def plano_trabalho_calcular_diarias(request, oficio_id: int):
         id=oficio_id,
     )
     plano = _ensure_plano_wizard_instance(oficio)
-    try:
-        resultado = _plano_diarias_resultado_or_error(plano, oficio)
-    except ValueError as exc:
-        resultado = normalize_diarias_resultado(None)
+    resultado, erro, diagnostico = _resolve_plano_diarias_state(plano, oficio)
+    if erro:
         return JsonResponse(
             {
-                "error": str(exc),
+                "error": erro,
                 "periodos": resultado.get("periodos", []),
                 "totais": resultado.get("totais", {}),
                 "financeiro": derive_financeiro_diarias(resultado),
+                "actions": diagnostico.get("actions", []),
+                "missing_requirements": diagnostico.get("missing_requirements", []),
             },
             status=400,
         )
-    resultado = normalize_diarias_resultado(resultado)
     return JsonResponse(
         {
             "periodos": resultado.get("periodos", []),
             "totais": resultado.get("totais", {}),
             "financeiro": derive_financeiro_diarias(resultado),
+            "actions": diagnostico.get("actions", []),
+            "missing_requirements": diagnostico.get("missing_requirements", []),
         }
     )
 

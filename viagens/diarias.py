@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 import unicodedata
 
@@ -110,6 +110,23 @@ def _total_diarias_resumo(periodos: list[dict]) -> str:
     if p30:
         partes.append(f"{p30} x 30%")
     return " + ".join(partes)
+
+
+def calculate_simple_diarias_total(
+    data_saida: date,
+    data_retorno: date,
+    valor_diaria: Decimal,
+    *,
+    meia_diaria: bool = False,
+) -> tuple[int, Decimal]:
+    if data_retorno < data_saida:
+        raise ValueError("A data de retorno deve ser igual ou posterior a data de saida.")
+    dias = (data_retorno - data_saida).days + 1
+    fator = Decimal(dias)
+    if meia_diaria and dias > 0:
+        fator -= Decimal("0.5")
+    total = (Decimal(valor_diaria) * fator).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return dias, total
 
 
 def build_periods(

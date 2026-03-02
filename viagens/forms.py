@@ -864,6 +864,8 @@ class PlanoTrabalhoStep2Form(forms.Form):
         cargos = list(Cargo.objects.filter(ativo=True).order_by("ordem", "nome"))
         self.cargo_options = [{"id": cargo.id, "nome": cargo.nome} for cargo in cargos]
         self._cargo_map = {cargo.id: cargo for cargo in cargos}
+        self.fields["coordenador_plano"].empty_label = "Selecionar servidor"
+        self.fields["coordenador_municipal"].empty_label = "Selecionar coordenador existente"
         self.fields["coordenador_plano"].widget.attrs.update(
             {
                 "data-autocomplete-url": "/api/servidores/",
@@ -874,6 +876,36 @@ class PlanoTrabalhoStep2Form(forms.Form):
             {
                 "data-autocomplete-url": "/api/coordenadores-municipais/",
                 "data-autocomplete-type": "coordenador-municipal",
+            }
+        )
+        self.fields["coordenador_plano_nome"].widget.attrs.update(
+            {
+                "placeholder": "Preenchido automaticamente ao selecionar um servidor",
+                "autocomplete": "off",
+            }
+        )
+        self.fields["coordenador_plano_cargo"].widget.attrs.update(
+            {
+                "placeholder": "Preenchido automaticamente ao selecionar um servidor",
+                "autocomplete": "off",
+            }
+        )
+        self.fields["coordenador_municipal_nome"].widget.attrs.update(
+            {
+                "placeholder": "Nome do novo coordenador municipal",
+                "autocomplete": "off",
+            }
+        )
+        self.fields["coordenador_municipal_cargo"].widget.attrs.update(
+            {
+                "placeholder": "Cargo do novo coordenador municipal",
+                "autocomplete": "off",
+            }
+        )
+        self.fields["coordenador_municipal_cidade"].widget.attrs.update(
+            {
+                "placeholder": "Cidade do novo coordenador municipal",
+                "autocomplete": "off",
             }
         )
         if not self.initial.get("coordenador_plano_nome"):
@@ -1161,6 +1193,71 @@ class PlanoTrabalhoStep3Form(forms.Form):
     @property
     def parsed_recursos(self) -> list[str]:
         return list(self._parsed_recursos)
+
+
+class EfetivoLinhaForm(forms.Form):
+    cargo_id = forms.IntegerField(widget=forms.HiddenInput())
+    cargo_nome = forms.CharField(required=False, widget=forms.HiddenInput())
+    is_coordenador = forms.CharField(required=False, widget=forms.HiddenInput())
+    quantidade = forms.IntegerField(min_value=0, required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["quantidade"].widget.attrs.update(
+            {
+                "class": "form-control",
+                "min": "0",
+                "step": "1",
+                "inputmode": "numeric",
+            }
+        )
+
+
+class NovoCargoForm(forms.Form):
+    nome_cargo = forms.CharField(required=False, max_length=120)
+    is_coordenador = forms.BooleanField(required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["nome_cargo"].widget.attrs.update(
+            {
+                "class": "form-control",
+                "placeholder": "Nome do novo cargo",
+            }
+        )
+        self.fields["is_coordenador"].widget.attrs.update({"class": "form-check-input"})
+
+    def clean_nome_cargo(self) -> str:
+        return " ".join((self.cleaned_data.get("nome_cargo") or "").split())
+
+
+class DiariasSimplesForm(forms.Form):
+    data_saida = forms.DateField(widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}))
+    data_retorno = forms.DateField(widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}))
+    valor_diaria = forms.DecimalField(
+        min_value=Decimal("0.01"),
+        decimal_places=2,
+        max_digits=10,
+        widget=forms.NumberInput(
+            attrs={
+                "step": "0.01",
+                "min": "0.01",
+                "class": "form-control",
+            }
+        ),
+    )
+    meia_diaria = forms.BooleanField(required=False)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        data_saida = cleaned_data.get("data_saida")
+        data_retorno = cleaned_data.get("data_retorno")
+        if data_saida and data_retorno and data_retorno < data_saida:
+            self.add_error(
+                "data_retorno",
+                "A data de retorno deve ser igual ou posterior a data de saida.",
+            )
+        return cleaned_data
 
 
 class OrdemServicoForm(forms.ModelForm):

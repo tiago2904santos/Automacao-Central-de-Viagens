@@ -12,7 +12,7 @@ from docx import Document
 
 from viagens.documents.plano_trabalho import build_plano_trabalho_docx_bytes
 from viagens.forms import PlanoTrabalhoStep1Form
-from viagens.models import Cargo, Cidade, Estado, Oficio, PlanoTrabalho, Trecho, Viajante
+from viagens.models import Cargo, Cidade, CoordenadorMunicipal, Estado, Oficio, PlanoTrabalho, Trecho, Viajante
 from viagens.services.oficio_config import get_oficio_config
 from viagens.services.diarias_unified import parse_decimal_br
 from viagens.services.plano_trabalho import (
@@ -154,6 +154,7 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertEqual(response.status_code, 302)
         plano = PlanoTrabalho.objects.get(oficio=self.oficio)
         self.assertEqual(plano.quantidade_servidores, 3)
+        self.assertEqual(plano.efetivo_formatado, "3 servidores")
         self.assertFalse(plano.possui_coordenador_municipal)
         self.assertIsNone(plano.coordenador_municipal)
 
@@ -182,6 +183,37 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertIsNotNone(plano.coordenador_municipal)
         self.assertEqual(plano.coordenador_municipal.nome, "Carlos Lima")
         self.assertTrue(plano.unidade_movel)
+
+    def test_step2_aceita_coordenador_municipal_existente_sem_exigir_novo(self) -> None:
+        coordenador = CoordenadorMunicipal.objects.create(
+            nome="Carla Souza",
+            cargo="Secretaria Municipal",
+            cidade="Foz do Iguacu",
+        )
+        self._post_step1(solicitantes=["PCPR na Comunidade"], nome_pcpr="Prefeitura")
+
+        response = self.client.post(
+            reverse("plano_trabalho_step2", args=[self.oficio.id]),
+            {
+                "efetivo_json": json.dumps(
+                    [{"cargo_id": self.cargo_delegado.id, "quantidade": 1}]
+                ),
+                **self._conteudo_plano_payload(),
+                "unidade_movel": "nao",
+                "coordenador_plano": str(self.servidor.id),
+                "coordenador_plano_nome": "IGNORAR",
+                "coordenador_plano_cargo": "IGNORAR",
+                "coordenador_municipal": str(coordenador.id),
+                "coordenador_municipal_nome": "",
+                "coordenador_municipal_cargo": "",
+                "coordenador_municipal_cidade": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        plano = PlanoTrabalho.objects.get(oficio=self.oficio)
+        self.assertEqual(plano.coordenador_municipal_id, coordenador.id)
+        self.assertTrue(plano.possui_coordenador_municipal)
 
     def test_step2_exige_coordenador_municipal_quando_pcpr(self) -> None:
         self._post_step1(solicitantes=["PCPR na Comunidade"], nome_pcpr="Prefeitura")
@@ -472,7 +504,8 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertEqual(totais["total_valor"], "")
         self.assertIn("valor_por_servidor", totais)
         self.assertIn("diarias_por_servidor", totais)
-        self.assertContains(response, "Nao ha trechos validos para calcular as diarias do plano.")
+        self.assertContains(response, "Cadastre ao menos um trecho no Oficio para calcular as diarias.")
+        self.assertContains(response, "Cadastrar trechos no Oficio")
 
     def test_step3_endpoint_calculo_diarias_retorna_totais_dict_mesmo_em_erro(self) -> None:
         self.oficio.trechos.all().delete()
@@ -483,12 +516,13 @@ class PlanoTrabalhoWizardTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         payload = response.json()
-        self.assertEqual(payload["error"], "Nao ha trechos validos para calcular as diarias do plano.")
+        self.assertEqual(payload["error"], "Cadastre ao menos um trecho no Oficio para calcular as diarias.")
         self.assertIsInstance(payload["totais"], dict)
         self.assertEqual(payload["totais"]["total_geral"], "")
         self.assertEqual(payload["totais"]["total_valor"], "")
         self.assertIn("valor_por_servidor", payload["totais"])
         self.assertIn("diarias_por_servidor", payload["totais"])
+        self.assertEqual(payload["actions"][0]["label"], "Cadastrar trechos no Oficio")
 
     def test_step3_endpoint_calculo_diarias_retorna_valor_por_servidor(self) -> None:
         self._post_step1(solicitantes=["Parana em Acao"])

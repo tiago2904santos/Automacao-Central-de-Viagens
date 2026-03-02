@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
@@ -39,6 +39,7 @@ from viagens.services.plano_trabalho import (
     META_POR_ATIVIDADE,
     PLANO_DOCX_OPTIONAL_PLACEHOLDERS,
     build_plano_placeholders,
+    format_total_servidores,
     resolve_plano_docx_placeholders,
     validate_required_placeholders,
 )
@@ -201,12 +202,47 @@ def _build_period_markers_from_trechos(trechos: list[Trecho]) -> list[PeriodMark
     return markers
 
 
+def _resolve_diarias_chegada_final(
+    plano: PlanoTrabalho,
+    oficio: Oficio,
+    trechos: list[Trecho],
+) -> datetime:
+    fallback_data = oficio.retorno_chegada_data or plano.data_fim or timezone.localdate()
+    fallback_hora = oficio.retorno_chegada_hora or parse_time("18:00") or time.min
+
+    candidate_dates = [fallback_data]
+    if plano.data_fim:
+        candidate_dates.append(plano.data_fim)
+    for trecho in trechos:
+        if trecho.chegada_data:
+            candidate_dates.append(trecho.chegada_data)
+        elif trecho.saida_data:
+            candidate_dates.append(trecho.saida_data)
+
+    chegada_final = datetime.combine(max(candidate_dates), fallback_hora)
+    last_saida = None
+    for trecho in trechos:
+        if not trecho.saida_data:
+            continue
+        saida_dt = datetime.combine(trecho.saida_data, trecho.saida_hora or time.min)
+        if last_saida is None or saida_dt > last_saida:
+            last_saida = saida_dt
+
+    if last_saida and chegada_final <= last_saida:
+        chegada_final = last_saida + timedelta(hours=1)
+    return chegada_final
+
+
 def _sync_plano_financeiro_from_diarias(
     plano: PlanoTrabalho,
     oficio: Oficio,
     trechos: list[Trecho],
 ) -> None:
     total_servidores = int(plano.quantidade_servidores or 0)
+    if total_servidores < 1:
+        total_servidores = int(plano.efetivo_por_dia or 0)
+    if total_servidores < 1:
+        total_servidores = int(oficio.viajantes.count() or 0)
     if total_servidores < 1:
         raise ValueError(
             "Plano de trabalho incompleto. Preencha o efetivo para calcular as diarias."
@@ -216,9 +252,7 @@ def _sync_plano_financeiro_from_diarias(
         raise ValueError(
             "Plano de trabalho incompleto. Informe trechos validos para calcular as diarias."
         )
-    chegada_data = oficio.retorno_chegada_data or plano.data_fim
-    chegada_hora = oficio.retorno_chegada_hora or parse_time("18:00") or time.min
-    chegada_final = datetime.combine(chegada_data, chegada_hora)
+    chegada_final = _resolve_diarias_chegada_final(plano, oficio, trechos)
     resultado = calculate_diarias_from_markers(
         markers=markers,
         chegada_final_sede=chegada_final,
@@ -238,6 +272,16 @@ def _sync_plano_financeiro_from_diarias(
         )
 
     update_fields: list[str] = []
+    if int(plano.quantidade_servidores or 0) != total_servidores:
+        plano.quantidade_servidores = total_servidores
+        update_fields.append("quantidade_servidores")
+    if int(plano.efetivo_por_dia or 0) != total_servidores:
+        plano.efetivo_por_dia = total_servidores
+        update_fields.append("efetivo_por_dia")
+    efetivo_label = format_total_servidores(total_servidores) if total_servidores > 0 else ""
+    if efetivo_label and plano.efetivo_formatado != efetivo_label:
+        plano.efetivo_formatado = efetivo_label
+        update_fields.append("efetivo_formatado")
     if composicao and plano.composicao_diarias != composicao:
         plano.composicao_diarias = composicao
         update_fields.append("composicao_diarias")

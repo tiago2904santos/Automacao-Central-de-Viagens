@@ -1,0 +1,98 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Efetivo{% endblock %}
+
+{% block breadcrumb %}
+  Cadastros <span class="breadcrumb-sep">/</span> Efetivo
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Efetivo</h2>
+      <p class="page-subtitle">Edite quantidades por cargo e cadastre novos cargos quando necessario.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="post" id="efetivoForm">
+      {% csrf_token %}
+      {{ formset.management_form }}
+
+      {% if formset.non_form_errors %}
+        <div class="alert alert-danger">{{ formset.non_form_errors|join:", " }}</div>
+      {% endif %}
+
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Cargo</th>
+            <th>Quantidade</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in linhas %}
+            <tr>
+              <td>
+                <strong>{{ item.cargo.nome }}</strong>
+                {% if item.cargo.is_coordenador %}
+                  <span class="chip">Coordenador</span>
+                {% endif %}
+                {{ item.form.cargo_id }}
+                {{ item.form.cargo_nome }}
+                {{ item.form.is_coordenador }}
+              </td>
+              <td>
+                {{ item.form.quantidade }}
+                {% if item.form.quantidade.errors %}
+                  <div class="field-errors">{{ item.form.quantidade.errors|join:", " }}</div>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="2">Nenhum cargo ativo encontrado.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Novo cargo (opcional)</div>
+        <div class="grid">
+          <label class="full">
+            Nome do cargo
+            {{ cargo_form.nome_cargo }}
+            {% if cargo_form.nome_cargo.errors %}<span class="error">{{ cargo_form.nome_cargo.errors|join:", " }}</span>{% endif %}
+          </label>
+          <label class="checkbox-item">
+            {{ cargo_form.is_coordenador }}
+            <span>E coordenador</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-card-title">Resumo</div>
+        <div class="grid">
+          <div class="preview">
+            <strong>Servidores</strong><br />
+            <span id="resumoServidores">{{ resumo_servidores }}</span>
+          </div>
+          <div class="preview">
+            <strong>Coordenadores</strong><br />
+            <span id="resumoCoordenadores">{{ resumo_coordenadores }}</span>
+          </div>
+          <div class="preview">
+            <strong>Total</strong><br />
+            <span id="resumoTotal">{{ resumo_total }}</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="wizard-actions">
+        <button type="submit" class="btn-primary">Salvar efetivo</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

@@ -8,33 +8,34 @@
 {% endblock %}
 
 {% block content %}
-  <link rel="stylesheet" href="{% static 'viagens/plano_wizard.css' %}" />
+  <link rel="stylesheet" href="{% static 'viagens/ui.css' %}" />
   {% include "viagens/partials/plano_stepper.html" with oficio=oficio current_step=1 %}
 
-  <div class="page-header">
+  <div class="page-header wizard-page-header">
     <div>
-      <h2 class="page-title">Etapa 1 - Identificacao e evento</h2>
+      <span class="wizard-kicker">Etapa 1</span>
+      <h2 class="page-title">Identificacao e evento</h2>
       <p class="page-subtitle">Numero do plano automatico: {{ numero_plano_formatado }}</p>
     </div>
   </div>
 
-  <div class="card plano-wizard-card">
-    <form method="post" id="planoStep1Form">
+  <div class="card plano-wizard-card wizard-surface">
+    <form method="post" id="planoStep1Form" class="wizard-form-stack">
       {% csrf_token %}
       {% include "viagens/partials/plano_form_errors.html" with form=form extra_error=erros.destinos %}
-      <section class="grid">
+      <section class="sub-card wizard-section-card">
         <label>
           Numero do plano
           <input type="text" value="{{ numero_plano_formatado }}" readonly />
         </label>
       </section>
 
-      <section class="sub-card">
+      <section class="sub-card wizard-section-card">
         <div class="sub-card-title">Solicitante(s)</div>
         <div class="grid">
           <div class="full">
             {% for checkbox in form.solicitantes %}
-              <label class="atividade-item">{{ checkbox.tag }} <span>{{ checkbox.choice_label }}</span></label>
+              <label class="atividade-item wizard-choice-card">{{ checkbox.tag }} <span>{{ checkbox.choice_label }}</span></label>
             {% endfor %}
             {% if form.solicitantes.errors %}
               <span class="error">{{ form.solicitantes.errors|join:", " }}</span>
@@ -50,7 +51,7 @@
         </div>
       </section>
 
-      <section class="termo-date-panel">
+      <section class="termo-date-panel wizard-section-card">
         <div class="sub-card-title">Datas do evento</div>
         <label class="termo-switch">
           {{ form.data_unica }}
@@ -71,7 +72,7 @@
         </div>
       </section>
 
-      <section class="sub-card">
+      <section class="sub-card wizard-section-card">
         <div class="sub-card-title">Horario de atendimento</div>
         <p class="field-help">
           Se o horario final for menor que o inicial, o sistema considerara termino no dia seguinte.
@@ -94,7 +95,7 @@
         </div>
       </section>
 
-      <section class="sub-card">
+      <section class="sub-card wizard-section-card">
         <div class="sub-card-title">Destinos</div>
         {% if erros.destinos %}
           <p class="field-errors">{{ erros.destinos }}</p>
@@ -149,13 +150,13 @@
           {% endfor %}
         </div>
         <div class="destinos-actions">
-          <button type="button" class="btn-clear btn-small" id="addDestinoBtn">+ Adicionar destino</button>
+          <button type="button" class="btn-clear btn-small wizard-btn-soft" id="addDestinoBtn">+ Adicionar destino</button>
         </div>
         <input type="hidden" name="destinos-TOTAL_FORMS" id="destinosTotalForms" value="{{ destinos_total_forms }}" />
         <input type="hidden" name="destinos-order" id="destinosOrder" value="{{ destinos_order }}" />
       </section>
 
-      <div class="wizard-actions">
+      <div class="wizard-actions wizard-actions--spaced">
         <a class="btn-clear" href="{% url 'oficio_documentos' oficio.id %}">Voltar</a>
         <button class="btn-primary" type="submit">Continuar</button>
       </div>
@@ -294,6 +295,7 @@
           window.initializeAutocompleteSelects(newItem);
         }
         syncDestinos();
+        newItem?.querySelector("select")?.focus();
       });
 
       destinosList?.addEventListener("click", (event) => {
@@ -302,6 +304,8 @@
         const item = removeBtn.closest(".destino-item");
         if (!item) return;
         if (getDestinoItems().length <= 1) return;
+        const hasValue = item.querySelector("[data-role='destino-estado']")?.value || item.querySelector("[data-role='destino-cidade']")?.value;
+        if (hasValue && !window.confirm("Remover este destino?")) return;
         item.remove();
         syncDestinos();
       });

@@ -7,6 +7,8 @@ urlpatterns = [
     path("", views.dashboard_home, name="dashboard_home"),
     path("dashboard/", views.dashboard_home, name="dashboard_home_alt"),
     path("dashboard/data/", views.dashboard_data_api, name="dashboard_data_api"),
+    path("efetivo/", views.efetivo, name="efetivo"),
+    path("diarias/", views.diarias, name="diarias"),
     path("simulacao-diarias/", views.simulacao_diarias, name="simulacao_diarias"),
     path(
         "simulacao-diarias/calcular/",

@@ -9,18 +9,19 @@
 
 {% block content %}
   <link rel="stylesheet" href="{% static 'css/diarias.css' %}" />
-  <link rel="stylesheet" href="{% static 'viagens/plano_wizard.css' %}" />
+  <link rel="stylesheet" href="{% static 'viagens/ui.css' %}" />
   {% include "viagens/partials/plano_stepper.html" with oficio=oficio current_step=3 %}
 
-  <div class="page-header">
+  <div class="page-header wizard-page-header">
     <div>
-      <h2 class="page-title">Etapa 3 - Financeiro e recursos</h2>
+      <span class="wizard-kicker">Etapa 3</span>
+      <h2 class="page-title">Financeiro e recursos</h2>
       <p class="page-subtitle">Plano {{ numero_plano_formatado }}</p>
     </div>
   </div>
 
-  <div class="card plano-wizard-card">
-    <form method="post" id="planoStep3Form" data-diarias-url="{{ plano_diarias_calcular_url }}">
+  <div class="card plano-wizard-card wizard-surface">
+    <form method="post" id="planoStep3Form" class="wizard-form-stack" data-diarias-url="{{ plano_diarias_calcular_url }}">
       {% csrf_token %}
       {{ form.composicao_diarias }}
       {{ form.valor_unitario }}
@@ -28,50 +29,67 @@
       {{ form.recursos_json }}
       {% include "viagens/partials/plano_form_errors.html" with form=form %}
 
-      <section class="sub-card">
-        <div class="sub-card-title">Integracao com diarias</div>
-        <p class="field-help">O calculo usa os trechos do oficio e o total de servidores da etapa de efetivo.</p>
-        <div class="field-actions" style="margin-top:0; margin-bottom:0.75rem;">
-          <button class="btn-clear btn-small" type="button" id="recalcularDiariasPlanoBtn">Recalcular diarias</button>
+      <section class="sub-card wizard-section-card">
+        <div class="wizard-section-head">
+          <div>
+            <div class="sub-card-title">Integracao com diarias</div>
+            <p class="field-help">O calculo usa os trechos do oficio e o total de servidores definido na etapa anterior.</p>
+          </div>
+          <div class="wizard-section-actions">
+            <button class="btn-clear btn-small wizard-btn-soft" type="button" id="recalcularDiariasPlanoBtn">Recalcular diarias</button>
+          </div>
         </div>
-        <div class="diarias-alert" id="planoDiariasError"{% if not diarias_erro_inicial %} hidden{% endif %}>{{ diarias_erro_inicial }}</div>
+
+        <div class="wizard-alert wizard-alert--warning diarias-alert" id="planoDiariasError"{% if not diarias_erro_inicial %} hidden{% endif %}>
+          <div class="wizard-alert-message" id="planoDiariasErrorMessage">{{ diarias_erro_inicial }}</div>
+          <div class="wizard-alert-actions" id="planoDiariasErrorActions"{% if not diarias_acoes_iniciais %} hidden{% endif %}>
+            {% for action in diarias_acoes_iniciais %}
+              <a class="btn-clear btn-small" href="{{ action.url }}">{{ action.label }}</a>
+            {% endfor %}
+          </div>
+        </div>
 
         {% with totais=diarias_resultado.totais %}
-          <div class="diarias-summary-grid" id="planoDiariasGrid">
-            <article class="diarias-summary-card">
-              <span class="diarias-summary-label">Total geral</span>
-              <strong class="diarias-summary-value" id="planoDiariasTotalGeral">{% if totais %}{% firstof totais.total_geral totais.total_valor "-" %}{% else %}-{% endif %}</strong>
+          <div class="diarias-summary-grid wizard-metric-grid" id="planoDiariasGrid">
+            <article class="diarias-summary-card wizard-metric-card">
+              <span class="diarias-summary-label wizard-metric-label">Total geral</span>
+              <strong class="diarias-summary-value wizard-metric-value" id="planoDiariasTotalGeral">{% if totais %}{% firstof totais.total_geral totais.total_valor "-" %}{% else %}-{% endif %}</strong>
             </article>
-            <article class="diarias-summary-card">
-              <span class="diarias-summary-label">Valor por servidor</span>
-              <strong class="diarias-summary-value" id="planoDiariasValorServidor">{% if totais %}{{ totais.valor_por_servidor|default:"-" }}{% else %}-{% endif %}</strong>
+            <article class="diarias-summary-card wizard-metric-card">
+              <span class="diarias-summary-label wizard-metric-label">Valor por servidor</span>
+              <strong class="diarias-summary-value wizard-metric-value" id="planoDiariasValorServidor">{% if totais %}{{ totais.valor_por_servidor|default:"-" }}{% else %}-{% endif %}</strong>
             </article>
-            <article class="diarias-summary-card">
-              <span class="diarias-summary-label">Diarias por servidor</span>
-              <strong class="diarias-summary-value" id="planoDiariasQtdServidor">{% if totais %}{{ totais.diarias_por_servidor|default:"-" }}{% else %}-{% endif %}</strong>
+            <article class="diarias-summary-card wizard-metric-card">
+              <span class="diarias-summary-label wizard-metric-label">Diarias por servidor</span>
+              <strong class="diarias-summary-value wizard-metric-value" id="planoDiariasQtdServidor">{% if totais %}{{ totais.diarias_por_servidor|default:"-" }}{% else %}-{% endif %}</strong>
             </article>
-            <article class="diarias-summary-card">
-              <span class="diarias-summary-label">Valor unitario da diaria</span>
-              <strong class="diarias-summary-value" id="planoDiariasValorUnitario">{% if totais %}{% firstof totais.valor_unitario totais.valor_unitario_referencia "-" %}{% else %}-{% endif %}</strong>
+            <article class="diarias-summary-card wizard-metric-card">
+              <span class="diarias-summary-label wizard-metric-label">Valor unitario da diaria</span>
+              <strong class="diarias-summary-value wizard-metric-value" id="planoDiariasValorUnitario">{% if totais %}{% firstof totais.valor_unitario totais.valor_unitario_referencia "-" %}{% else %}-{% endif %}</strong>
             </article>
           </div>
-          <div class="preview-line">
+          <div class="preview-line wizard-inline-info wizard-inline-info--soft">
             <span class="preview-label">Valor por extenso</span>
             <span class="preview-value" id="planoDiariasValorExtenso">{% if totais %}{{ totais.valor_extenso|default:"-" }}{% else %}-{% endif %}</span>
           </div>
         {% endwith %}
       </section>
 
-      <section class="sub-card">
-        <div class="sub-card-title">Recursos necessarios</div>
-        <div id="recursosRows"></div>
-        <div class="field-actions">
-          <button class="btn-clear btn-small" type="button" id="addRecursoBtn">+ Adicionar recurso</button>
+      <section class="sub-card wizard-section-card">
+        <div class="wizard-section-head">
+          <div>
+            <div class="sub-card-title">Recursos necessarios</div>
+            <p class="field-help">Liste recursos, equipamentos e estruturas que precisam acompanhar a acao.</p>
+          </div>
+          <div class="wizard-section-actions">
+            <button class="btn-clear btn-small wizard-btn-soft" type="button" id="addRecursoBtn">+ Adicionar recurso</button>
+          </div>
         </div>
+        <div id="recursosRows" class="wizard-editor-list wizard-editor-list--compact"></div>
         {% if form.recursos_json.errors %}<span class="error">{{ form.recursos_json.errors|join:", " }}</span>{% endif %}
       </section>
 
-      <div class="wizard-actions">
+      <div class="wizard-actions wizard-actions--spaced">
         <a class="btn-clear" href="{% url 'plano_trabalho_step2' oficio.id %}">Voltar</a>
         <button class="btn-primary" type="submit">Continuar</button>
       </div>
@@ -88,6 +106,8 @@
       const diariasUrl = form.dataset.diariasUrl || "";
       const recalcBtn = document.getElementById("recalcularDiariasPlanoBtn");
       const errorEl = document.getElementById("planoDiariasError");
+      const errorMessageEl = document.getElementById("planoDiariasErrorMessage");
+      const errorActionsEl = document.getElementById("planoDiariasErrorActions");
 
       const totalEl = document.getElementById("planoDiariasTotalGeral");
       const valorServidorEl = document.getElementById("planoDiariasValorServidor");
@@ -103,17 +123,39 @@
       const rowsContainer = document.getElementById("recursosRows");
       const addBtn = document.getElementById("addRecursoBtn");
 
-      const showError = (message) => {
-        if (!errorEl) return;
-        errorEl.hidden = !message;
-        errorEl.textContent = message || "";
-      };
-
       const coerceObject = (value) => {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
           return {};
         }
         return value;
+      };
+
+      const coerceList = (value) => {
+        return Array.isArray(value) ? value : [];
+      };
+
+      const renderErrorActions = (actions) => {
+        if (!errorActionsEl) return;
+        errorActionsEl.innerHTML = "";
+        coerceList(actions).forEach((action) => {
+          const label = String(action?.label || "").trim();
+          const url = String(action?.url || "").trim();
+          if (!label || !url) return;
+          const link = document.createElement("a");
+          link.className = "btn-clear btn-small";
+          link.href = url;
+          link.textContent = label;
+          errorActionsEl.appendChild(link);
+        });
+        errorActionsEl.hidden = errorActionsEl.childElementCount === 0;
+      };
+
+      const showError = (message, actions) => {
+        if (!errorEl || !errorMessageEl) return;
+        const text = String(message || "").trim();
+        errorMessageEl.textContent = text;
+        renderErrorActions(actions);
+        errorEl.hidden = !text;
       };
 
       const formatMoney = (value) => {
@@ -152,7 +194,6 @@
       const requestDiarias = async () => {
         if (!diariasUrl) return;
         recalcBtn?.setAttribute("disabled", "disabled");
-        showError("");
         try {
           const response = await fetch(diariasUrl, {
             method: "GET",
@@ -162,12 +203,15 @@
           const payload = await response.json();
           applyDiariasResult(payload);
           if (!response.ok) {
-            throw new Error(payload?.error || "Nao foi possivel calcular as diarias.");
+            showError(payload?.error || "Nao foi possivel calcular as diarias.", payload?.actions);
+            clearFinanceFields();
+            return;
           }
-        } catch (error) {
+          showError("", []);
+        } catch (_error) {
           applyDiariasResult({});
           clearFinanceFields();
-          showError(error?.message || "Nao foi possivel calcular as diarias.");
+          showError("Nao foi possivel calcular as diarias. Tente novamente em instantes.", []);
         } finally {
           recalcBtn?.removeAttribute("disabled");
         }
@@ -197,15 +241,27 @@
         hiddenInput.value = JSON.stringify(clean);
       }
 
+      function focusLastInput() {
+        const lastInput = rowsContainer.querySelector(".wizard-editor-item:last-child input");
+        if (lastInput && typeof lastInput.focus === "function") {
+          lastInput.focus();
+        }
+      }
+
       function render() {
         rowsContainer.innerHTML = "";
         rows.forEach((row, index) => {
           const wrapper = document.createElement("div");
-          wrapper.className = "editor-item";
+          wrapper.className = "editor-item wizard-editor-item wizard-editor-item--compact";
           const value = typeof row === "string" ? row : row.descricao || "";
+          const escapedValue = String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
           wrapper.innerHTML = `
-            <input type="text" class="input-field" placeholder="Recurso" value="${String(value).replace(/"/g, "&quot;")}" />
-            <button type="button" class="btn-clear" data-action="remove">Remover</button>
+            <input type="text" class="input-field" placeholder="Recurso" value="${escapedValue}" />
+            <button type="button" class="btn-clear btn-small btn-clear--danger" data-action="remove">Remover</button>
           `;
           const input = wrapper.querySelector("input");
           const removeBtn = wrapper.querySelector("[data-action='remove']");
@@ -214,6 +270,10 @@
             syncHidden();
           });
           removeBtn.addEventListener("click", () => {
+            const currentValue = normalizeText(rows[index]?.descricao || rows[index]);
+            if (currentValue && !window.confirm("Remover este recurso?")) {
+              return;
+            }
             if (rows.length <= 1) rows[0] = { descricao: "" };
             else rows.splice(index, 1);
             render();
@@ -226,6 +286,7 @@
       addBtn?.addEventListener("click", () => {
         rows.push({ descricao: "" });
         render();
+        focusLastInput();
       });
 
       recalcBtn?.addEventListener("click", requestDiarias);

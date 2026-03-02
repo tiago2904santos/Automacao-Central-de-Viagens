@@ -8,75 +8,100 @@
 {% endblock %}
 
 {% block content %}
-  <link rel="stylesheet" href="{% static 'viagens/plano_wizard.css' %}" />
+  <link rel="stylesheet" href="{% static 'viagens/ui.css' %}" />
   {% include "viagens/partials/plano_stepper.html" with oficio=oficio current_step=2 %}
 
-  <div class="page-header">
+  <div class="page-header wizard-page-header">
     <div>
-      <h2 class="page-title">Etapa 2 - Equipe e estrutura</h2>
+      <span class="wizard-kicker">Etapa 2</span>
+      <h2 class="page-title">Equipe e estrutura</h2>
       <p class="page-subtitle">Plano {{ numero_plano_formatado }}</p>
     </div>
   </div>
 
-  <div class="card plano-wizard-card">
-    <form method="post" id="planoStep2Form">
+  <div class="card plano-wizard-card wizard-surface">
+    <form method="post" id="planoStep2Form" class="wizard-form-stack">
       {% csrf_token %}
       {{ form.efetivo_json }}
       {{ form.atividades_json }}
       {{ form.metas_json }}
       {{ cargo_options|json_script:"planoCargoOptions" }}
+      {{ coordenador_plano_options|json_script:"planoCoordenadorOptions" }}
+      {{ coordenador_municipal_options|json_script:"planoCoordenadorMunicipalOptions" }}
       {% include "viagens/partials/plano_form_errors.html" with form=form %}
 
-      <section class="sub-card">
-        <div class="sub-card-title">Efetivo</div>
-        <p class="field-help">Selecione cargos oficiais e informe apenas as quantidades. O total de servidores sera calculado automaticamente.</p>
-        {% if not cargo_options %}
-          <p class="error">Nao ha cargos oficiais cadastrados. Cadastre ao menos um cargo para continuar.</p>
-        {% endif %}
-        <div id="efetivoRows"></div>
-        <div class="field-actions">
-          <button class="btn-clear btn-small" type="button" id="addEfetivoBtn">+ Adicionar linha</button>
+      <section class="sub-card wizard-section-card">
+        <div class="wizard-section-head">
+          <div>
+            <div class="sub-card-title">Efetivo</div>
+            <p class="field-help">Selecione cargos oficiais e informe quantidades inteiras. O total de servidores sera usado na etapa financeira.</p>
+          </div>
+          <div class="wizard-section-actions">
+            <button class="btn-clear btn-small wizard-btn-soft" type="button" id="addEfetivoBtn">+ Adicionar linha</button>
+          </div>
         </div>
+        {% if not cargo_options %}
+          <p class="error wizard-inline-error">Nao ha cargos oficiais cadastrados. Cadastre ao menos um cargo para continuar.</p>
+        {% endif %}
+        <div class="field-errors wizard-inline-error" id="efetivoClientError" hidden></div>
+        <div id="efetivoRows" class="wizard-editor-list"></div>
         {% if form.efetivo_json.errors %}<span class="error">{{ form.efetivo_json.errors|join:", " }}</span>{% endif %}
-        <div class="preview-line">
-          <span class="preview-label">Total de servidores</span>
-          <span class="preview-value" id="efetivoTotalPreview">0 servidores</span>
+        <div class="wizard-metric-card wizard-metric-card--inline">
+          <span class="wizard-metric-label">Total de servidores</span>
+          <strong class="wizard-metric-value" id="efetivoTotalPreview">{{ efetivo_total_preview }}</strong>
         </div>
       </section>
 
-      <section class="sub-card">
-        <div class="sub-card-title">Conteudo do plano</div>
-        <p class="field-help">Informe ao menos uma atividade e uma meta. Use itens curtos e objetivos.</p>
-        <div class="grid">
+      <section class="sub-card wizard-section-card">
+        <div class="wizard-section-head">
+          <div>
+            <div class="sub-card-title">Conteudo do plano</div>
+            <p class="field-help">Informe ao menos uma atividade e uma meta. Use itens curtos e objetivos.</p>
+          </div>
+        </div>
+        <div class="grid wizard-content-grid">
           <div class="full">
             <label class="full">Atividades</label>
-            <div id="atividadesRows"></div>
+            <div id="atividadesRows" class="wizard-editor-list wizard-editor-list--compact"></div>
             <div class="field-actions">
-              <button class="btn-clear btn-small" type="button" id="addAtividadeBtn">+ Adicionar atividade</button>
+              <button class="btn-clear btn-small wizard-btn-soft" type="button" id="addAtividadeBtn">+ Adicionar atividade</button>
             </div>
             {% if form.atividades_json.errors %}<span class="error">{{ form.atividades_json.errors|join:", " }}</span>{% endif %}
           </div>
           <div class="full">
             <label class="full">Metas</label>
-            <div id="metasRows"></div>
+            <div id="metasRows" class="wizard-editor-list wizard-editor-list--compact"></div>
             <div class="field-actions">
-              <button class="btn-clear btn-small" type="button" id="addMetaBtn">+ Adicionar meta</button>
+              <button class="btn-clear btn-small wizard-btn-soft" type="button" id="addMetaBtn">+ Adicionar meta</button>
             </div>
             {% if form.metas_json.errors %}<span class="error">{{ form.metas_json.errors|join:", " }}</span>{% endif %}
           </div>
         </div>
       </section>
 
-      <section class="grid">
-        <label>
-          Estrutura/unidade movel
-          {{ form.unidade_movel }}
-          {% if form.unidade_movel.errors %}<span class="error">{{ form.unidade_movel.errors|join:", " }}</span>{% endif %}
-        </label>
+      <section class="sub-card wizard-section-card">
+        <div class="wizard-section-head">
+          <div>
+            <div class="sub-card-title">Estrutura de apoio</div>
+            <p class="field-help">Defina se o plano utiliza unidade movel como apoio principal.</p>
+          </div>
+        </div>
+        <div class="grid">
+          <label>
+            Estrutura/unidade movel
+            {{ form.unidade_movel }}
+            {% if form.unidade_movel.errors %}<span class="error">{{ form.unidade_movel.errors|join:", " }}</span>{% endif %}
+          </label>
+        </div>
       </section>
 
-      <section class="sub-card">
-        <div class="sub-card-title">Coordenacao administrativa</div>
+      <section class="sub-card wizard-section-card">
+        <div class="wizard-section-head">
+          <div>
+            <div class="sub-card-title">Coordenacao administrativa</div>
+            <p class="field-help">Ao selecionar um servidor, nome e cargo sao preenchidos automaticamente. Sem selecao, os campos abaixo funcionam como fallback manual.</p>
+          </div>
+        </div>
         <div class="grid">
           <label class="full">
             Coordenador do plano (cadastro de servidores)
@@ -94,13 +119,18 @@
             {% if form.coordenador_plano_cargo.errors %}<span class="error">{{ form.coordenador_plano_cargo.errors|join:", " }}</span>{% endif %}
           </label>
         </div>
+        <div class="wizard-inline-info" id="coordenadorPlanoHint">Selecione um servidor para preencher automaticamente ou mantenha os campos manuais.</div>
       </section>
 
       {% if permite_municipal %}
-        <section class="sub-card">
-          <div class="sub-card-title">Coordenacao municipal</div>
-          <p class="field-help">Solicitacao com PCPR na Comunidade: selecione um coordenador municipal existente ou cadastre um novo.</p>
-          <div class="grid">
+        <section class="sub-card wizard-section-card">
+          <div class="wizard-section-head">
+            <div>
+              <div class="sub-card-title">Coordenacao municipal</div>
+              <p class="field-help">Selecione um coordenador municipal existente ou preencha os campos abaixo para cadastrar um novo.</p>
+            </div>
+          </div>
+          <div class="grid wizard-grid-2">
             <label class="full">
               Coordenador municipal (cadastro existente)
               {{ form.coordenador_municipal }}
@@ -116,21 +146,26 @@
               {{ form.coordenador_municipal_cargo }}
               {% if form.coordenador_municipal_cargo.errors %}<span class="error">{{ form.coordenador_municipal_cargo.errors|join:", " }}</span>{% endif %}
             </label>
-            <label>
+            <label class="full">
               Novo coordenador - Cidade
               {{ form.coordenador_municipal_cidade }}
               {% if form.coordenador_municipal_cidade.errors %}<span class="error">{{ form.coordenador_municipal_cidade.errors|join:", " }}</span>{% endif %}
             </label>
           </div>
+          <div class="wizard-inline-info" id="coordenadorMunicipalPreview">Selecione um coordenador existente ou preencha os campos abaixo.</div>
         </section>
       {% else %}
-        <section class="sub-card">
-          <div class="sub-card-title">Coordenacao municipal</div>
-          <p class="field-help">Para os solicitantes selecionados, este plano usa apenas coordenacao administrativa.</p>
+        <section class="sub-card wizard-section-card">
+          <div class="wizard-section-head">
+            <div>
+              <div class="sub-card-title">Coordenacao municipal</div>
+              <p class="field-help">Para os solicitantes selecionados, este plano usa apenas coordenacao administrativa.</p>
+            </div>
+          </div>
         </section>
       {% endif %}
 
-      <div class="wizard-actions">
+      <div class="wizard-actions wizard-actions--spaced">
         <a class="btn-clear" href="{% url 'plano_trabalho_step1' oficio.id %}">Voltar</a>
         <button class="btn-primary" type="submit">Continuar</button>
       </div>
@@ -146,10 +181,15 @@
       if (!form) return;
 
       const optionsNode = document.getElementById("planoCargoOptions");
+      const coordenadorPlanoNode = document.getElementById("planoCoordenadorOptions");
+      const coordenadorMunicipalNode = document.getElementById("planoCoordenadorMunicipalOptions");
+
       const hiddenInput = document.getElementById("id_efetivo_json");
       const rowsContainer = document.getElementById("efetivoRows");
       const addBtn = document.getElementById("addEfetivoBtn");
       const totalPreview = document.getElementById("efetivoTotalPreview");
+      const efetivoClientError = document.getElementById("efetivoClientError");
+
       const atividadesInput = document.getElementById("id_atividades_json");
       const metasInput = document.getElementById("id_metas_json");
       const atividadesRows = document.getElementById("atividadesRows");
@@ -157,15 +197,37 @@
       const addAtividadeBtn = document.getElementById("addAtividadeBtn");
       const addMetaBtn = document.getElementById("addMetaBtn");
 
-      const cargoOptions = (() => {
-        if (!optionsNode || !optionsNode.textContent) return [];
+      const coordenadorPlanoInput = document.getElementById("id_coordenador_plano");
+      const coordenadorPlanoNomeInput = document.getElementById("id_coordenador_plano_nome");
+      const coordenadorPlanoCargoInput = document.getElementById("id_coordenador_plano_cargo");
+      const coordenadorPlanoHint = document.getElementById("coordenadorPlanoHint");
+
+      const coordenadorMunicipalInput = document.getElementById("id_coordenador_municipal");
+      const coordenadorMunicipalNomeInput = document.getElementById("id_coordenador_municipal_nome");
+      const coordenadorMunicipalCargoInput = document.getElementById("id_coordenador_municipal_cargo");
+      const coordenadorMunicipalCidadeInput = document.getElementById("id_coordenador_municipal_cidade");
+      const coordenadorMunicipalPreview = document.getElementById("coordenadorMunicipalPreview");
+
+      const parseNodeJson = (node) => {
+        if (!node || !node.textContent) return [];
         try {
-          const parsed = JSON.parse(optionsNode.textContent);
+          const parsed = JSON.parse(node.textContent);
           return Array.isArray(parsed) ? parsed : [];
         } catch (_err) {
           return [];
         }
-      })();
+      };
+
+      const cargoOptions = parseNodeJson(optionsNode);
+      const coordenadorPlanoOptions = parseNodeJson(coordenadorPlanoNode);
+      const coordenadorMunicipalOptions = parseNodeJson(coordenadorMunicipalNode);
+
+      const coordenadorPlanoMap = Object.fromEntries(
+        coordenadorPlanoOptions.map((item) => [String(item.id || ""), item])
+      );
+      const coordenadorMunicipalMap = Object.fromEntries(
+        coordenadorMunicipalOptions.map((item) => [String(item.id || ""), item])
+      );
 
       const pluralize = (value, singular, plural) => `${value} ${value === 1 ? singular : plural}`;
       const escapeHtml = (value) =>
@@ -174,6 +236,25 @@
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;")
           .replace(/\"/g, "&quot;");
+
+      const toggleLocked = (input, locked) => {
+        if (!input) return;
+        input.readOnly = Boolean(locked);
+        input.classList.toggle("is-locked", Boolean(locked));
+      };
+
+      const showEfetivoClientError = (message) => {
+        if (!efetivoClientError) return;
+        efetivoClientError.hidden = !message;
+        efetivoClientError.textContent = message || "";
+      };
+
+      const focusSelector = (container, selector) => {
+        const target = container?.querySelector(selector);
+        if (target && typeof target.focus === "function") {
+          target.focus();
+        }
+      };
 
       function parsePayload() {
         try {
@@ -209,9 +290,11 @@
         const total = payload.reduce((acc, row) => {
           if (!row.cargo_id || !/^\d+$/.test(row.quantidade)) return acc;
           const qtd = Number(row.quantidade || 0);
-          return qtd > 0 ? acc + qtd : acc;
+          return qtd >= 0 ? acc + qtd : acc;
         }, 0);
-        totalPreview.textContent = pluralize(total, "servidor", "servidores");
+        if (totalPreview) {
+          totalPreview.textContent = pluralize(total, "servidor", "servidores");
+        }
       }
 
       function render() {
@@ -224,11 +307,12 @@
 
         rows.forEach((row, index) => {
           const wrapper = document.createElement("div");
-          wrapper.className = "editor-item";
+          wrapper.className = "editor-item wizard-editor-item wizard-editor-item--efetivo";
           wrapper.innerHTML = `
+            <div class="wizard-row-chip">Cargo ${index + 1}</div>
             <select class="input-field">${buildCargoOptions(row.cargo_id)}</select>
-            <input type="number" class="input-field" min="0" step="1" placeholder="Quantidade" value="${escapeHtml(row.quantidade)}" />
-            <button type="button" class="btn-clear" data-action="remove">Remover</button>
+            <input type="number" class="input-field" min="0" step="1" inputmode="numeric" placeholder="Quantidade" value="${escapeHtml(row.quantidade)}" />
+            <button type="button" class="btn-clear btn-small btn-clear--danger" data-action="remove">Remover</button>
           `;
 
           const cargoInput = wrapper.querySelector("select");
@@ -236,16 +320,35 @@
           const removeBtn = wrapper.querySelector("[data-action='remove']");
 
           cargoInput.addEventListener("change", () => {
-            rows[index].cargo_id = cargoInput.value;
+            const nextValue = String(cargoInput.value || "");
+            const duplicateIndex = rows.findIndex(
+              (item, itemIndex) => itemIndex !== index && String(item.cargo_id || "") === nextValue && nextValue
+            );
+            if (duplicateIndex >= 0) {
+              rows[index].cargo_id = "";
+              cargoInput.value = "";
+              showEfetivoClientError("Cada cargo pode aparecer apenas uma vez no efetivo.");
+            } else {
+              rows[index].cargo_id = nextValue;
+              showEfetivoClientError("");
+            }
             syncHidden();
           });
 
           qtdInput.addEventListener("input", () => {
-            rows[index].quantidade = qtdInput.value;
+            const sanitized = String(qtdInput.value || "").replace(/[^\d]/g, "");
+            if (qtdInput.value !== sanitized) {
+              qtdInput.value = sanitized;
+            }
+            rows[index].quantidade = sanitized;
             syncHidden();
           });
 
           removeBtn.addEventListener("click", () => {
+            const hasValue = rows[index].cargo_id || rows[index].quantidade;
+            if (hasValue && !window.confirm("Remover esta linha do efetivo?")) {
+              return;
+            }
             if (rows.length <= 1) {
               rows[0] = { cargo_id: "", quantidade: "" };
             } else {
@@ -260,10 +363,83 @@
         syncHidden();
       }
 
+      function applyCoordenadorPlanoSelection() {
+        const selectedId = String(coordenadorPlanoInput?.value || "");
+        const selected = coordenadorPlanoMap[selectedId];
+        if (selected) {
+          if (coordenadorPlanoNomeInput) coordenadorPlanoNomeInput.value = selected.nome || "";
+          if (coordenadorPlanoCargoInput) coordenadorPlanoCargoInput.value = selected.cargo || "";
+          toggleLocked(coordenadorPlanoNomeInput, true);
+          toggleLocked(coordenadorPlanoCargoInput, true);
+          if (coordenadorPlanoHint) {
+            coordenadorPlanoHint.textContent = "Nome e cargo sincronizados com o servidor selecionado.";
+          }
+          return;
+        }
+        toggleLocked(coordenadorPlanoNomeInput, false);
+        toggleLocked(coordenadorPlanoCargoInput, false);
+        if (coordenadorPlanoHint) {
+          coordenadorPlanoHint.textContent = "Sem selecao, os campos abaixo funcionam como preenchimento manual.";
+        }
+      }
+
+      function applyCoordenadorMunicipalMode() {
+        if (!coordenadorMunicipalPreview) return;
+        const selectedId = String(coordenadorMunicipalInput?.value || "");
+        const selected = coordenadorMunicipalMap[selectedId];
+        const municipalInputs = [
+          coordenadorMunicipalNomeInput,
+          coordenadorMunicipalCargoInput,
+          coordenadorMunicipalCidadeInput,
+        ].filter(Boolean);
+
+        if (selected) {
+          municipalInputs.forEach((input) => {
+            input.value = "";
+            toggleLocked(input, true);
+          });
+          coordenadorMunicipalPreview.textContent = [selected.nome, selected.cargo, selected.cidade]
+            .filter((item) => String(item || "").trim())
+            .join(" | ");
+          return;
+        }
+
+        municipalInputs.forEach((input) => toggleLocked(input, false));
+        const hasDraft = municipalInputs.some((input) => String(input.value || "").trim());
+        coordenadorMunicipalPreview.textContent = hasDraft
+          ? "Novo coordenador municipal sera cadastrado ao salvar."
+          : "Selecione um coordenador existente ou preencha os campos abaixo.";
+      }
+
       addBtn?.addEventListener("click", () => {
+        showEfetivoClientError("");
         rows.push({ cargo_id: "", quantidade: "" });
         render();
+        const lastRow = rowsContainer.lastElementChild;
+        focusSelector(lastRow, "select");
       });
+
+      coordenadorPlanoInput?.addEventListener("change", applyCoordenadorPlanoSelection);
+
+      coordenadorMunicipalInput?.addEventListener("change", () => {
+        if (String(coordenadorMunicipalInput.value || "").trim()) {
+          if (coordenadorMunicipalNomeInput) coordenadorMunicipalNomeInput.value = "";
+          if (coordenadorMunicipalCargoInput) coordenadorMunicipalCargoInput.value = "";
+          if (coordenadorMunicipalCidadeInput) coordenadorMunicipalCidadeInput.value = "";
+        }
+        applyCoordenadorMunicipalMode();
+      });
+
+      [coordenadorMunicipalNomeInput, coordenadorMunicipalCargoInput, coordenadorMunicipalCidadeInput]
+        .filter(Boolean)
+        .forEach((input) => {
+          input.addEventListener("input", () => {
+            if (String(input.value || "").trim() && coordenadorMunicipalInput) {
+              coordenadorMunicipalInput.value = "";
+            }
+            applyCoordenadorMunicipalMode();
+          });
+        });
 
       function initTextListEditor({
         hiddenInputField,
@@ -292,14 +468,6 @@
         let localRows = parseListPayload();
         if (!localRows.length) localRows = [{ descricao: "" }];
 
-        function escapeAttr(value) {
-          return String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/\"/g, "&quot;");
-        }
-
         function syncHiddenField() {
           hiddenInputField.value = JSON.stringify(
             localRows.map((row) => ({
@@ -312,10 +480,10 @@
           rowsElement.innerHTML = "";
           localRows.forEach((row, index) => {
             const wrapper = document.createElement("div");
-            wrapper.className = "editor-item";
+            wrapper.className = "editor-item wizard-editor-item wizard-editor-item--compact";
             wrapper.innerHTML = `
-              <input type="text" class="input-field" placeholder="${escapeAttr(placeholder)}" value="${escapeAttr(row.descricao)}" />
-              <button type="button" class="btn-clear" data-action="remove">Remover</button>
+              <input type="text" class="input-field" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(row.descricao)}" />
+              <button type="button" class="btn-clear btn-small btn-clear--danger" data-action="remove">Remover</button>
             `;
             const input = wrapper.querySelector("input");
             const removeBtn = wrapper.querySelector("[data-action='remove']");
@@ -324,6 +492,10 @@
               syncHiddenField();
             });
             removeBtn.addEventListener("click", () => {
+              const currentValue = String(localRows[index]?.descricao || "").trim();
+              if (currentValue && !window.confirm("Remover este item?")) {
+                return;
+              }
               if (localRows.length <= 1) {
                 localRows[0] = { descricao: "" };
               } else {
@@ -339,6 +511,7 @@
         addButton?.addEventListener("click", () => {
           localRows.push({ descricao: "" });
           renderRows();
+          focusSelector(rowsElement.lastElementChild, "input");
         });
 
         renderRows();
@@ -358,6 +531,8 @@
       });
 
       render();
+      applyCoordenadorPlanoSelection();
+      applyCoordenadorMunicipalMode();
       window.initializeAutocompleteSelects?.(document);
     })();
   </script>
