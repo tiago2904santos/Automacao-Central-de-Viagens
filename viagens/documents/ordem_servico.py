@@ -108,6 +108,12 @@ def _resolve_viajantes(oficio: Oficio) -> str:
 
 
 def _ensure_ordem_servico(oficio: Oficio) -> OrdemServico:
+    acao = oficio.ensure_acao()
+    if acao is not None:
+        try:
+            return acao.ordem_servico
+        except OrdemServico.DoesNotExist:
+            pass
     try:
         return oficio.ordem_servico
     except OrdemServico.DoesNotExist:
@@ -123,6 +129,7 @@ def _ensure_ordem_servico(oficio: Oficio) -> OrdemServico:
 
     return OrdemServico.objects.create(
         oficio=oficio,
+        acao=acao,
         numero=get_next_ordem_num(ano),
         ano=ano,
         referencia="Diligências",

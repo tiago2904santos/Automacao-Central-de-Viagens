@@ -55,10 +55,22 @@ def generate_all_documents(oficio: Oficio, *, pdf_if_available: bool = True) -> 
         )
 
     has_plano = False
-    try:
-        has_plano = bool(oficio.plano_trabalho)
-    except Exception:
-        has_plano = False
+    acao = getattr(oficio, "acao", None)
+    if acao is None and hasattr(oficio, "ensure_acao"):
+        try:
+            acao = oficio.ensure_acao()
+        except Exception:
+            acao = None
+    if acao is not None:
+        try:
+            has_plano = bool(acao.plano_trabalho)
+        except Exception:
+            has_plano = False
+    if not has_plano:
+        try:
+            has_plano = bool(oficio.plano_trabalho)
+        except Exception:
+            has_plano = False
 
     if has_plano:
         plano_docx = build_plano_trabalho_docx_bytes(oficio).getvalue()

@@ -82,3 +82,16 @@ class Step3BackendContractTests(TestCase):
             oficio.retorno_chegada_cidade,
             f"{self.cidade_sede.nome}/{self.estado_pr.sigla}",
         )
+
+    def test_validacao_resultado_exige_token_no_header(self) -> None:
+        response = self.client.post(
+            reverse("validacao_resultado"),
+            data="{}",
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertJSONEqual(
+            response.content,
+            {"erro": "Não autorizado."},
+        )

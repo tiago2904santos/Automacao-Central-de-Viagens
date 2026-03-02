@@ -1,0 +1,211 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}{% if is_edit %}Editar roteiro{% else %}Novo roteiro{% endif %}{% endblock %}
+
+{% block breadcrumb %}
+  Roteiros
+  <span class="breadcrumb-sep">/</span>
+  {% if is_edit %}Editar{% else %}Novo{% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">
+        {% if is_edit %}
+          Editar roteiro{% if roteiro %}: {{ roteiro.nome }}{% endif %}
+        {% else %}
+          Novo roteiro
+        {% endif %}
+      </h2>
+      <p class="page-subtitle">Cadastre um trajeto padrao e detalhe seus trechos reutilizaveis.</p>
+    </div>
+  </div>
+
+  {% if messages %}
+    <div class="card" style="margin-bottom: 18px;">
+      {% for message in messages %}
+        <div class="{% if message.tags == 'error' %}error{% else %}empty{% endif %}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <form method="post" id="roteiro-form">
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="error" style="margin-bottom: 18px;">{{ form.non_field_errors }}</div>
+      {% endif %}
+      {% if formset.non_form_errors %}
+        <div class="error" style="margin-bottom: 18px;">{{ formset.non_form_errors }}</div>
+      {% endif %}
+
+      <div class="sub-card">
+        <div class="sub-card-title">Dados do roteiro</div>
+        <div class="grid">
+          <label>
+            Nome do roteiro
+            {{ form.nome }}
+            {{ form.nome.errors }}
+          </label>
+          <label>
+            Tipo de deslocamento
+            {{ form.tipo_deslocamento }}
+            {{ form.tipo_deslocamento.errors }}
+          </label>
+          <label>
+            UF origem
+            {{ form.uf_origem }}
+            {{ form.uf_origem.errors }}
+          </label>
+          <label>
+            Cidade origem
+            {{ form.cidade_origem }}
+            {{ form.cidade_origem.errors }}
+          </label>
+          <label>
+            UF destino
+            {{ form.uf_destino }}
+            {{ form.uf_destino.errors }}
+          </label>
+          <label>
+            Cidade destino
+            {{ form.cidade_destino }}
+            {{ form.cidade_destino.errors }}
+          </label>
+          <label>
+            Distancia (km)
+            {{ form.distancia_km }}
+            {{ form.distancia_km.errors }}
+          </label>
+          <label class="checkbox-field" style="align-self: end;">
+            <span>Ativo</span>
+            <span style="display: inline-flex; align-items: center; gap: 8px;">
+              {{ form.ativo }} Disponivel para reutilizacao
+            </span>
+            {{ form.ativo.errors }}
+          </label>
+          <label class="full">
+            Descricao
+            {{ form.descricao }}
+            {{ form.descricao.errors }}
+          </label>
+        </div>
+      </div>
+
+      <div class="sub-card">
+        <div class="sub-card-title">Trechos do roteiro</div>
+        <p class="field-help">Use os trechos para detalhar o percurso completo, quando necessario.</p>
+        {{ formset.management_form }}
+        <div id="{{ formset_prefix }}-formset-container" class="stack-list">
+          {% for trecho_form in formset %}
+            <div class="card" style="margin-bottom: 14px;" data-trecho-row>
+              <div class="page-header" style="margin-bottom: 14px;">
+                <div>
+                  <span class="badge">Trecho <span class="trecho-ordem">{{ forloop.counter }}</span></span>
+                </div>
+                <div class="page-actions">
+                  <button type="button" class="btn-danger remove-trecho-btn">Remover</button>
+                </div>
+              </div>
+              {{ trecho_form.id }}
+              <div hidden>{{ trecho_form.DELETE }}</div>
+              <div class="grid">
+                <label>
+                  Ordem
+                  {{ trecho_form.ordem }}
+                  {{ trecho_form.ordem.errors }}
+                </label>
+                <label>
+                  UF origem
+                  {{ trecho_form.uf_origem }}
+                  {{ trecho_form.uf_origem.errors }}
+                </label>
+                <label>
+                  Cidade origem
+                  {{ trecho_form.cidade_origem }}
+                  {{ trecho_form.cidade_origem.errors }}
+                </label>
+                <label>
+                  UF destino
+                  {{ trecho_form.uf_destino }}
+                  {{ trecho_form.uf_destino.errors }}
+                </label>
+                <label>
+                  Cidade destino
+                  {{ trecho_form.cidade_destino }}
+                  {{ trecho_form.cidade_destino.errors }}
+                </label>
+                <label>
+                  Distancia (km)
+                  {{ trecho_form.distancia_km }}
+                  {{ trecho_form.distancia_km.errors }}
+                </label>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <button type="button" id="add-trecho-btn" class="btn-clear">Adicionar trecho</button>
+      </div>
+
+      <div class="wizard-actions">
+        <a href="{% url 'roteiro_lista' %}" class="btn-clear">Cancelar</a>
+        <button type="submit" class="btn-primary">Salvar roteiro</button>
+      </div>
+    </form>
+  </div>
+
+  <template id="empty-trecho-form">
+    <div class="card" style="margin-bottom: 14px;" data-trecho-row>
+      <div class="page-header" style="margin-bottom: 14px;">
+        <div>
+          <span class="badge">Trecho <span class="trecho-ordem"></span></span>
+        </div>
+        <div class="page-actions">
+          <button type="button" class="btn-danger remove-trecho-btn">Remover</button>
+        </div>
+      </div>
+      {{ formset.empty_form.id }}
+      <div hidden>{{ formset.empty_form.DELETE }}</div>
+      <div class="grid">
+        <label>
+          Ordem
+          {{ formset.empty_form.ordem }}
+        </label>
+        <label>
+          UF origem
+          {{ formset.empty_form.uf_origem }}
+        </label>
+        <label>
+          Cidade origem
+          {{ formset.empty_form.cidade_origem }}
+        </label>
+        <label>
+          UF destino
+          {{ formset.empty_form.uf_destino }}
+        </label>
+        <label>
+          Cidade destino
+          {{ formset.empty_form.cidade_destino }}
+        </label>
+        <label>
+          Distancia (km)
+          {{ formset.empty_form.distancia_km }}
+        </label>
+      </div>
+    </div>
+  </template>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/roteiros.js' %}"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const trechoFormset = new TrechoFormset("{{ formset_prefix }}");
+      trechoFormset.init();
+    });
+  </script>
+{% endblock %}

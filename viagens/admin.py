@@ -1,16 +1,20 @@
 from django.contrib import admin
+from django.utils.html import format_html
 
 from .models import (
     Cidade,
     CoordenadorMunicipal,
     Estado,
     Oficio,
+    OficioRoteiro,
     PlanoTrabalho,
     PlanoTrabalhoAtividade,
     PlanoTrabalhoLocalAtuacao,
     PlanoTrabalhoMeta,
     PlanoTrabalhoRecurso,
+    Roteiro,
     Trecho,
+    TrechoRoteiro,
     Viajante,
     Veiculo,
 )
@@ -57,13 +61,30 @@ class TrechoInline(admin.TabularInline):
     )
 
 
+class TrechoRoteiroInline(admin.TabularInline):
+    model = TrechoRoteiro
+    extra = 1
+    fields = (
+        "ordem",
+        "uf_origem",
+        "cidade_origem",
+        "uf_destino",
+        "cidade_destino",
+        "distancia_km",
+        "modal",
+        "observacao",
+    )
+    ordering = ("ordem", "id")
+
+
 @admin.register(Oficio)
 class OficioAdmin(admin.ModelAdmin):
-    list_display = ("oficio", "protocolo", "destino_label", "created_at")
+    list_display = ("oficio", "protocolo", "roteiro", "destino_label", "created_at")
     list_filter = ("created_at",)
     search_fields = (
         "oficio",
         "protocolo",
+        "roteiro__nome",
         "destino",
         "assunto",
         "placa",
@@ -71,12 +92,69 @@ class OficioAdmin(admin.ModelAdmin):
         "cidade_destino__nome",
         "cidade_sede__nome",
     )
+    raw_id_fields = ("roteiro",)
     inlines = (TrechoInline,)
 
     def destino_label(self, obj):
         return obj.get_destino_display()
 
     destino_label.short_description = "Destino"
+
+
+@admin.register(Roteiro)
+class RoteiroViagemAdmin(admin.ModelAdmin):
+    list_display = (
+        "nome",
+        "cidade_origem",
+        "uf_origem",
+        "total_cidades",
+        "tipo_deslocamento",
+        "ativo",
+        "criado_em",
+    )
+    list_filter = ("tipo_deslocamento", "ativo", "uf_origem", "uf_destino")
+    search_fields = ("nome", "cidade_origem", "cidade_destino", "descricao")
+    inlines = (TrechoRoteiroInline,)
+    ordering = ("-criado_em", "-id")
+    date_hierarchy = "criado_em"
+    fieldsets = (
+        (None, {"fields": ("nome", "descricao", "ativo")}),
+        (
+            "Detalhes do roteiro",
+            {
+                "fields": (
+                    "uf_origem",
+                    "cidade_origem",
+                    "uf_destino",
+                    "cidade_destino",
+                    "distancia_km",
+                    "tipo_deslocamento",
+                )
+            },
+        ),
+    )
+
+
+@admin.register(OficioRoteiro)
+class OficioRoteiroAdmin(admin.ModelAdmin):
+    list_display = ("oficio_link", "roteiro_link", "vinculado_em", "observacao")
+    list_filter = ("vinculado_em",)
+    search_fields = (
+        "oficio__oficio",
+        "roteiro__nome",
+        "observacao",
+    )
+    raw_id_fields = ("oficio", "roteiro")
+
+    def oficio_link(self, obj):
+        return format_html('<a href="{}">{}</a>', obj.oficio.get_admin_url(), obj.oficio)
+
+    oficio_link.short_description = "Oficio"
+
+    def roteiro_link(self, obj):
+        return format_html('<a href="{}">{}</a>', obj.roteiro.get_admin_url(), obj.roteiro)
+
+    roteiro_link.short_description = "Roteiro"
 
 
 @admin.register(CoordenadorMunicipal)

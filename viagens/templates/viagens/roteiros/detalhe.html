@@ -1,0 +1,175 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Detalhes do roteiro{% endblock %}
+
+{% block breadcrumb %}
+  Roteiros <span class="breadcrumb-sep">/</span> Detalhe
+{% endblock %}
+
+{% block content %}
+  <form style="display: none;">{% csrf_token %}</form>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Detalhes do roteiro</h2>
+      <p class="page-subtitle">Consulte os trechos e os oficios que reaproveitam este roteiro.</p>
+    </div>
+    <div class="page-actions">
+      <a href="{% url 'roteiro_edit' roteiro.pk %}" class="btn-primary">Editar</a>
+      <form method="post" action="{% url 'roteiro_delete' roteiro.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-danger">Desativar</button>
+      </form>
+    </div>
+  </div>
+
+  {% if messages %}
+    <div class="card" style="margin-bottom: 18px;">
+      {% for message in messages %}
+        <div class="{% if message.tags == 'error' %}error{% else %}empty{% endif %}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="card" style="margin-bottom: 18px;">
+    <div class="sub-card">
+      <div class="sub-card-title">{{ roteiro.nome }}</div>
+      <div class="grid">
+        <label>
+          Origem
+          <div class="preview">{{ roteiro.cidade_origem }}/{{ roteiro.uf_origem }}</div>
+        </label>
+        <label>
+          Destino
+          <div class="preview">{{ roteiro.cidade_destino }}/{{ roteiro.uf_destino }}</div>
+        </label>
+        <label>
+          Tipo
+          <div class="preview">{{ roteiro.get_tipo_deslocamento_display }}</div>
+        </label>
+        <label>
+          Distancia total
+          <div class="preview">{{ roteiro.get_distancia_total|default_if_none:"-" }}</div>
+        </label>
+        <label class="full">
+          Descricao
+          <div class="preview">{{ roteiro.descricao|default:"Sem descricao cadastrada." }}</div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 18px;">
+    <div class="sub-card-title">Trechos do roteiro</div>
+    {% if roteiro.trechos.exists %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Ordem</th>
+            <th>Origem</th>
+            <th>Destino</th>
+            <th>Distancia (km)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for trecho in roteiro.trechos.all %}
+            <tr>
+              <td>{{ trecho.ordem }}</td>
+              <td>{{ trecho.cidade_origem }}/{{ trecho.uf_origem }}</td>
+              <td>{{ trecho.cidade_destino }}/{{ trecho.uf_destino }}</td>
+              <td>{{ trecho.distancia_km|default_if_none:"-" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty">Nenhum trecho detalhado para este roteiro.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="sub-card-title">Oficios vinculados</div>
+    {% if oficios_vinculados %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Oficio</th>
+            <th>Vinculado em</th>
+            <th>Observacao</th>
+            <th class="table-actions-header">Acoes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for oficio_roteiro in oficios_vinculados %}
+            <tr>
+              <td>
+                <a href="{% url 'oficio_edit_step1' oficio_roteiro.oficio.pk %}">
+                  {{ oficio_roteiro.oficio.numero_formatado|default:oficio_roteiro.oficio.oficio }}
+                </a>
+              </td>
+              <td>{{ oficio_roteiro.vinculado_em|date:"d/m/Y H:i" }}</td>
+              <td>{{ oficio_roteiro.observacao|default:"-" }}</td>
+              <td class="table-actions-cell">
+                <div class="table-actions table-actions--right">
+                  <button
+                    type="button"
+                    class="btn-danger desvincular-roteiro-btn"
+                    data-oficio-id="{{ oficio_roteiro.oficio.pk }}"
+                    data-roteiro-id="{{ roteiro.pk }}"
+                    data-roteiro-nome="{{ roteiro.nome }}"
+                  >
+                    Desvincular
+                  </button>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty">Este roteiro ainda nao foi vinculado a nenhum oficio.</div>
+    {% endif %}
+  </div>
+
+  <div class="wizard-actions">
+    <a href="{% url 'roteiro_lista' %}" class="btn-clear">Voltar para a lista</a>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]")?.value || "";
+      document.querySelectorAll(".desvincular-roteiro-btn").forEach(function (button) {
+        button.addEventListener("click", async function () {
+          const oficioId = this.dataset.oficioId;
+          const roteiroId = this.dataset.roteiroId;
+          const roteiroNome = this.dataset.roteiroNome;
+          if (!window.confirm("Desvincular o roteiro '" + roteiroNome + "' deste oficio?")) {
+            return;
+          }
+
+          try {
+            const response = await fetch(
+              "/oficios/" + oficioId + "/roteiros/" + roteiroId + "/desvincular/",
+              {
+                method: "POST",
+                headers: {
+                  "X-CSRFToken": csrfToken,
+                },
+              }
+            );
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+              throw new Error(data.message || "Falha ao desvincular.");
+            }
+            window.location.reload();
+          } catch (error) {
+            window.alert(error.message || "Erro ao desvincular roteiro.");
+          }
+        });
+      });
+    });
+  </script>
+{% endblock %}

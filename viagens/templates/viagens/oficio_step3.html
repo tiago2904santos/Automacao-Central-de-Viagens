@@ -122,6 +122,176 @@
         <div class="error">{{ formset.non_form_errors }}</div>
       {% endif %}
 
+      <section
+        class="sub-card"
+        id="painel-roteiro"
+        style="padding: 0; overflow: visible; margin-bottom: 20px;"
+      >
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 18px;
+            background: linear-gradient(135deg, #0f4c5c 0%, #1a6e82 100%);
+            border-radius: 14px 14px 0 0;
+          "
+        >
+          <div style="display: inline-flex; align-items: center; gap: 8px;">
+            <i data-lucide="map" style="width:18px;height:18px;color:#fff;"></i>
+            <span style="font-weight: 700; font-size: 0.95rem; color: #fff;">Roteiro de Deslocamento</span>
+          </div>
+          <span
+            style="
+              padding: 4px 10px;
+              border-radius: 999px;
+              background: rgba(255, 255, 255, 0.18);
+              color: #fff;
+              font-size: 0.74rem;
+              font-weight: 700;
+            "
+          >
+            Biblioteca de Roteiros
+          </span>
+        </div>
+
+        <div style="padding: 18px;">
+          <div class="grid" style="margin-bottom: 14px;">
+            <label class="full" style="position: relative;">
+              <span style="display: inline-flex; align-items: center; gap: 6px;">
+                <i data-lucide="search" style="width:14px;height:14px;"></i>
+                Selecionar roteiro existente
+              </span>
+              <div class="field-row">
+                <input
+                  type="text"
+                  id="roteiro-search-input"
+                  placeholder="Digite o nome ou cidade do roteiro..."
+                  autocomplete="off"
+                  data-url-buscar="{% url 'api_roteiros_buscar' %}"
+                  data-url-detalhe="{% url 'api_roteiro_detalhe_json' pk=0 %}"
+                  data-url-criar="{% url 'api_roteiro_criar_inline' %}"
+                />
+                <button
+                  type="button"
+                  id="btn-buscar-roteiro"
+                  class="btn-primary"
+                  style="white-space: nowrap;"
+                >
+                  Buscar
+                </button>
+                <button
+                  type="button"
+                  id="btn-usar-roteiro"
+                  class="btn-primary"
+                  hidden
+                  style="white-space: nowrap;"
+                >
+                  Usar este roteiro
+                </button>
+              </div>
+              <div
+                id="roteiro-search-results"
+                hidden
+                style="
+                  position: absolute;
+                  top: calc(100% + 8px);
+                  left: 0;
+                  right: 0;
+                  z-index: 20;
+                  max-height: 250px;
+                  overflow-y: auto;
+                  background: #fff;
+                  border: 1px solid var(--brand-border);
+                  border-radius: 12px;
+                  box-shadow: var(--shadow-soft);
+                "
+              ></div>
+            </label>
+          </div>
+
+          <div id="roteiro-selecionado-preview" {% if not roteiro_id %}hidden{% endif %} style="margin-bottom: 14px;">
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 12px 14px;
+                border-radius: 12px;
+                background: #f0fdf4;
+                border: 1px solid #bbf7d0;
+              "
+            >
+              <div>
+                <div
+                  class="sub-card-title"
+                  id="preview-nome-roteiro"
+                  style="margin-bottom: 4px; color: #166534;"
+                >
+                  {{ roteiro_nome|default:"-" }}
+                </div>
+                <div id="preview-destinos-roteiro" class="field-help" style="margin: 0;">
+                  {{ roteiro_destinos|default:"-" }}
+                </div>
+              </div>
+              <button type="button" id="btn-limpar-roteiro" class="btn-danger">Limpar</button>
+            </div>
+          </div>
+
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              margin: 14px 0;
+            "
+          >
+            <div style="flex: 1; height: 1px; background: var(--brand-border);"></div>
+            <span class="field-help" style="margin: 0;">ou</span>
+            <div style="flex: 1; height: 1px; background: var(--brand-border);"></div>
+          </div>
+
+          <div class="grid">
+            <label class="full">
+              <span style="display: inline-flex; align-items: center; gap: 6px;">
+                <i data-lucide="bookmark-plus" style="width:14px;height:14px;"></i>
+                Salvar roteiro atual na biblioteca
+              </span>
+              <div class="field-row">
+                <input
+                  type="text"
+                  id="roteiro-novo-nome"
+                  placeholder="Nome para identificar este roteiro futuramente..."
+                />
+                <button type="button" id="btn-salvar-roteiro-inline" class="btn-primary">
+                  Salvar na Biblioteca
+                </button>
+              </div>
+            </label>
+          </div>
+
+          <div id="roteiro-save-feedback" hidden style="margin-top: 12px;">
+            <div
+              style="
+                margin: 0;
+                padding: 10px 12px;
+                border-radius: 10px;
+                background: #ecfdf5;
+                border: 1px solid #bbf7d0;
+                color: #166534;
+                font-size: 0.9rem;
+                font-weight: 600;
+              "
+            >
+              <span id="roteiro-save-msg">Roteiro salvo com sucesso!</span>
+            </div>
+          </div>
+          <input type="hidden" name="roteiro_id" id="roteiro-selecionado-id" value="{{ roteiro_id|default:'' }}" />
+        </div>
+      </section>
+
       <div class="sub-card">
         <div class="sub-card-title">Entrada do roteiro</div>
         <div class="grid">
@@ -130,7 +300,7 @@
             <select name="sede_uf" id="sedeUf" class="input-field" data-role="sede-uf" data-autocomplete-url="/api/ufs/" data-autocomplete-type="uf">
               <option value="">Selecione</option>
               {% for estado in estados %}
-                <option value="{{ estado.sigla }}" {% if estado.sigla == sede_uf %}selected{% elif not sede_uf and estado.sigla == 'PR' %}selected{% endif %}>
+                <option value="{{ estado.sigla }}" data-estado-id="{{ estado.id }}" {% if estado.sigla == sede_uf %}selected{% elif not sede_uf and estado.sigla == 'PR' %}selected{% endif %}>
                   {{ estado.sigla }} - {{ estado.nome }}
                 </option>
               {% endfor %}
@@ -153,7 +323,7 @@
         <p class="field-help destinos-intro">Digite e selecione a cidade e arraste para definir a sequÃªncia.</p>
         <div class="destinos-list" id="destinosList">
           {% for destino in destinos %}
-            <div class="destino-item" data-index="{{ forloop.counter0 }}">
+            <div class="destino-item destino-card" data-index="{{ forloop.counter0 }}">
               <div class="trecho-header destino-header">
                 <div class="destino-info">
                   <span class="badge">Destino {{ forloop.counter }}</span>
@@ -170,7 +340,7 @@
                   <select name="destinos-{{ forloop.counter0 }}-uf" class="input-field" data-role="destino-estado" data-autocomplete-url="/api/ufs/" data-autocomplete-type="uf">
                     <option value="">Selecione</option>
                     {% for estado in estados %}
-                      <option value="{{ estado.sigla }}" {% if estado.sigla == destino.uf %}selected{% elif not destino.uf and estado.sigla == 'PR' %}selected{% endif %}>
+                      <option value="{{ estado.sigla }}" data-estado-id="{{ estado.id }}" {% if estado.sigla == destino.uf %}selected{% elif not destino.uf and estado.sigla == 'PR' %}selected{% endif %}>
                         {{ estado.sigla }} - {{ estado.nome }}
                       </option>
                     {% endfor %}
@@ -200,7 +370,7 @@
 
       
 
-      <div class="sub-card">
+      <div class="sub-card" id="trechos-gerados-section">
         <div class="sub-card-title">Trechos gerados</div>
         {{ formset.management_form }}
         <div class="trecho-list" id="trechosList" data-trechos-list>
@@ -327,7 +497,7 @@
       </template>
 
       <template id="destinoTemplate">
-        <div class="destino-item" data-index="__prefix__">
+        <div class="destino-item destino-card" data-index="__prefix__">
           <div class="trecho-header destino-header">
             <div class="destino-info">
               <span class="badge">Destino</span>
@@ -344,7 +514,7 @@
               <select name="destinos-__prefix__-uf" class="input-field" data-role="destino-estado" data-autocomplete-url="/api/ufs/" data-autocomplete-type="uf">
                 <option value="">Selecione</option>
                 {% for estado in estados %}
-                  <option value="{{ estado.sigla }}" {% if estado.sigla == 'PR' %}selected{% endif %}>
+                  <option value="{{ estado.sigla }}" data-estado-id="{{ estado.id }}" {% if estado.sigla == 'PR' %}selected{% endif %}>
                     {{ estado.sigla }} - {{ estado.nome }}
                   </option>
                 {% endfor %}
@@ -512,5 +682,7 @@
 
 {% block scripts %}
   <script src="{% static 'viagens/oficio_wizard.js' %}"></script>
+  <script src="{% static 'viagens/js/roteiro_builder.js' %}"></script>
+  <script src="{% static 'viagens/js/roteiro_selector.js' %}"></script>
 {% endblock %}
 

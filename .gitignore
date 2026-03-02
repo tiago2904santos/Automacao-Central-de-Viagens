@@ -173,6 +173,11 @@ poetry.toml
 # LSP config files
 pyrightconfig.json
 
+# Local debug helpers
+tmp_*.py
+*_debug.py
+*_inspect*.py
+
 # End of https://www.toptal.com/developers/gitignore/api/python
 
 # Created by https://www.toptal.com/developers/gitignore/api/django

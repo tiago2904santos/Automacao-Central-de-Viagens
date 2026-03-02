@@ -1,0 +1,158 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Efetivo{% endblock %}
+
+{% block breadcrumb %}
+  Cadastros <span class="breadcrumb-sep">/</span> Efetivo
+{% endblock %}
+
+{% block content %}
+  <div class="page-header mb-3">
+    <div>
+      <h2 class="page-title mb-1">Efetivo</h2>
+      <p class="page-subtitle mb-0">Edite quantidades por cargo e cadastre cargos novos quando necessario.</p>
+    </div>
+  </div>
+
+  <div class="card p-3 p-md-4">
+    <form method="post" id="efetivoForm">
+      {% csrf_token %}
+      {{ formset.management_form }}
+
+      {% if formset.non_form_errors %}
+        <div class="alert alert-danger">
+          {{ formset.non_form_errors|join:", " }}
+        </div>
+      {% endif %}
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Cargo</th>
+              <th style="width: 220px;">Quantidade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in linhas %}
+              <tr>
+                <td>
+                  <strong>{{ item.cargo.nome }}</strong>
+                  {% if item.cargo.is_coordenador %}
+                    <span class="badge text-bg-info ms-2">Coordenador</span>
+                  {% endif %}
+                  {{ item.form.cargo_id }}
+                  {{ item.form.cargo_nome }}
+                  {{ item.form.is_coordenador }}
+                </td>
+                <td>
+                  {{ item.form.quantidade }}
+                  {% if item.form.quantidade.errors %}
+                    <div class="text-danger small mt-1">{{ item.form.quantidade.errors|join:", " }}</div>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="2" class="text-muted">Nenhum cargo ativo encontrado. Cadastre um abaixo.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-lg-8">
+          <label class="form-label" for="id_novo-nome_cargo">Adicionar cargo (opcional)</label>
+          {{ cargo_form.nome_cargo }}
+          {% if cargo_form.nome_cargo.errors %}
+            <div class="text-danger small mt-1">{{ cargo_form.nome_cargo.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+        <div class="col-12 col-lg-4 d-flex align-items-end">
+          <div class="form-check mb-2">
+            {{ cargo_form.is_coordenador }}
+            <label class="form-check-label" for="id_novo-is_coordenador">E coordenador</label>
+          </div>
+        </div>
+      </div>
+
+      <hr class="my-4" />
+
+      <div class="row g-3" id="efetivoResumo" data-servidores="{{ total_servidores }}" data-coordenadores="{{ total_coordenadores }}">
+        <div class="col-12 col-md-4">
+          <div class="border rounded p-3 h-100 bg-light-subtle">
+            <small class="text-muted d-block">Servidores</small>
+            <strong id="resumoServidores">{{ resumo_servidores }}</strong>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="border rounded p-3 h-100 bg-light-subtle">
+            <small class="text-muted d-block">Coordenadores</small>
+            <strong id="resumoCoordenadores">{{ resumo_coordenadores }}</strong>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="border rounded p-3 h-100 bg-light-subtle">
+            <small class="text-muted d-block">Total</small>
+            <strong id="resumoTotal">{{ resumo_total }}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Salvar efetivo</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (function () {
+      const form = document.getElementById("efetivoForm");
+      if (!form) return;
+
+      const plural = (value, singular, pluralLabel) => `${value} ${value === 1 ? singular : pluralLabel}`;
+      const totalServidoresEl = document.getElementById("resumoServidores");
+      const totalCoordenadoresEl = document.getElementById("resumoCoordenadores");
+      const totalEl = document.getElementById("resumoTotal");
+      const inputs = Array.from(form.querySelectorAll("input[name$='-quantidade']"));
+
+      const isCoordenador = (input) => {
+        const prefix = input.name.replace(/-quantidade$/, "");
+        const hidden = form.querySelector(`input[name='${prefix}-is_coordenador']`);
+        const value = (hidden?.value || "").toLowerCase();
+        return value === "true" || value === "1" || value === "on";
+      };
+
+      const readQtd = (input) => {
+        const raw = String(input.value || "").trim();
+        if (!/^\d+$/.test(raw)) return 0;
+        return Number(raw);
+      };
+
+      const recalc = () => {
+        let servidores = 0;
+        let coordenadores = 0;
+
+        inputs.forEach((input) => {
+          const qtd = readQtd(input);
+          if (isCoordenador(input)) {
+            coordenadores += qtd;
+          } else {
+            servidores += qtd;
+          }
+        });
+
+        const total = servidores + coordenadores;
+        totalServidoresEl.textContent = plural(servidores, "servidor", "servidores");
+        totalCoordenadoresEl.textContent = plural(coordenadores, "coordenador", "coordenadores");
+        totalEl.textContent = plural(total, "pessoa", "pessoas");
+      };
+
+      inputs.forEach((input) => input.addEventListener("input", recalc));
+      recalc();
+    })();
+  </script>
+{% endblock %}

@@ -120,6 +120,12 @@ def _resolve_local(oficio: Oficio, trechos: list[Trecho]) -> str:
 
 
 def _ensure_plano_trabalho(oficio: Oficio, trechos: list[Trecho]) -> PlanoTrabalho:
+    acao = oficio.ensure_acao()
+    if acao is not None:
+        try:
+            return acao.plano_trabalho
+        except PlanoTrabalho.DoesNotExist:
+            pass
     try:
         return oficio.plano_trabalho
     except PlanoTrabalho.DoesNotExist:
@@ -134,6 +140,7 @@ def _ensure_plano_trabalho(oficio: Oficio, trechos: list[Trecho]) -> PlanoTrabal
 
     plano = PlanoTrabalho.objects.create(
         oficio=oficio,
+        acao=acao,
         numero=get_next_plano_num(ano),
         ano=ano,
         sigla_unidade="ASCOM",

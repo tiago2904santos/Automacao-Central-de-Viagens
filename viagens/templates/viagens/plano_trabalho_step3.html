@@ -21,7 +21,13 @@
   </div>
 
   <div class="card plano-wizard-card wizard-surface">
-    <form method="post" id="planoStep3Form" class="wizard-form-stack" data-diarias-url="{{ plano_diarias_calcular_url }}">
+    <form
+      method="post"
+      id="planoStep3Form"
+      class="wizard-form-stack"
+      data-diarias-url="{{ plano_diarias_calcular_url }}"
+      data-total-servidores="{{ plano.quantidade_servidores|default_if_none:'' }}"
+    >
       {% csrf_token %}
       {{ form.composicao_diarias }}
       {{ form.valor_unitario }}
@@ -29,10 +35,42 @@
       {{ form.recursos_json }}
       {% include "viagens/partials/plano_form_errors.html" with form=form %}
 
+      <div class="step-intro-banner mb-4">
+        <div class="step-intro-icon">
+          <i data-lucide="calculator" style="width:28px;height:28px;color:#1a6b5a;"></i>
+        </div>
+        <div class="step-intro-content">
+          <h6 class="step-intro-title">Financeiro e Recursos</h6>
+          <p class="step-intro-text">
+            Nesta etapa, o sistema calcula automaticamente as diarias com base nos
+            <strong>trechos cadastrados no oficio</strong> e no <strong>total de servidores</strong>
+            definido na etapa anterior. Revise os valores calculados, informe os recursos
+            necessarios e confirme os dados antes de avancar para o resumo final.
+          </p>
+          <div class="step-intro-checklist">
+            <span class="checklist-item">
+              <i data-lucide="check-circle" style="width:14px;height:14px;"></i>
+              Trechos do oficio carregados
+            </span>
+            <span class="checklist-item">
+              <i data-lucide="check-circle" style="width:14px;height:14px;"></i>
+              Total de servidores da etapa 2
+            </span>
+            <span class="checklist-item">
+              <i data-lucide="check-circle" style="width:14px;height:14px;"></i>
+              Parametros de diarias configurados
+            </span>
+          </div>
+        </div>
+      </div>
+
       <section class="sub-card wizard-section-card">
         <div class="wizard-section-head">
           <div>
-            <div class="sub-card-title">Integracao com diarias</div>
+            <div class="section-title-block">
+              <i data-lucide="coins" style="width:18px;height:18px;color:#1a6b5a;"></i>
+              <h6 class="section-title-text">Integracao com diarias</h6>
+            </div>
             <p class="field-help">O calculo usa os trechos do oficio e o total de servidores definido na etapa anterior.</p>
           </div>
           <div class="wizard-section-actions">
@@ -40,37 +78,95 @@
           </div>
         </div>
 
-        <div class="wizard-alert wizard-alert--warning diarias-alert" id="planoDiariasError"{% if not diarias_erro_inicial %} hidden{% endif %}>
-          <div class="wizard-alert-message" id="planoDiariasErrorMessage">{{ diarias_erro_inicial }}</div>
-          <div class="wizard-alert-actions" id="planoDiariasErrorActions"{% if not diarias_acoes_iniciais %} hidden{% endif %}>
-            {% for action in diarias_acoes_iniciais %}
-              <a class="btn-clear btn-small" href="{{ action.url }}">{{ action.label }}</a>
-            {% endfor %}
-          </div>
-        </div>
-
         {% with totais=diarias_resultado.totais %}
-          <div class="diarias-summary-grid wizard-metric-grid" id="planoDiariasGrid">
-            <article class="diarias-summary-card wizard-metric-card">
-              <span class="diarias-summary-label wizard-metric-label">Total geral</span>
-              <strong class="diarias-summary-value wizard-metric-value" id="planoDiariasTotalGeral">{% if totais %}{% firstof totais.total_geral totais.total_valor "-" %}{% else %}-{% endif %}</strong>
-            </article>
-            <article class="diarias-summary-card wizard-metric-card">
-              <span class="diarias-summary-label wizard-metric-label">Valor por servidor</span>
-              <strong class="diarias-summary-value wizard-metric-value" id="planoDiariasValorServidor">{% if totais %}{{ totais.valor_por_servidor|default:"-" }}{% else %}-{% endif %}</strong>
-            </article>
-            <article class="diarias-summary-card wizard-metric-card">
-              <span class="diarias-summary-label wizard-metric-label">Diarias por servidor</span>
-              <strong class="diarias-summary-value wizard-metric-value" id="planoDiariasQtdServidor">{% if totais %}{{ totais.diarias_por_servidor|default:"-" }}{% else %}-{% endif %}</strong>
-            </article>
-            <article class="diarias-summary-card wizard-metric-card">
-              <span class="diarias-summary-label wizard-metric-label">Valor unitario da diaria</span>
-              <strong class="diarias-summary-value wizard-metric-value" id="planoDiariasValorUnitario">{% if totais %}{% firstof totais.valor_unitario totais.valor_unitario_referencia "-" %}{% else %}-{% endif %}</strong>
-            </article>
-          </div>
-          <div class="preview-line wizard-inline-info wizard-inline-info--soft">
-            <span class="preview-label">Valor por extenso</span>
-            <span class="preview-value" id="planoDiariasValorExtenso">{% if totais %}{{ totais.valor_extenso|default:"-" }}{% else %}-{% endif %}</span>
+          <div class="diarias-simulator-card mb-4">
+            <div class="sim-card-header">
+              <div class="sim-header-left">
+                <i data-lucide="coins" style="width:20px;height:20px;"></i>
+                <span>Calculo de Diarias</span>
+              </div>
+              <span class="sim-badge-auto">Calculado automaticamente</span>
+            </div>
+
+            <div class="sim-card-body">
+              <div class="sim-periods-col">
+                <p class="sim-col-label">Periodos do oficio</p>
+                {% for trecho in oficio.trechos.all %}
+                  <div class="sim-period-row">
+                    <div class="sim-period-badge">
+                      {% firstof oficio.get_tipo_destino_display "INTERIOR" %}
+                    </div>
+                    <div class="sim-period-dates">
+                      <span class="sim-date-item">
+                        <i data-lucide="calendar" style="width:12px;height:12px;"></i>
+                        {{ trecho.saida_data|date:"d/m/Y"|default:"--/--/----" }} {{ trecho.saida_hora|time:"H:i"|default:"--:--" }}
+                      </span>
+                      <span class="sim-period-arrow">&rarr;</span>
+                      <span class="sim-date-item">
+                        {{ trecho.chegada_data|date:"d/m/Y"|default:"--/--/----" }} {{ trecho.chegada_hora|time:"H:i"|default:"--:--" }}
+                      </span>
+                    </div>
+                  </div>
+                {% empty %}
+                  <div class="sim-empty-state">
+                    <i data-lucide="alert-triangle" style="width:16px;height:16px;color:#e07b00;"></i>
+                    <span>Nenhum trecho valido encontrado no oficio.</span>
+                    <a href="{% url 'oficio_edit_step1' oficio.id %}" class="sim-link-fix">Revisar oficio &rarr;</a>
+                  </div>
+                {% endfor %}
+              </div>
+
+              <div class="sim-result-col">
+                <p class="sim-col-label">Resultado</p>
+
+                <div class="sim-result-grid">
+                  <div class="sim-result-item">
+                    <span class="sim-result-label">Servidores</span>
+                    <span class="sim-result-value" id="sim-total-servidores">
+                      {% if plano.quantidade_servidores or plano.quantidade_servidores == 0 %}{{ plano.quantidade_servidores }}{% else %}&#8212;{% endif %}
+                    </span>
+                  </div>
+                  <div class="sim-result-item">
+                    <span class="sim-result-label">Diarias por servidor</span>
+                    <span class="sim-result-value" id="sim-diarias-unit">
+                      {% if totais and totais.diarias_por_servidor %}{{ totais.diarias_por_servidor }}{% else %}&#8212;{% endif %}
+                    </span>
+                  </div>
+                  <div class="sim-result-item">
+                    <span class="sim-result-label">Valor unitario</span>
+                    <span class="sim-result-value" id="sim-valor-unit">
+                      {% if totais and totais.valor_unitario %}{{ totais.valor_unitario }}{% elif totais and totais.valor_unitario_referencia %}{{ totais.valor_unitario_referencia }}{% else %}&#8212;{% endif %}
+                    </span>
+                  </div>
+                  <div class="sim-result-item sim-result-total">
+                    <span class="sim-result-label">Total estimado</span>
+                    <span class="sim-result-value highlight" id="sim-valor-total">
+                      {% if totais and totais.total_geral %}{{ totais.total_geral }}{% elif totais and totais.total_valor %}{{ totais.total_valor }}{% else %}&#8212;{% endif %}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="sim-result-msg sim-msg-warning" id="planoDiariasError"{% if not diarias_erro_inicial %} hidden{% endif %}>
+                  <i data-lucide="info" style="width:14px;height:14px;"></i>
+                  <div class="sim-result-msg-body">
+                    <div id="planoDiariasErrorMessage">{{ diarias_erro_inicial }}</div>
+                    <div class="sim-result-actions" id="planoDiariasErrorActions"{% if not diarias_acoes_iniciais %} hidden{% endif %}>
+                      {% for action in diarias_acoes_iniciais %}
+                        <a class="btn-clear btn-small" href="{{ action.url }}">{{ action.label }}</a>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="sim-result-msg sim-msg-info">
+                  <i data-lucide="file-text" style="width:14px;height:14px;"></i>
+                  <div class="sim-result-msg-body">
+                    <strong class="sim-result-label">Valor por extenso</strong>
+                    <span id="planoDiariasValorExtenso">{% if totais and totais.valor_extenso %}{{ totais.valor_extenso }}{% else %}&#8212;{% endif %}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         {% endwith %}
       </section>
@@ -78,20 +174,29 @@
       <section class="sub-card wizard-section-card">
         <div class="wizard-section-head">
           <div>
-            <div class="sub-card-title">Recursos necessarios</div>
+            <div class="section-title-block">
+              <i data-lucide="briefcase" style="width:18px;height:18px;color:#1a6b5a;"></i>
+              <h6 class="section-title-text">Recursos necessarios</h6>
+            </div>
             <p class="field-help">Liste recursos, equipamentos e estruturas que precisam acompanhar a acao.</p>
           </div>
           <div class="wizard-section-actions">
             <button class="btn-clear btn-small wizard-btn-soft" type="button" id="addRecursoBtn">+ Adicionar recurso</button>
           </div>
         </div>
-        <div id="recursosRows" class="wizard-editor-list wizard-editor-list--compact"></div>
+        <div id="recursosRows"></div>
         {% if form.recursos_json.errors %}<span class="error">{{ form.recursos_json.errors|join:", " }}</span>{% endif %}
       </section>
 
-      <div class="wizard-actions wizard-actions--spaced">
-        <a class="btn-clear" href="{% url 'plano_trabalho_step2' oficio.id %}">Voltar</a>
-        <button class="btn-primary" type="submit">Continuar</button>
+      <div class="wizard-nav-footer">
+        <a href="{% url 'plano_trabalho_step2' oficio.id %}" class="btn-wizard-back">
+          <i data-lucide="arrow-left" style="width:16px;height:16px;"></i>
+          Voltar
+        </a>
+        <button type="submit" class="btn-wizard-next">
+          Avancar para Resumo
+          <i data-lucide="arrow-right" style="width:16px;height:16px;"></i>
+        </button>
       </div>
     </form>
   </div>
@@ -104,15 +209,16 @@
       if (!form) return;
 
       const diariasUrl = form.dataset.diariasUrl || "";
+      const totalServidoresFallback = String(form.dataset.totalServidores || "").trim();
       const recalcBtn = document.getElementById("recalcularDiariasPlanoBtn");
       const errorEl = document.getElementById("planoDiariasError");
       const errorMessageEl = document.getElementById("planoDiariasErrorMessage");
       const errorActionsEl = document.getElementById("planoDiariasErrorActions");
 
-      const totalEl = document.getElementById("planoDiariasTotalGeral");
-      const valorServidorEl = document.getElementById("planoDiariasValorServidor");
-      const qtdServidorEl = document.getElementById("planoDiariasQtdServidor");
-      const unitarioEl = document.getElementById("planoDiariasValorUnitario");
+      const totalServidoresEl = document.getElementById("sim-total-servidores");
+      const totalEl = document.getElementById("sim-valor-total");
+      const qtdServidorEl = document.getElementById("sim-diarias-unit");
+      const unitarioEl = document.getElementById("sim-valor-unit");
       const extensoEl = document.getElementById("planoDiariasValorExtenso");
 
       const composicaoInput = document.getElementById("id_composicao_diarias");
@@ -122,6 +228,7 @@
       const hiddenInput = document.getElementById("id_recursos_json");
       const rowsContainer = document.getElementById("recursosRows");
       const addBtn = document.getElementById("addRecursoBtn");
+      const EMPTY_VALUE = "\u2014";
 
       const coerceObject = (value) => {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -130,9 +237,7 @@
         return value;
       };
 
-      const coerceList = (value) => {
-        return Array.isArray(value) ? value : [];
-      };
+      const coerceList = (value) => Array.isArray(value) ? value : [];
 
       const renderErrorActions = (actions) => {
         if (!errorActionsEl) return;
@@ -160,7 +265,7 @@
 
       const formatMoney = (value) => {
         const raw = String(value || "").trim();
-        if (!raw) return "-";
+        if (!raw) return EMPTY_VALUE;
         return raw.startsWith("R$") ? raw : `R$ ${raw}`;
       };
 
@@ -174,11 +279,13 @@
         const totais = coerceObject(payload?.totais);
         const financeiro = coerceObject(payload?.financeiro);
 
+        if (totalServidoresEl) {
+          totalServidoresEl.textContent = totais.quantidade_servidores || totalServidoresFallback || EMPTY_VALUE;
+        }
         if (totalEl) totalEl.textContent = formatMoney(totais.total_geral || totais.total_valor);
-        if (valorServidorEl) valorServidorEl.textContent = formatMoney(totais.valor_por_servidor);
-        if (qtdServidorEl) qtdServidorEl.textContent = totais.diarias_por_servidor || "-";
+        if (qtdServidorEl) qtdServidorEl.textContent = totais.diarias_por_servidor || EMPTY_VALUE;
         if (unitarioEl) unitarioEl.textContent = formatMoney(totais.valor_unitario || totais.valor_unitario_referencia);
-        if (extensoEl) extensoEl.textContent = totais.valor_extenso || "-";
+        if (extensoEl) extensoEl.textContent = totais.valor_extenso || EMPTY_VALUE;
 
         if (composicaoInput) {
           composicaoInput.value = financeiro.diarias_por_servidor || totais.diarias_por_servidor || "";
@@ -242,7 +349,7 @@
       }
 
       function focusLastInput() {
-        const lastInput = rowsContainer.querySelector(".wizard-editor-item:last-child input");
+        const lastInput = rowsContainer.querySelector(".recurso-row:last-child input");
         if (lastInput && typeof lastInput.focus === "function") {
           lastInput.focus();
         }
@@ -252,7 +359,7 @@
         rowsContainer.innerHTML = "";
         rows.forEach((row, index) => {
           const wrapper = document.createElement("div");
-          wrapper.className = "editor-item wizard-editor-item wizard-editor-item--compact";
+          wrapper.className = "recurso-row";
           const value = typeof row === "string" ? row : row.descricao || "";
           const escapedValue = String(value || "")
             .replace(/&/g, "&amp;")
@@ -261,7 +368,7 @@
             .replace(/"/g, "&quot;");
           wrapper.innerHTML = `
             <input type="text" class="input-field" placeholder="Recurso" value="${escapedValue}" />
-            <button type="button" class="btn-clear btn-small btn-clear--danger" data-action="remove">Remover</button>
+            <button type="button" class="btn-remove-recurso" data-action="remove" aria-label="Remover recurso">&times;</button>
           `;
           const input = wrapper.querySelector("input");
           const removeBtn = wrapper.querySelector("[data-action='remove']");
@@ -293,6 +400,9 @@
 
       render();
       requestDiarias();
+      if (window.lucide) {
+        window.lucide.createIcons();
+      }
     })();
   </script>
 {% endblock %}

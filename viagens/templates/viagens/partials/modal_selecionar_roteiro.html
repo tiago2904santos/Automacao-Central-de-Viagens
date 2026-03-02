@@ -1,0 +1,52 @@
+<div
+  id="modalSelecionarRoteiro"
+  class="modal-backdrop"
+  data-modal
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="modalSelecionarRoteiroTitle"
+>
+  <div class="modal-card" style="width: min(860px, 100%);">
+    <div class="modal-head">
+      <div>
+        <h3 id="modalSelecionarRoteiroTitle">Selecionar ou criar roteiro</h3>
+        <p class="field-help">Busque um roteiro ativo e vincule-o ao oficio atual.</p>
+      </div>
+      <button class="modal-close" type="button" data-modal-close aria-label="Fechar">&times;</button>
+    </div>
+
+    <form style="display: none;">{% csrf_token %}</form>
+
+    <div class="sub-card">
+      <div class="sub-card-title">Roteiro existente</div>
+      <label>
+        Buscar roteiro
+        <input
+          type="text"
+          class="input-field"
+          id="roteiro-search-input"
+          placeholder="Digite ao menos 3 caracteres para buscar..."
+        />
+      </label>
+      <div id="roteiro-search-results" style="margin-top: 14px;">
+        <div class="empty">Digite para buscar roteiros.</div>
+      </div>
+    </div>
+
+    <div class="sub-card">
+      <div class="sub-card-title">Criar novo roteiro</div>
+      <p class="field-help">
+        Abra o cadastro em outra aba, finalize o roteiro e depois volte para vinculalo aqui.
+      </p>
+      <div class="modal-actions" style="justify-content: flex-start;">
+        <a href="{% url 'roteiro_create' %}" target="_blank" rel="noopener" class="btn-primary">
+          Abrir cadastro de roteiro
+        </a>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-clear" type="button" data-modal-close>Fechar</button>
+    </div>
+  </div>
+</div>

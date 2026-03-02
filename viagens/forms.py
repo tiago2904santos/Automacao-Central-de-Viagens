@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, time
 
 from django import forms
+from django.forms import inlineformset_factory
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
@@ -15,8 +16,11 @@ from .models import (
     CoordenadorMunicipal,
     Estado,
     Oficio,
+    OficioRoteiro,
     OrdemServico,
     PlanoTrabalho,
+    Roteiro,
+    TrechoRoteiro,
     Trecho,
     Viajante,
 )
@@ -1304,3 +1308,110 @@ class JustificativaForm(forms.ModelForm):
         for field in self.fields.values():
             css = field.widget.attrs.get("class", "")
             field.widget.attrs["class"] = f"{css} input-field".strip()
+
+
+class RoteiroForm(forms.ModelForm):
+    class Meta:
+        model = Roteiro
+        fields = [
+            "nome",
+            "descricao",
+            "uf_origem",
+            "cidade_origem",
+            "uf_destino",
+            "cidade_destino",
+            "distancia_km",
+            "tipo_deslocamento",
+            "ativo",
+        ]
+        widgets = {
+            "nome": forms.TextInput(attrs={"class": "input-field"}),
+            "descricao": forms.Textarea(attrs={"class": "input-field", "rows": 3}),
+            "uf_origem": forms.TextInput(attrs={"class": "input-field", "maxlength": 2}),
+            "cidade_origem": forms.TextInput(attrs={"class": "input-field"}),
+            "uf_destino": forms.TextInput(attrs={"class": "input-field", "maxlength": 2}),
+            "cidade_destino": forms.TextInput(attrs={"class": "input-field"}),
+            "distancia_km": forms.NumberInput(
+                attrs={"class": "input-field", "step": "0.01", "min": "0"}
+            ),
+            "tipo_deslocamento": forms.Select(attrs={"class": "input-field"}),
+            "ativo": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        uf_origem = (cleaned_data.get("uf_origem") or "").strip().upper()
+        cidade_origem = (cleaned_data.get("cidade_origem") or "").strip()
+        uf_destino = (cleaned_data.get("uf_destino") or "").strip().upper()
+        cidade_destino = (cleaned_data.get("cidade_destino") or "").strip()
+
+        cleaned_data["uf_origem"] = uf_origem
+        cleaned_data["uf_destino"] = uf_destino
+
+        if (
+            uf_origem
+            and cidade_origem
+            and uf_destino
+            and cidade_destino
+            and uf_origem == uf_destino
+            and cidade_origem.lower() == cidade_destino.lower()
+        ):
+            raise forms.ValidationError(
+                "A cidade de origem nao pode ser a mesma que a cidade de destino quando na mesma UF."
+            )
+        return cleaned_data
+
+
+class TrechoRoteiroForm(forms.ModelForm):
+    class Meta:
+        model = TrechoRoteiro
+        fields = [
+            "ordem",
+            "uf_origem",
+            "cidade_origem",
+            "uf_destino",
+            "cidade_destino",
+            "distancia_km",
+        ]
+        widgets = {
+            "ordem": forms.NumberInput(attrs={"class": "input-field", "min": "1"}),
+            "uf_origem": forms.TextInput(attrs={"class": "input-field", "maxlength": 2}),
+            "cidade_origem": forms.TextInput(attrs={"class": "input-field"}),
+            "uf_destino": forms.TextInput(attrs={"class": "input-field", "maxlength": 2}),
+            "cidade_destino": forms.TextInput(attrs={"class": "input-field"}),
+            "distancia_km": forms.NumberInput(
+                attrs={"class": "input-field", "step": "0.01", "min": "0"}
+            ),
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        for field_name in ("uf_origem", "uf_destino"):
+            value = (cleaned_data.get(field_name) or "").strip().upper()
+            cleaned_data[field_name] = value
+        return cleaned_data
+
+
+TrechoRoteiroFormSet = inlineformset_factory(
+    Roteiro,
+    TrechoRoteiro,
+    form=TrechoRoteiroForm,
+    extra=1,
+    can_delete=True,
+)
+
+
+class OficioVincularRoteiroForm(forms.ModelForm):
+    roteiro = forms.ModelChoiceField(
+        queryset=Roteiro.objects.filter(ativo=True).order_by("nome", "id"),
+        empty_label="Selecione um roteiro existente",
+        widget=forms.Select(attrs={"class": "input-field"}),
+        label="Roteiro",
+    )
+
+    class Meta:
+        model = OficioRoteiro
+        fields = ["roteiro", "observacao"]
+        widgets = {
+            "observacao": forms.TextInput(attrs={"class": "input-field"}),
+        }

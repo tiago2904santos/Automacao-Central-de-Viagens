@@ -150,11 +150,6 @@ urlpatterns = [
         name="oficio_documentos",
     ),
     path(
-        "oficios/<int:oficio_id>/documentos/",
-        views.oficio_documentos,
-        name="oficio_documentos_central",
-    ),
-    path(
         "oficios/<int:oficio_id>/documentos/gerar_todos/",
         views.oficio_documentos_gerar_todos,
         name="oficio_documentos_gerar_todos",
@@ -193,6 +188,48 @@ urlpatterns = [
     ),
     path("oficios/<int:oficio_id>/download-pdf/", views.oficio_download_pdf, name="oficio_download_pdf"),
     path("api/validacoes/resultado/", views.validacao_resultado, name="validacao_resultado"),
+    path("roteiros/", views.roteiro_lista, name="roteiro_lista"),
+    path("roteiros/novo/", views.roteiro_create, name="roteiro_create"),
+    path("roteiros/<int:pk>/editar/", views.roteiro_edit, name="roteiro_edit"),
+    path("roteiros/<int:pk>/excluir/", views.roteiro_delete, name="roteiro_delete"),
+    path("roteiros/<int:pk>/detalhe/", views.roteiro_detalhe, name="roteiro_detalhe"),
+    path("api/roteiros/buscar/", views.api_roteiros_buscar, name="api_roteiros_buscar"),
+    path("api/roteiros/<int:pk>/json/", views.api_roteiro_json, name="api_roteiro_json"),
+    path(
+        "api/roteiros/<int:pk>/json/",
+        views.api_roteiro_detalhe_json,
+        name="api_roteiro_detalhe_json",
+    ),
+    path(
+        "api/roteiros/criar-inline/",
+        views.api_roteiro_criar_inline,
+        name="api_roteiro_criar_inline",
+    ),
+    path(
+        "api/roteiros/<int:pk>/cards/",
+        views.roteiros_cards_api,
+        name="api_roteiros_cards",
+    ),
+    path(
+        "api/roteiros/salvar/",
+        views.roteiros_salvar_api,
+        name="api_roteiros_salvar",
+    ),
+    path(
+        "api/roteiros/listar/",
+        views.roteiros_listar_api,
+        name="api_roteiros_listar",
+    ),
+    path(
+        "oficios/<int:oficio_id>/roteiros/vincular/",
+        views.oficio_vincular_roteiro,
+        name="oficio_vincular_roteiro",
+    ),
+    path(
+        "oficios/<int:oficio_id>/roteiros/<int:roteiro_id>/desvincular/",
+        views.oficio_desvincular_roteiro,
+        name="oficio_desvincular_roteiro",
+    ),
 
 
     path("viajantes/novo/", views.viajante_cadastro, name="viajante_cadastro"),

@@ -1,0 +1,62 @@
+:root {
+  --cv-sidebar-width: 280px;
+}
+
+body {
+  min-height: 100vh;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+}
+
+.container {
+  display: flex;
+  min-height: calc(100vh - 72px);
+  max-width: none;
+  padding: 0;
+}
+
+.sidebar {
+  width: var(--cv-sidebar-width);
+  flex: 0 0 var(--cv-sidebar-width);
+}
+
+.content {
+  width: 100%;
+  padding: 1.5rem;
+}
+
+.form-control,
+.form-select,
+input[type='text'],
+input[type='number'],
+input[type='date'],
+input[type='time'],
+select,
+textarea {
+  min-height: 42px;
+}
+
+.card {
+  border: 1px solid #e5e7eb;
+}
+
+@media (max-width: 991.98px) {
+  .container {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    flex: none;
+    border-right: 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .content {
+    padding: 1rem;
+  }
+}

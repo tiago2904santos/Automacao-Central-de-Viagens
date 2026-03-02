@@ -1,8 +1,10 @@
 import re
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from django.urls import reverse
 from django.utils import timezone
 
 from .utils.normalize import (
@@ -280,7 +282,58 @@ def get_next_ordem_num(ano: int) -> int:
         return int(counter.last_num)
 
 
+class AcaoInstitucionalManager(models.Manager):
+    def get_completas(self):
+        """Retorna ações com Plano de Trabalho e Ordem de Serviço vinculados."""
+        return self.filter(plano_trabalho__isnull=False, ordem_servico__isnull=False)
+
+    def esta_completa(self, pk):
+        """Verifica se a ação indicada possui plano e ordem de serviço."""
+        return self.filter(
+            pk=pk,
+            plano_trabalho__isnull=False,
+            ordem_servico__isnull=False,
+        ).exists()
+
+
+class AcaoInstitucional(models.Model):
+    titulo = models.CharField(max_length=255, verbose_name="Titulo da Acao")
+    descricao = models.TextField(blank=True, verbose_name="Descricao Detalhada")
+    criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    atualizado_em = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+
+    objects = AcaoInstitucionalManager()
+
+    class Meta:
+        verbose_name = "Acao Institucional"
+        verbose_name_plural = "Acoes Institucionais"
+        ordering = ["-criado_em"]
+
+    def __str__(self) -> str:
+        return self.titulo
+
+    @property
+    def esta_completa_prop(self) -> bool:
+        try:
+            plano = self.plano_trabalho
+        except PlanoTrabalho.DoesNotExist:
+            plano = None
+        try:
+            ordem = self.ordem_servico
+        except OrdemServico.DoesNotExist:
+            ordem = None
+        return plano is not None and ordem is not None
+
+
 class TermoAutorizacao(models.Model):
+    acao = models.ForeignKey(
+        AcaoInstitucional,
+        on_delete=models.CASCADE,
+        related_name="termos",
+        null=True,
+        blank=True,
+        verbose_name="Acao Institucional",
+    )
     data_inicio = models.DateField()
     data_fim = models.DateField(null=True, blank=True)
     data_unica = models.BooleanField(default=False)
@@ -321,6 +374,22 @@ class Oficio(models.Model):
         GAB = "GAB", "GABINETE DO DELEGADO GERAL ADJUNTO"
         SESP = "SESP", "SESP"
 
+    acao = models.ForeignKey(
+        AcaoInstitucional,
+        on_delete=models.SET_NULL,
+        related_name="oficios",
+        null=True,
+        blank=True,
+        verbose_name="Acao Institucional",
+    )
+    roteiro = models.ForeignKey(
+        "Roteiro",
+        on_delete=models.SET_NULL,
+        related_name="oficios_como_roteiro",
+        null=True,
+        blank=True,
+        verbose_name="Roteiro de Viagem",
+    )
     oficio = models.CharField(max_length=50, blank=True, default="")
     numero = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     ano = models.PositiveIntegerField(null=True, blank=True, db_index=True)
@@ -495,12 +564,32 @@ class Oficio(models.Model):
         return format_protocolo_num(self.protocolo)
 
     @property
+    def precisa_justificativa(self) -> bool:
+        if not self.pk:
+            return False
+        primeiro_trecho = self.trechos.filter(saida_data__isnull=False).order_by("saida_data", "ordem").first()
+        if not primeiro_trecho or not primeiro_trecho.saida_data or not self.created_at:
+            return False
+        diferenca = primeiro_trecho.saida_data - self.created_at.date()
+        return diferenca < timedelta(days=10)
+
+    @property
+    def justificativa_obrigatoria(self) -> bool:
+        return self.precisa_justificativa and not (self.justificativa_texto or "").strip()
+
+    @property
     def motorista_protocolo_formatado(self) -> str:
         return format_protocolo_num(self.motorista_protocolo)
 
     def __str__(self) -> str:
         destino = self.cidade_destino or self.get_destino_display() or self.destino
         return f"Oficio {self.numero_formatado or self.oficio} - {destino}"
+
+    def get_admin_url(self) -> str:
+        return reverse(
+            f"admin:{self._meta.app_label}_{self._meta.model_name}_change",
+            args=(self.pk,),
+        )
 
     def calcular_destino_automatico(self) -> str:
         if not self.pk:
@@ -549,6 +638,28 @@ class Oficio(models.Model):
     def _sync_legacy_from_parts(self) -> None:
         self.oficio = self.numero_formatado or ""
         self.motorista_oficio = self.motorista_oficio_formatado or ""
+
+    def _build_acao_defaults(self) -> dict[str, str]:
+        identificador = self.numero_formatado or self.oficio or str(self.pk or "")
+        identificador = identificador.strip() or "Sem número"
+        return {
+            "titulo": f"Ação — {identificador}",
+            "descricao": (
+                f"Ação institucional derivada do Ofício {identificador}."
+                if identificador
+                else ""
+            ),
+        }
+
+    def ensure_acao(self):
+        if self.acao_id:
+            return self.acao
+        if not self.pk:
+            return None
+        acao = AcaoInstitucional.objects.create(**self._build_acao_defaults())
+        type(self).objects.filter(pk=self.pk).update(acao=acao)
+        self.acao = acao
+        return acao
 
     @staticmethod
     def _reserve_next_numero_for_year(ano: int) -> int:
@@ -645,6 +756,7 @@ class Oficio(models.Model):
                 self.numero = self._reserve_next_numero_for_year(int(self.ano or timezone.localdate().year))
                 self._sync_legacy_from_parts()
                 super().save(*args, **kwargs)
+            self.ensure_acao()
             return
 
         if self.numero is not None and self.ano is not None:
@@ -674,6 +786,7 @@ class Oficio(models.Model):
                         update_fields.add("nome_instituicao_custeio")
                     kwargs["update_fields"] = list(update_fields)
                 super().save(*args, **kwargs)
+            self.ensure_acao()
             return
 
         update_fields = kwargs.get("update_fields")
@@ -686,6 +799,239 @@ class Oficio(models.Model):
                 update_fields.add("nome_instituicao_custeio")
             kwargs["update_fields"] = list(update_fields)
         super().save(*args, **kwargs)
+        self.ensure_acao()
+
+
+class Roteiro(models.Model):
+    """Roteiro reutilizavel independente de qualquer documento."""
+
+    class TipoDeslocamentoChoices(models.TextChoices):
+        INTERIOR = "INTERIOR", "Interior"
+        CAPITAL = "CAPITAL", "Capital"
+        OUTRO = "OUTRO", "Outro"
+
+    nome = models.CharField(max_length=255, verbose_name="Nome do Roteiro")
+    descricao = models.TextField(blank=True, verbose_name="Descricao")
+    uf_origem = models.CharField(max_length=2, default="PR", verbose_name="UF Origem")
+    cidade_origem = models.CharField(max_length=100, verbose_name="Cidade Origem")
+    uf_destino = models.CharField(max_length=2, default="PR", verbose_name="UF Destino")
+    cidade_destino = models.CharField(max_length=100, verbose_name="Cidade Destino")
+    distancia_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Distancia (km)",
+    )
+    tipo_deslocamento = models.CharField(
+        max_length=10,
+        choices=TipoDeslocamentoChoices.choices,
+        verbose_name="Tipo de Deslocamento",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    atualizado_em = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+    ativo = models.BooleanField(default=True, verbose_name="Ativo")
+
+    class Meta:
+        ordering = ["-criado_em", "-id"]
+        verbose_name = "Roteiro"
+        verbose_name_plural = "Roteiros"
+
+    def __str__(self) -> str:
+        nome = (self.nome or "").strip()
+        if nome:
+            return nome
+        return (
+            f"{self.cidade_origem}/{self.uf_origem} -> "
+            f"{self.cidade_destino}/{self.uf_destino}"
+        )
+
+    def get_admin_url(self) -> str:
+        return reverse(
+            f"admin:{self._meta.app_label}_{self._meta.model_name}_change",
+            args=(self.pk,),
+        )
+
+    def get_distancia_total(self) -> Decimal | None:
+        if not self.pk:
+            return self.distancia_km
+        if self.trechos.exists():
+            total = Decimal("0")
+            for trecho in self.trechos.all():
+                if trecho.distancia_km is not None:
+                    total += trecho.distancia_km
+            return total
+        return self.distancia_km
+
+    def get_destinos_display(self) -> str:
+        trechos = self.trechos.order_by("ordem")
+        return " -> ".join(
+            f"{trecho.cidade_destino}/{trecho.uf_destino}"
+            for trecho in trechos
+            if trecho.cidade_destino and trecho.uf_destino
+        )
+
+    @property
+    def cidades_destino(self):
+        return self.trechos.order_by("ordem")
+
+    @property
+    def total_cidades(self) -> int:
+        if not self.pk:
+            return 0
+        return self.trechos.count()
+
+    def get_cards_gerados(self) -> list[dict[str, str | int]]:
+        destinos = [
+            trecho
+            for trecho in self.trechos.order_by("ordem")
+            if trecho.cidade_destino and trecho.uf_destino
+        ]
+        if not destinos:
+            return []
+
+        sequencia = [{"cidade": self.cidade_origem, "uf": self.uf_origem}]
+        sequencia.extend(
+            {"cidade": trecho.cidade_destino, "uf": trecho.uf_destino}
+            for trecho in destinos
+        )
+        sequencia.append({"cidade": self.cidade_origem, "uf": self.uf_origem})
+
+        cards: list[dict[str, str | int]] = []
+        last_leg_index = len(sequencia) - 2
+        for idx in range(len(sequencia) - 1):
+            origem = sequencia[idx]
+            destino = sequencia[idx + 1]
+            cards.append(
+                {
+                    "numero": idx + 1,
+                    "origem_cidade": origem["cidade"],
+                    "origem_uf": origem["uf"],
+                    "destino_cidade": destino["cidade"],
+                    "destino_uf": destino["uf"],
+                    "label": "Retorno"
+                    if idx == last_leg_index
+                    else f"Trecho {idx + 1} (Ida)",
+                }
+            )
+        return cards
+
+    @property
+    def uf_sede_obj(self):
+        return Estado.objects.filter(sigla__iexact=(self.uf_origem or "").strip()).first()
+
+    @property
+    def cidade_sede_obj(self):
+        uf = self.uf_sede_obj
+        nome = (self.cidade_origem or "").strip()
+        if not nome:
+            return None
+        qs = Cidade.objects.filter(nome__iexact=nome)
+        if uf:
+            qs = qs.filter(estado=uf)
+        return qs.first()
+
+    @property
+    def uf_sede_id(self):
+        return self.uf_sede_obj.id if self.uf_sede_obj else None
+
+    @property
+    def cidade_sede_id(self):
+        return self.cidade_sede_obj.id if self.cidade_sede_obj else None
+
+    @property
+    def cidade_sede_nome(self) -> str:
+        cidade = self.cidade_sede_obj
+        return cidade.nome if cidade else (self.cidade_origem or "")
+
+
+class TrechoRoteiro(models.Model):
+    """Segmentos detalhados dentro de um roteiro reutilizavel."""
+
+    class ModalChoices(models.TextChoices):
+        VEICULO_PROPRIO = "veiculo_proprio", "Veiculo Proprio"
+        VEICULO_LOCADO = "veiculo_locado", "Veiculo Locado"
+        ONIBUS = "onibus", "Onibus"
+        AVIAO = "aviao", "Aviao"
+        OUTRO = "outro", "Outro"
+
+    roteiro = models.ForeignKey(
+        Roteiro,
+        on_delete=models.CASCADE,
+        related_name="trechos",
+        verbose_name="Roteiro",
+    )
+    ordem = models.PositiveIntegerField(default=1, verbose_name="Ordem")
+    uf_origem = models.CharField(max_length=2, default="PR", verbose_name="UF Origem")
+    cidade_origem = models.CharField(max_length=100, verbose_name="Cidade Origem")
+    uf_destino = models.CharField(max_length=2, default="PR", verbose_name="UF Destino")
+    cidade_destino = models.CharField(max_length=100, verbose_name="Cidade Destino")
+    distancia_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Distancia (km)",
+    )
+    modal = models.CharField(
+        max_length=50,
+        choices=ModalChoices.choices,
+        default=ModalChoices.VEICULO_PROPRIO,
+    )
+    observacao = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["roteiro", "ordem", "id"]
+        unique_together = [("roteiro", "ordem")]
+        verbose_name = "Trecho do Roteiro"
+        verbose_name_plural = "Trechos do Roteiro"
+
+    def __str__(self) -> str:
+        return (
+            f"{self.roteiro.nome} - Trecho {self.ordem}: "
+            f"{self.cidade_origem} -> {self.cidade_destino}"
+        )
+
+    @property
+    def cidade_destino_obj(self):
+        nome = (self.cidade_destino or "").strip()
+        if not nome:
+            return None
+        qs = Cidade.objects.filter(nome__iexact=nome)
+        if self.uf_destino:
+            qs = qs.filter(estado__sigla__iexact=self.uf_destino)
+        return qs.first()
+
+
+class OficioRoteiro(models.Model):
+    """Vinculo entre um oficio e um roteiro reutilizavel."""
+
+    oficio = models.ForeignKey(
+        "Oficio",
+        on_delete=models.CASCADE,
+        related_name="roteiros_vinculados",
+        verbose_name="Oficio",
+    )
+    roteiro = models.ForeignKey(
+        Roteiro,
+        on_delete=models.CASCADE,
+        related_name="oficios_vinculados",
+        verbose_name="Roteiro",
+    )
+    vinculado_em = models.DateTimeField(auto_now_add=True, verbose_name="Vinculado em")
+    observacao = models.CharField(max_length=255, blank=True, verbose_name="Observacao")
+
+    class Meta:
+        unique_together = [("oficio", "roteiro")]
+        verbose_name = "Vinculo Oficio-Roteiro"
+        verbose_name_plural = "Vinculos Oficio-Roteiro"
+
+    def __str__(self) -> str:
+        identificador = self.oficio.numero_formatado or self.oficio.oficio or str(self.oficio_id)
+        return f"Oficio {identificador} vinculado ao roteiro '{self.roteiro.nome}'"
+
+
+RoteiroViagem = Roteiro
 
 
 class PlanoTrabalho(models.Model):
@@ -693,6 +1039,14 @@ class PlanoTrabalho(models.Model):
         Oficio,
         on_delete=models.CASCADE,
         related_name="plano_trabalho",
+    )
+    acao = models.OneToOneField(
+        AcaoInstitucional,
+        on_delete=models.CASCADE,
+        related_name="plano_trabalho",
+        null=True,
+        blank=True,
+        verbose_name="Acao Institucional",
     )
     numero = models.PositiveIntegerField()
     ano = models.PositiveIntegerField()
@@ -865,6 +1219,8 @@ class PlanoTrabalho(models.Model):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        if not self.acao_id and self.oficio_id:
+            self.acao = self.oficio.ensure_acao()
         if not self.ano:
             self.ano = timezone.localdate().year
         if not (self.sigla_unidade or "").strip():
@@ -1018,6 +1374,14 @@ class OrdemServico(models.Model):
         on_delete=models.CASCADE,
         related_name="ordem_servico",
     )
+    acao = models.OneToOneField(
+        AcaoInstitucional,
+        on_delete=models.CASCADE,
+        related_name="ordem_servico",
+        null=True,
+        blank=True,
+        verbose_name="Acao Institucional",
+    )
     numero = models.PositiveIntegerField()
     ano = models.PositiveIntegerField()
     referencia = models.CharField(max_length=200, default="Diligências")
@@ -1038,6 +1402,14 @@ class OrdemServico(models.Model):
 
     def __str__(self) -> str:
         return f"Ordem de Servico {self.numero}/{self.ano}"
+
+    def save(self, *args, **kwargs):
+        if not self.acao_id and self.oficio_id:
+            self.acao = self.oficio.ensure_acao()
+        if not self.ano:
+            self.ano = timezone.localdate().year
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class Trecho(models.Model):

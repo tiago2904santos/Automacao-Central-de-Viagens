@@ -236,6 +236,12 @@
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;")
           .replace(/\"/g, "&quot;");
+      const normalizeOptionLabel = (value) =>
+        String(value || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .trim()
+          .toLowerCase();
 
       const toggleLocked = (input, locked) => {
         if (!input) return;
@@ -265,8 +271,13 @@
         }
       }
 
+      const defaultCargoOption = cargoOptions.find(
+        (option) => normalizeOptionLabel(option?.nome) === "agente de policia judiciaria"
+      );
+      const defaultCargoId = String(defaultCargoOption?.id || "");
+
       let rows = parsePayload();
-      if (!rows.length) rows = [{ cargo_id: "", quantidade: "" }];
+      if (!rows.length) rows = [{ cargo_id: defaultCargoId, quantidade: "" }];
 
       function buildCargoOptions(selectedId) {
         const selected = String(selectedId || "");
@@ -413,7 +424,7 @@
 
       addBtn?.addEventListener("click", () => {
         showEfetivoClientError("");
-        rows.push({ cargo_id: "", quantidade: "" });
+        rows.push({ cargo_id: defaultCargoId, quantidade: "" });
         render();
         const lastRow = rowsContainer.lastElementChild;
         focusSelector(lastRow, "select");
