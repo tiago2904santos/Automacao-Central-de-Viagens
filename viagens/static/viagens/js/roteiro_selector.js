@@ -20,6 +20,7 @@
   const saveFeedback = document.getElementById("roteiro-save-feedback");
   const saveMsg = document.getElementById("roteiro-save-msg");
   const roteiroSelecionadoInput = document.getElementById("roteiro-selecionado-id");
+  const roteiroOrigemInput = document.getElementById("roteiro-origem-id");
   const sedeUfSelect = document.getElementById("sedeUf");
   const sedeCidadeSelect = document.getElementById("sedeCidade");
   const addDestinoBtn = document.getElementById("addDestinoBtn");
@@ -286,6 +287,9 @@
     if (roteiroSelecionadoInput) {
       roteiroSelecionadoInput.value = roteiro.id || "";
     }
+    if (roteiroOrigemInput) {
+      roteiroOrigemInput.value = roteiro.id || "";
+    }
     if (previewNome) {
       previewNome.textContent = roteiro.nome || "—";
     }
@@ -475,6 +479,9 @@
       if (roteiroSelecionadoInput) {
         roteiroSelecionadoInput.value = data.roteiro_id || "";
       }
+      if (roteiroOrigemInput) {
+        roteiroOrigemInput.value = data.roteiro_id || "";
+      }
       if (previewNome) {
         previewNome.textContent = data.nome || nome;
       }
@@ -517,6 +524,9 @@
     roteiroSelecionado = null;
     if (roteiroSelecionadoInput) {
       roteiroSelecionadoInput.value = "";
+    }
+    if (roteiroOrigemInput) {
+      roteiroOrigemInput.value = "";
     }
     hidePreview();
     hideResults();

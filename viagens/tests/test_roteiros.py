@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 import json
 from decimal import Decimal
 
@@ -474,16 +474,28 @@ class RoteiroViewTest(TestCase):
 
     def test_oficio_step3_aceita_roteiro_id(self):
         self._set_wizard_session()
+        saida_data = timezone.localdate() + timedelta(days=15)
+        retorno_data = saida_data + timedelta(days=1)
+        self.roteiro1.estado_sede = self.estado_pr
+        self.roteiro1.cidade_sede = self.cidade_curitiba
+        self.roteiro1.retorno_saida_data = retorno_data
+        self.roteiro1.retorno_saida_hora = "09:00"
+        self.roteiro1.retorno_chegada_data = retorno_data
+        self.roteiro1.retorno_chegada_hora = "18:00"
+        self.roteiro1.save()
         TrechoRoteiro.objects.create(
             roteiro=self.roteiro1,
             ordem=1,
-            cidade_origem="Curitiba",
-            cidade_destino="Florianopolis",
+            origem_estado=self.estado_pr,
+            origem_cidade=self.cidade_curitiba,
+            destino_estado=self.estado_pr,
+            destino_cidade=self.cidade_maringa,
+            saida_data=saida_data,
+            saida_hora="08:00",
         )
-        saida_data = timezone.localdate() + timedelta(days=15)
-        retorno_data = saida_data + timedelta(days=1)
         payload = {
             "roteiro_id": str(self.roteiro1.pk),
+            "roteiro_origem_id": str(self.roteiro1.pk),
             "trechos-TOTAL_FORMS": "1",
             "trechos-INITIAL_FORMS": "0",
             "trechos-MIN_NUM_FORMS": "0",
@@ -506,6 +518,80 @@ class RoteiroViewTest(TestCase):
         self.assertEqual(response.status_code, 302)
         oficio = Oficio.objects.filter(status=Oficio.Status.DRAFT).order_by("-id").first()
         self.assertEqual(oficio.roteiro_id, self.roteiro1.pk)
+
+    def test_oficio_step3_clona_roteiro_ao_modificar_trechos_de_um_roteiro_existente(self):
+        self._set_wizard_session()
+        data_original = date(2026, 3, 15)
+        data_modificada = date(2026, 3, 20)
+        retorno_data = data_modificada + timedelta(days=1)
+
+        self.roteiro1.estado_sede = self.estado_pr
+        self.roteiro1.cidade_sede = self.cidade_curitiba
+        self.roteiro1.retorno_saida_data = data_original + timedelta(days=1)
+        self.roteiro1.retorno_saida_hora = "09:00"
+        self.roteiro1.retorno_chegada_data = data_original + timedelta(days=1)
+        self.roteiro1.retorno_chegada_hora = "18:00"
+        self.roteiro1.save()
+
+        TrechoRoteiro.objects.create(
+            roteiro=self.roteiro1,
+            ordem=1,
+            origem_estado=self.estado_pr,
+            origem_cidade=self.cidade_curitiba,
+            destino_estado=self.estado_pr,
+            destino_cidade=self.cidade_maringa,
+            saida_data=data_original,
+            saida_hora="08:00",
+            chegada_data=data_original,
+            chegada_hora="12:00",
+        )
+
+        payload = {
+            "roteiro_id": str(self.roteiro1.pk),
+            "roteiro_origem_id": str(self.roteiro1.pk),
+            "trechos-TOTAL_FORMS": "1",
+            "trechos-INITIAL_FORMS": "0",
+            "trechos-MIN_NUM_FORMS": "0",
+            "trechos-MAX_NUM_FORMS": "1000",
+            "trechos-0-origem_estado": self.estado_pr.sigla,
+            "trechos-0-origem_cidade": str(self.cidade_curitiba.id),
+            "trechos-0-destino_estado": self.estado_pr.sigla,
+            "trechos-0-destino_cidade": str(self.cidade_maringa.id),
+            "trechos-0-saida_data": data_modificada.isoformat(),
+            "trechos-0-saida_hora": "08:00",
+            "trechos-0-chegada_data": data_modificada.isoformat(),
+            "trechos-0-chegada_hora": "12:00",
+            "retorno_saida_data": retorno_data.isoformat(),
+            "retorno_saida_hora": "09:00",
+            "retorno_chegada_data": retorno_data.isoformat(),
+            "retorno_chegada_hora": "18:00",
+            "tipo_destino": "INTERIOR",
+            "motivo": "Teste clone automatico",
+        }
+
+        response = self.client.post(reverse("oficio_step3"), payload)
+
+        self.assertEqual(response.status_code, 302)
+        oficio = Oficio.objects.filter(status=Oficio.Status.DRAFT).order_by("-id").first()
+        self.assertIsNotNone(oficio.roteiro)
+        self.assertNotEqual(oficio.roteiro_id, self.roteiro1.pk)
+        self.assertTrue(oficio.roteiro.criado_automaticamente)
+        self.assertEqual(oficio.roteiro.nome, "Curitiba > Maringa 20/03/2026 08:00")
+
+        novo_trecho = oficio.roteiro.trechos.get()
+        self.assertEqual(novo_trecho.saida_data, data_modificada)
+        self.assertEqual(novo_trecho.saida_hora.strftime("%H:%M"), "08:00")
+
+        self.roteiro1.refresh_from_db()
+        self.assertFalse(self.roteiro1.criado_automaticamente)
+        trecho_original = self.roteiro1.trechos.get()
+        self.assertEqual(trecho_original.saida_data, data_original)
+        self.assertEqual(trecho_original.saida_hora.strftime("%H:%M"), "08:00")
+
+        self.assertEqual(
+            self.client.session["oficio_wizard"]["roteiro_origem_id"],
+            str(oficio.roteiro_id),
+        )
 
     def test_oficio_step3_nao_aceita_roteiro_invalido(self):
         self._set_wizard_session()

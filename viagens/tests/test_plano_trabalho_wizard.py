@@ -507,6 +507,19 @@ class PlanoTrabalhoWizardTests(TestCase):
         self.assertContains(response, "Cadastre ao menos um trecho no Oficio para calcular as diarias.")
         self.assertContains(response, "Cadastrar trechos no Oficio")
 
+    def test_step3_exibe_tabela_de_trechos_com_datas_e_horas(self) -> None:
+        response = self.client.get(reverse("plano_trabalho_step3", args=[self.oficio.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Trechos da viagem")
+        self.assertContains(response, "SAÍDA DATA")
+        self.assertContains(response, "SAÍDA HORA")
+        self.assertContains(response, "CHEGADA DATA")
+        self.assertContains(response, "CHEGADA HORA")
+        self.assertContains(response, "12/03/2026")
+        self.assertContains(response, "08:00")
+        self.assertContains(response, "12:00")
+
     def test_step3_endpoint_calculo_diarias_retorna_totais_dict_mesmo_em_erro(self) -> None:
         self.oficio.trechos.all().delete()
 

@@ -841,6 +841,10 @@ class Roteiro(models.Model):
         blank=True,
         help_text="Duracao no formato HH:MM",
     )
+    criado_automaticamente = models.BooleanField(
+        default=False,
+        help_text="True quando o roteiro e clonado automaticamente ao ser alterado no contexto de um oficio.",
+    )
     distancia_km = models.DecimalField(
         max_digits=8,
         decimal_places=2,
@@ -1218,6 +1222,7 @@ class OficioRoteiro(models.Model):
 
 
 RoteiroViagem = Roteiro
+TrechoRoteiroViagem = TrechoRoteiro
 TrechoRoteiroDestino = TrechoRoteiro
 
 

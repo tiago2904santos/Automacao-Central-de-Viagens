@@ -61,6 +61,7 @@ from ..models import (
     PlanoTrabalhoMeta,
     PlanoTrabalhoRecurso,
     Roteiro,
+    TrechoRoteiro,
     get_next_ordem_num,
     get_next_plano_num,
     TermoAutorizacao,
@@ -920,21 +921,22 @@ def _reorder_list_by_csv(items: list[dict], order_csv: str | None) -> list[dict]
 def _normalize_trechos_initial(trechos_data) -> list[dict[str, str | int]]:
     if not trechos_data:
         return [{}]
-    normalized: list[dict[str, str | int]] = []
+    normalized: list[dict[str, str]] = []
     for trecho in trechos_data:
-        entry = {
-            "origem_estado": trecho.get("origem_estado", ""),
-            "origem_cidade": trecho.get("origem_cidade", ""),
-            "destino_estado": trecho.get("destino_estado", ""),
-            "destino_cidade": trecho.get("destino_cidade", ""),
-            "saida_data": trecho.get("saida_data", ""),
-            "saida_hora": trecho.get("saida_hora", ""),
-            "chegada_data": trecho.get("chegada_data", ""),
-            "chegada_hora": trecho.get("chegada_hora", ""),
-        }
-        if "tempo_viagem_minutos" in trecho:
-            entry["tempo_viagem_minutos"] = trecho.get("tempo_viagem_minutos", "")
-        normalized.append(entry)
+        if not isinstance(trecho, dict):
+            continue
+        normalized.append(
+            {
+                "origem_estado": str(trecho.get("origem_estado") or ""),
+                "origem_cidade": str(trecho.get("origem_cidade") or ""),
+                "destino_estado": str(trecho.get("destino_estado") or ""),
+                "destino_cidade": str(trecho.get("destino_cidade") or ""),
+                "saida_data": str(trecho.get("saida_data") or ""),
+                "saida_hora": str(trecho.get("saida_hora") or ""),
+                "chegada_data": str(trecho.get("chegada_data") or ""),
+                "chegada_hora": str(trecho.get("chegada_hora") or ""),
+            }
+        )
     return normalized or [{}]
 
 
@@ -1094,10 +1096,10 @@ def _build_trechos_from_sede_destinos(
             break
         trechos.append(
             {
-                "origem_estado": current["uf"],
-                "origem_cidade": current["cidade"],
-                "destino_estado": destino_estado,
-                "destino_cidade": destino_cidade,
+                "origem_estado": str(current["uf"] or ""),
+                "origem_cidade": str(current["cidade"] or ""),
+                "destino_estado": str(destino_estado or ""),
+                "destino_cidade": str(destino_cidade or ""),
                 "saida_data": "",
                 "saida_hora": "",
                 "chegada_data": "",
@@ -1960,6 +1962,313 @@ def _sync_trechos_from_serialized(
         trecho_obj.save()
         trechos_instances.append(trecho_obj)
     return trechos_instances
+
+
+def _normalize_local_reference(
+    *,
+    cidade_id=None,
+    cidade_obj=None,
+    cidade_nome: str = "",
+    estado_obj=None,
+    estado_sigla: str = "",
+) -> tuple[str, str]:
+    state_value = (
+        getattr(estado_obj, "sigla", None)
+        or estado_sigla
+        or ""
+    )
+    state_token = str(state_value).strip().upper()
+
+    if cidade_id:
+        return state_token, f"id:{cidade_id}"
+
+    if getattr(cidade_obj, "pk", None):
+        return state_token, f"id:{cidade_obj.pk}"
+
+    city_value = str(cidade_nome or cidade_obj or "").strip()
+    return state_token, city_value.casefold()
+
+
+def _build_oficio_trecho_signature(trecho: Trecho) -> tuple:
+    origem = _normalize_local_reference(
+        cidade_id=trecho.origem_cidade_id,
+        cidade_obj=trecho.origem_cidade,
+        estado_obj=trecho.origem_estado,
+    )
+    destino = _normalize_local_reference(
+        cidade_id=trecho.destino_cidade_id,
+        cidade_obj=trecho.destino_cidade,
+        estado_obj=trecho.destino_estado,
+    )
+    return (
+        origem,
+        destino,
+        trecho.saida_data,
+        trecho.saida_hora,
+        trecho.chegada_data,
+        trecho.chegada_hora,
+    )
+
+
+def _build_roteiro_trecho_signature(trecho: TrechoRoteiro) -> tuple:
+    origem = _normalize_local_reference(
+        cidade_id=trecho.origem_cidade_id,
+        cidade_obj=trecho.origem_cidade,
+        cidade_nome=trecho.origem_cidade_nome,
+        estado_obj=trecho.origem_estado,
+        estado_sigla=trecho.origem_estado_sigla,
+    )
+    destino = _normalize_local_reference(
+        cidade_id=trecho.destino_cidade_id,
+        cidade_obj=trecho.destino_cidade,
+        cidade_nome=trecho.destino_cidade_nome,
+        estado_obj=trecho.destino_estado,
+        estado_sigla=trecho.destino_estado_sigla,
+    )
+    return (
+        origem,
+        destino,
+        trecho.saida_data,
+        trecho.saida_hora,
+        trecho.chegada_data,
+        trecho.chegada_hora,
+    )
+
+
+def _build_retorno_signature(
+    saida_data,
+    saida_hora,
+    chegada_data,
+    chegada_hora,
+) -> tuple:
+    return (
+        saida_data,
+        saida_hora,
+        chegada_data,
+        chegada_hora,
+    )
+
+
+def _trechos_foram_modificados(
+    trechos_oficio: list[Trecho],
+    roteiro_original: Roteiro,
+    oficio_obj: Oficio | None = None,
+) -> bool:
+    trechos_originais = list(
+        roteiro_original.trechos.select_related(
+            "origem_estado",
+            "origem_cidade",
+            "destino_estado",
+            "destino_cidade",
+        ).order_by("ordem", "id")
+    )
+    if len(trechos_oficio) != len(trechos_originais):
+        return True
+
+    for trecho_oficio, trecho_original in zip(trechos_oficio, trechos_originais):
+        if _build_oficio_trecho_signature(trecho_oficio) != _build_roteiro_trecho_signature(
+            trecho_original
+        ):
+            return True
+
+    if oficio_obj is None:
+        return False
+
+    return _build_retorno_signature(
+        oficio_obj.retorno_saida_data,
+        oficio_obj.retorno_saida_hora,
+        oficio_obj.retorno_chegada_data,
+        oficio_obj.retorno_chegada_hora,
+    ) != _build_retorno_signature(
+        roteiro_original.retorno_saida_data,
+        roteiro_original.retorno_saida_hora,
+        roteiro_original.retorno_chegada_data,
+        roteiro_original.retorno_chegada_hora,
+    )
+
+
+def _duration_minutes_from_bounds(
+    saida_data,
+    saida_hora,
+    chegada_data,
+    chegada_hora,
+) -> int | None:
+    inicio = _combine_date_time(saida_data, saida_hora)
+    fim = _combine_date_time(chegada_data, chegada_hora)
+    if not inicio or not fim or fim < inicio:
+        return None
+    return int((fim - inicio).total_seconds() // 60)
+
+
+def _clonar_roteiro_com_novos_dados(
+    roteiro_original: Roteiro,
+    trechos_oficio: list[Trecho],
+    oficio_obj: Oficio,
+) -> Roteiro:
+    trechos_oficio = list(trechos_oficio)
+    if not trechos_oficio:
+        raise ValueError("Nao ha trechos para clonar o roteiro.")
+
+    primeiro = trechos_oficio[0]
+    ultimo = trechos_oficio[-1]
+    estado_sede = roteiro_original.estado_sede or primeiro.origem_estado
+    cidade_sede = roteiro_original.cidade_sede or primeiro.origem_cidade
+    rota_origem_sigla = (
+        estado_sede.sigla if estado_sede else (primeiro.origem_estado.sigla if primeiro.origem_estado else "")
+    )
+    rota_origem_nome = (
+        cidade_sede.nome if cidade_sede else (primeiro.origem_cidade.nome if primeiro.origem_cidade else "")
+    )
+    rota_destino_sigla = ultimo.destino_estado.sigla if ultimo.destino_estado else ""
+    rota_destino_nome = ultimo.destino_cidade.nome if ultimo.destino_cidade else ""
+
+    novo = Roteiro.objects.create(
+        nome="(gerando...)",
+        descricao=roteiro_original.descricao,
+        estado_sede=estado_sede,
+        cidade_sede=cidade_sede,
+        uf_origem=rota_origem_sigla or roteiro_original.uf_origem or "PR",
+        cidade_origem=rota_origem_nome or roteiro_original.cidade_origem or "",
+        uf_destino=rota_destino_sigla or roteiro_original.uf_destino or "",
+        cidade_destino=rota_destino_nome or roteiro_original.cidade_destino or "",
+        retorno_saida_cidade=oficio_obj.retorno_saida_cidade or _format_trecho_local(
+            ultimo.destino_cidade,
+            ultimo.destino_estado,
+        ),
+        retorno_saida_data=oficio_obj.retorno_saida_data,
+        retorno_saida_hora=oficio_obj.retorno_saida_hora,
+        retorno_chegada_cidade=oficio_obj.retorno_chegada_cidade or _format_trecho_local(
+            cidade_sede,
+            estado_sede,
+        ),
+        retorno_chegada_data=oficio_obj.retorno_chegada_data,
+        retorno_chegada_hora=oficio_obj.retorno_chegada_hora,
+        tempo_viagem=roteiro_original.tempo_viagem,
+        criado_automaticamente=True,
+        distancia_km=roteiro_original.distancia_km,
+        tipo_deslocamento=roteiro_original.tipo_deslocamento
+        or Roteiro.TipoDeslocamentoChoices.INTERIOR,
+        ativo=True,
+    )
+
+    trechos_originais = list(roteiro_original.trechos.order_by("ordem", "id"))
+    ultimo_trecho_novo = None
+    for index, trecho_oficio in enumerate(trechos_oficio, start=1):
+        trecho_original = (
+            trechos_originais[index - 1] if index - 1 < len(trechos_originais) else None
+        )
+        tempo_viagem_minutos = _duration_minutes_from_bounds(
+            trecho_oficio.saida_data,
+            trecho_oficio.saida_hora,
+            trecho_oficio.chegada_data,
+            trecho_oficio.chegada_hora,
+        )
+        if tempo_viagem_minutos is None and trecho_original:
+            tempo_viagem_minutos = trecho_original.tempo_viagem_minutos
+
+        ultimo_trecho_novo = TrechoRoteiro.objects.create(
+            roteiro=novo,
+            ordem=index,
+            origem_estado=trecho_oficio.origem_estado,
+            origem_cidade=trecho_oficio.origem_cidade,
+            destino_estado=trecho_oficio.destino_estado,
+            destino_cidade=trecho_oficio.destino_cidade,
+            saida_data=trecho_oficio.saida_data,
+            saida_hora=trecho_oficio.saida_hora,
+            chegada_data=trecho_oficio.chegada_data,
+            chegada_hora=trecho_oficio.chegada_hora,
+            tempo_viagem_minutos=tempo_viagem_minutos,
+            distancia_km=trecho_original.distancia_km if trecho_original else None,
+            modal=trecho_original.modal
+            if trecho_original
+            else TrechoRoteiro.ModalChoices.VEICULO_PROPRIO,
+            observacao=trecho_original.observacao if trecho_original else "",
+        )
+
+    if ultimo_trecho_novo:
+        ultimo_trecho_novo.retorno_saida_data = novo.retorno_saida_data
+        ultimo_trecho_novo.retorno_saida_hora = novo.retorno_saida_hora
+        ultimo_trecho_novo.retorno_chegada_data = novo.retorno_chegada_data
+        ultimo_trecho_novo.retorno_chegada_hora = novo.retorno_chegada_hora
+        ultimo_trecho_novo.save(
+            update_fields=[
+                "retorno_saida_data",
+                "retorno_saida_hora",
+                "retorno_chegada_data",
+                "retorno_chegada_hora",
+            ]
+        )
+
+    novo.nome = novo.gerar_nome()
+    novo.save(update_fields=["nome"])
+    return novo
+
+
+def _clonar_roteiro_com_trechos(
+    original: Roteiro,
+    trechos_oficio: list[Trecho],
+) -> Roteiro:
+    trechos_oficio = list(trechos_oficio)
+    if not trechos_oficio:
+        raise ValueError("Nao ha trechos para clonar o roteiro.")
+
+    primeiro = trechos_oficio[0]
+    ultimo = trechos_oficio[-1]
+    oficio_shadow = Oficio(
+        retorno_saida_cidade=_format_trecho_local(
+            ultimo.destino_cidade,
+            ultimo.destino_estado,
+        ),
+        retorno_saida_data=original.retorno_saida_data,
+        retorno_saida_hora=original.retorno_saida_hora,
+        retorno_chegada_cidade=_format_trecho_local(
+            original.cidade_sede or primeiro.origem_cidade,
+            original.estado_sede or primeiro.origem_estado,
+        ),
+        retorno_chegada_data=original.retorno_chegada_data,
+        retorno_chegada_hora=original.retorno_chegada_hora,
+    )
+    return _clonar_roteiro_com_novos_dados(
+        original,
+        trechos_oficio,
+        oficio_shadow,
+    )
+
+
+def _persist_modified_roteiro_snapshot(
+    oficio_obj: Oficio,
+    roteiro_origem_id,
+) -> Roteiro | None:
+    roteiro_origem = _resolve_roteiro_by_id(roteiro_origem_id)
+    if not roteiro_origem:
+        return None
+
+    trechos_oficio = list(
+        oficio_obj.trechos.select_related(
+            "origem_estado",
+            "origem_cidade",
+            "destino_estado",
+            "destino_cidade",
+        ).order_by("ordem", "id")
+    )
+    if not trechos_oficio:
+        return None
+
+    if not _trechos_foram_modificados(
+        trechos_oficio,
+        roteiro_origem,
+        oficio_obj=oficio_obj,
+    ):
+        return roteiro_origem
+
+    novo_roteiro = _clonar_roteiro_com_novos_dados(
+        roteiro_origem,
+        trechos_oficio,
+        oficio_obj,
+    )
+    oficio_obj.roteiro = novo_roteiro
+    oficio_obj.save(update_fields=["roteiro"])
+    return novo_roteiro
 
 
 def _apply_step1_to_oficio(oficio: Oficio, payload: dict) -> None:
@@ -2850,12 +3159,22 @@ def oficio_step3(request):
     if request.method == "POST":
         goto_step = (request.POST.get("goto_step") or "").strip()
         roteiro_id = (request.POST.get("roteiro_id") or "").strip()
+        roteiro_origem_id = (
+            request.POST.get("roteiro_origem_id")
+            or roteiro_id
+            or data.get("roteiro_origem_id")
+            or ""
+        ).strip()
         if roteiro_id and not _resolve_roteiro_by_id(roteiro_id):
             messages.error(
                 request,
                 "O roteiro selecionado nao foi encontrado ou esta inativo.",
             )
             roteiro_id = ""
+        if not roteiro_id:
+            roteiro_origem_id = ""
+        elif roteiro_origem_id and not _resolve_roteiro_by_id(roteiro_origem_id):
+            roteiro_origem_id = roteiro_id
         valor_diarias_extenso = request.POST.get("valor_diarias_extenso", "").strip()
         retorno_saida_data_raw = request.POST.get("retorno_saida_data", "").strip()
         retorno_saida_hora_raw = request.POST.get("retorno_saida_hora", "").strip()
@@ -2909,6 +3228,7 @@ def oficio_step3(request):
                 "sede_uf": sede_uf_post,
                 "sede_cidade": sede_cidade_post,
                 "roteiro_id": roteiro_id,
+                "roteiro_origem_id": roteiro_origem_id,
                 "destinos": destinos_raw,
                 "trechos": trechos_serialized,
                 "tipo_destino": tipo_destino,
@@ -2962,6 +3282,21 @@ def oficio_step3(request):
                 "trechos": trechos_serialized,
             },
         )
+        if roteiro_origem_id:
+            roteiro_atualizado = _persist_modified_roteiro_snapshot(
+                oficio_obj,
+                roteiro_origem_id,
+            )
+            if roteiro_atualizado:
+                roteiro_id = str(roteiro_atualizado.pk)
+                roteiro_origem_id = str(roteiro_atualizado.pk)
+                data = _update_wizard_data(
+                    request,
+                    {
+                        "roteiro_id": roteiro_id,
+                        "roteiro_origem_id": roteiro_origem_id,
+                    },
+                )
         target_is_step4 = goto_step in {"", "4"}
         if target_is_step4 and _requires_justificativa_pendente(
             oficio_obj, trechos_payload=trechos_serialized
@@ -2998,6 +3333,7 @@ def oficio_step3(request):
     roteiro_id = str(
         data.get("roteiro_id") or getattr(oficio_obj, "roteiro_id", "") or ""
     )
+    roteiro_origem_id = str(data.get("roteiro_origem_id") or roteiro_id or "")
     roteiro_atual = _resolve_roteiro_by_id(roteiro_id)
 
     trechos_session = data.get("trechos") or []
@@ -3026,6 +3362,7 @@ def oficio_step3(request):
             "sede_cidade": sede_cidade,
             "sede_label": sede_label,
             "roteiro_id": roteiro_id,
+            "roteiro_origem_id": roteiro_origem_id,
             "roteiro_nome": roteiro_atual.nome if roteiro_atual else "",
             "roteiro_destinos": roteiro_atual.get_destinos_display()
             if roteiro_atual
@@ -3468,6 +3805,9 @@ def oficio_edit_step3(request, oficio_id: int):
                 },
                 "retorno_saida_cidade": oficio_obj.retorno_saida_cidade or "",
                 "retorno_chegada_cidade": oficio_obj.retorno_chegada_cidade or "",
+                "roteiro_origem_id": str(
+                    data.get("roteiro_origem_id") or oficio_obj.roteiro_id or ""
+                ),
             },
         )
 
@@ -3516,12 +3856,22 @@ def oficio_edit_step3(request, oficio_id: int):
     dummy_oficio = Oficio()
     if request.method == "POST":
         roteiro_id = (request.POST.get("roteiro_id") or "").strip()
+        roteiro_origem_id = (
+            request.POST.get("roteiro_origem_id")
+            or roteiro_id
+            or data.get("roteiro_origem_id")
+            or ""
+        ).strip()
         if roteiro_id and not _resolve_roteiro_by_id(roteiro_id):
             messages.error(
                 request,
                 "O roteiro selecionado nao foi encontrado ou esta inativo.",
             )
             roteiro_id = ""
+        if not roteiro_id:
+            roteiro_origem_id = ""
+        elif roteiro_origem_id and not _resolve_roteiro_by_id(roteiro_origem_id):
+            roteiro_origem_id = roteiro_id
         valor_diarias_extenso = request.POST.get("valor_diarias_extenso", "").strip()
         retorno_saida_data_raw = request.POST.get("retorno_saida_data", "").strip()
         retorno_saida_hora_raw = request.POST.get("retorno_saida_hora", "").strip()
@@ -3574,6 +3924,7 @@ def oficio_edit_step3(request, oficio_id: int):
                 "sede_uf": sede_uf_post,
                 "sede_cidade": sede_cidade_post,
                 "roteiro_id": roteiro_id,
+                "roteiro_origem_id": roteiro_origem_id,
                 "destinos": destinos_raw,
                 "trechos": trechos_serialized,
                 "tipo_destino": tipo_destino,
@@ -3631,6 +3982,23 @@ def oficio_edit_step3(request, oficio_id: int):
                         },
                     )
 
+        if roteiro_origem_id:
+            roteiro_atualizado = _persist_modified_roteiro_snapshot(
+                oficio_obj,
+                roteiro_origem_id,
+            )
+            if roteiro_atualizado:
+                roteiro_id = str(roteiro_atualizado.pk)
+                roteiro_origem_id = str(roteiro_atualizado.pk)
+                data = _update_edit_data(
+                    request,
+                    oficio_id,
+                    {
+                        "roteiro_id": roteiro_id,
+                        "roteiro_origem_id": roteiro_origem_id,
+                    },
+                )
+
         if request.POST.get("action") == "save":
             return oficio_edit_save(request, oficio_id=oficio_id)
         return _redirect_to_edit_step(
@@ -3651,6 +4019,7 @@ def oficio_edit_step3(request, oficio_id: int):
     destinos_session = _normalize_destinos_for_wizard(data.get("destinos"))
     destinos_display = _build_destinos_display(destinos_session)
     roteiro_id = str(data.get("roteiro_id") or oficio_obj.roteiro_id or "")
+    roteiro_origem_id = str(data.get("roteiro_origem_id") or roteiro_id or "")
     roteiro_atual = _resolve_roteiro_by_id(roteiro_id)
 
     trechos_session = data.get("trechos") or []
@@ -3682,6 +4051,7 @@ def oficio_edit_step3(request, oficio_id: int):
             "sede_cidade": sede_cidade,
             "sede_label": sede_label,
             "roteiro_id": roteiro_id,
+            "roteiro_origem_id": roteiro_origem_id,
             "roteiro_nome": roteiro_atual.nome if roteiro_atual else "",
             "roteiro_destinos": roteiro_atual.get_destinos_display()
             if roteiro_atual
@@ -5987,29 +6357,24 @@ def plano_trabalho_step3(request, oficio_id: int):
     )
     plano = _ensure_plano_wizard_instance(oficio)
     trechos_oficio = list(oficio.trechos.order_by("ordem", "id"))
-    trechos_context = []
-    for index, trecho in enumerate(trechos_oficio, start=1):
-        trechos_context.append(
+    trechos_display = []
+    for trecho in trechos_oficio:
+        trechos_display.append(
             {
-                "trecho": f"Trecho {index}",
                 "origem": str(trecho.origem_cidade or trecho.origem_estado or "-"),
                 "destino": str(trecho.destino_cidade or trecho.destino_estado or "-"),
-                "saida": " ".join(
-                    part
-                    for part in [
-                        trecho.saida_data.strftime("%d/%m/%Y") if trecho.saida_data else "-",
-                        trecho.saida_hora.strftime("%H:%M") if trecho.saida_hora else "-",
-                    ]
-                    if part
-                ).strip(),
-                "chegada": " ".join(
-                    part
-                    for part in [
-                        trecho.chegada_data.strftime("%d/%m/%Y") if trecho.chegada_data else "-",
-                        trecho.chegada_hora.strftime("%H:%M") if trecho.chegada_hora else "-",
-                    ]
-                    if part
-                ).strip(),
+                "saida_data": trecho.saida_data.strftime("%d/%m/%Y")
+                if trecho.saida_data
+                else "—",
+                "saida_hora": trecho.saida_hora.strftime("%H:%M")
+                if trecho.saida_hora
+                else "—",
+                "chegada_data": trecho.chegada_data.strftime("%d/%m/%Y")
+                if trecho.chegada_data
+                else "—",
+                "chegada_hora": trecho.chegada_hora.strftime("%H:%M")
+                if trecho.chegada_hora
+                else "—",
             }
         )
     diarias_resultado, diarias_erro_inicial, diarias_diagnostico = _resolve_plano_diarias_state(
@@ -6086,7 +6451,8 @@ def plano_trabalho_step3(request, oficio_id: int):
             "plano": plano,
             "form": form,
             "trechos_oficio": trechos_oficio,
-            "trechos_context": trechos_context,
+            "trechos_context": trechos_display,
+            "trechos_display": trechos_display,
             "diarias_resultado": diarias_resultado,
             "financeiro_diarias": financeiro_diarias,
             "diarias_erro_inicial": diarias_erro_inicial,

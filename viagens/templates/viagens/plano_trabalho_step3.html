@@ -64,46 +64,41 @@
         </div>
       </div>
 
-      <section class="sub-card wizard-section-card">
-        <div class="wizard-section-head">
-          <div>
-            <div class="section-title-block">
-              <i data-lucide="route" style="width:18px;height:18px;color:#1a6b5a;"></i>
-              <h6 class="section-title-text">Trechos do oficio</h6>
-            </div>
-            <p class="field-help">Revise origem, destino, saida e chegada usados no plano.</p>
-          </div>
-        </div>
-
-        <div class="table-responsive">
-          <table class="table">
-            <thead>
+      <div class="sub-card">
+        <div class="sub-card-title">Trechos da viagem</div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>ORIGEM</th>
+              <th>DESTINO</th>
+              <th>SAÍDA DATA</th>
+              <th>SAÍDA HORA</th>
+              <th>CHEGADA DATA</th>
+              <th>CHEGADA HORA</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in trechos_display %}
               <tr>
-                <th>TRECHO</th>
-                <th>ORIGEM</th>
-                <th>DESTINO</th>
-                <th>SAIDA</th>
-                <th>CHEGADA</th>
+                <td>{{ forloop.counter }}</td>
+                <td>{{ t.origem }}</td>
+                <td>{{ t.destino }}</td>
+                <td>{{ t.saida_data }}</td>
+                <td>{{ t.saida_hora }}</td>
+                <td>{{ t.chegada_data }}</td>
+                <td>{{ t.chegada_hora }}</td>
               </tr>
-            </thead>
-            <tbody>
-              {% for trecho in trechos_context %}
-                <tr>
-                  <td>{{ trecho.trecho }}</td>
-                  <td>{{ trecho.origem }}</td>
-                  <td>{{ trecho.destino }}</td>
-                  <td>{{ trecho.saida }}</td>
-                  <td>{{ trecho.chegada }}</td>
-                </tr>
-              {% empty %}
-                <tr>
-                  <td colspan="5">Nenhum trecho valido encontrado no oficio.</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            {% empty %}
+              <tr>
+                <td colspan="7" style="text-align:center">
+                  Nenhum trecho cadastrado.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
 
       <section class="sub-card wizard-section-card">
         <div class="wizard-section-head">
