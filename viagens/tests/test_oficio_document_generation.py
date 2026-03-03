@@ -325,47 +325,6 @@ class OficioDocumentGenerationTests(TestCase):
         self.assertNotIn("{{unidade_rodape} }", text)
         self.assertIn("e-mail:", text)
 
-    def test_docx_inclui_secao_justificativa_quando_preenchida(self) -> None:
-        oficio = self._build_oficio(Oficio.AssuntoTipo.AUTORIZACAO)
-        oficio.justificativa_texto = "Primeira linha da justificativa.\nSegunda linha."
-        oficio.save(update_fields=["justificativa_texto"])
-
-        with self._mock_oficio_config(self.assinante):
-            docx_bytes = build_oficio_docx_bytes(oficio).getvalue()
-
-        text = self._doc_text(docx_bytes)
-        doc = Document(BytesIO(docx_bytes))
-        self.assertIn("JUSTIFICATIVA", text)
-        self.assertIn("Primeira linha da justificativa.", text)
-        self.assertIn("Segunda linha.", text)
-        self.assertGreaterEqual(len(doc.sections), 2)
-
-        justificativa_section = doc.sections[-1]
-        justificativa_header_footer = (
-            f"{self._container_text(justificativa_section.header)}\n"
-            f"{self._container_text(justificativa_section.footer)}"
-        ).upper()
-
-        self.assertNotIn("EXMO", justificativa_header_footer)
-        self.assertNotIn("EXMO. SR:", justificativa_header_footer)
-        self.assertNotIn("DR.", justificativa_header_footer)
-        self.assertNotIn("MD.", justificativa_header_footer)
-        self.assertIsNone(
-            re.search(r"CURITIBA\s*[-\u2013\u2014]\s*PR\.?", justificativa_header_footer)
-        )
-
-        titulo = next((p for p in doc.paragraphs if p.text.strip() == "JUSTIFICATIVA"), None)
-        self.assertIsNotNone(titulo)
-        self.assertEqual(titulo.alignment, WD_ALIGN_PARAGRAPH.CENTER)
-        self.assertTrue(any(run.bold for run in titulo.runs if run.text.strip()))
-
-        for paragraph in doc.paragraphs:
-            if paragraph.text.strip() in {
-                "Primeira linha da justificativa.",
-                "Segunda linha.",
-            }:
-                self.assertEqual(paragraph.alignment, WD_ALIGN_PARAGRAPH.JUSTIFY)
-
     def test_termo_autorizacao_formata_data_extenso_e_destinos_multiplos(self) -> None:
         oficio = self._build_oficio(Oficio.AssuntoTipo.AUTORIZACAO)
         Trecho.objects.create(

@@ -72,14 +72,12 @@ class DocumentosCentralUiTests(TestCase):
         self.assertContains(response, "?tab=termo")
         self.assertContains(response, "?tab=plano")
         self.assertContains(response, "?tab=ordem")
-        self.assertContains(response, "?tab=justificativa")
 
     def test_menu_base_contem_links_globais_de_documentos(self) -> None:
         response = self.client.get(reverse("oficios_lista"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("planos_trabalho_list"))
-        self.assertContains(response, reverse("justificativas_list"))
         self.assertContains(response, reverse("ordens_servico_list"))
 
     def test_listagem_oficios_exibe_link_documentos(self) -> None:

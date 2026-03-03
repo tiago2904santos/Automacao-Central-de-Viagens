@@ -66,17 +66,6 @@ urlpatterns = [
         views.plano_trabalho_download_pdf,
         name="plano_trabalho_download_pdf",
     ),
-    path("justificativas/", views.justificativas_list, name="justificativas_list"),
-    path(
-        "justificativas/criar/",
-        views.justificativa_criar,
-        name="justificativa_criar",
-    ),
-    path(
-        "justificativas/oficio/<int:oficio_id>/",
-        views.justificativa_form,
-        name="justificativa_form",
-    ),
     path("ordens-servico/", views.ordens_servico_list, name="ordens_servico_list"),
     path(
         "ordens-servico/criar/",
@@ -97,11 +86,6 @@ urlpatterns = [
         "ordens-servico/oficio/<int:oficio_id>/pdf/",
         views.ordem_servico_download_pdf,
         name="ordem_servico_download_pdf",
-    ),
-    path(
-        "oficios/<int:oficio_id>/justificativa/",
-        views.oficio_justificativa,
-        name="oficio_justificativa",
     ),
     path(
         "oficios/<int:oficio_id>/calcular-diarias/",
@@ -174,7 +158,6 @@ urlpatterns = [
         views.oficio_download_ordem_servico_pdf,
         name="oficio_download_ordem_servico_pdf",
     ),
-
     path("oficios/<int:oficio_id>/download-docx/",views.oficio_download_docx,name="oficio_download_docx"),
     path(
         "oficios/<int:oficio_id>/download-termo-autorizacao/",
@@ -185,6 +168,11 @@ urlpatterns = [
         "oficios/<int:oficio_id>/download-termo-autorizacao/pdf/",
         views.oficio_download_termo_autorizacao_pdf,
         name="oficio_download_termo_autorizacao_pdf",
+    ),
+    path(
+        "oficios/<int:oficio_id>/documentos/justificativa/",
+        views.oficio_download_justificativa,
+        name="oficio_download_justificativa",
     ),
     path("oficios/<int:oficio_id>/download-pdf/", views.oficio_download_pdf, name="oficio_download_pdf"),
     path("api/validacoes/resultado/", views.validacao_resultado, name="validacao_resultado"),

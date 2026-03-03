@@ -1,8 +1,5 @@
 from ._shared import (
     cargo_criar,
-    justificativa_criar,
-    justificativa_form,
-    justificativas_list,
     modal_veiculo_form,
     modal_viajante_form,
     ordem_servico_criar,
@@ -33,7 +30,4 @@ __all__ = [
     "ordem_servico_criar",
     "ordem_servico_editar",
     "ordens_servico_list",
-    "justificativa_criar",
-    "justificativa_form",
-    "justificativas_list",
 ]

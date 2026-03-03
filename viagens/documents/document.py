@@ -65,14 +65,6 @@ FOOTER_ASSINANTE_CARGO_DEFAULT = "MD. DELEGADO GERAL ADJUNTO"
 CUSTOS_SECTION_TITLE = (
     "Custos: Informar qual entidade custeara as diarias (hospedagem/alimentacao) e deslocamento:"
 )
-JUSTIFICATIVA_DESTINATARIO_TOKENS = (
-    "exmo",
-    "md.",
-    "dr.",
-    "curitiba",
-    "delegado",
-    "pr",
-)
 
 
 class AssinaturaObrigatoriaError(ValueError):
@@ -1192,18 +1184,6 @@ def _clear_container_text(container) -> None:
         _replace_paragraph_text(paragraph, "")
 
 
-def _contains_justificativa_destinatario(text: str) -> bool:
-    normalized = (text or "").casefold()
-    return any(token in normalized for token in JUSTIFICATIVA_DESTINATARIO_TOKENS)
-
-
-def _strip_destinatario_from_container(container) -> None:
-    for paragraph in _iter_paragraphs_from_container(container):
-        text = "".join(run.text for run in paragraph.runs)
-        if _contains_justificativa_destinatario(text):
-            _replace_paragraph_text(paragraph, "")
-
-
 def _container_text(container) -> str:
     chunks: list[str] = []
     for paragraph in _iter_paragraphs_from_container(container):
@@ -1211,14 +1191,6 @@ def _container_text(container) -> str:
         if text:
             chunks.append(text)
     return "\n".join(chunks)
-
-
-def _validate_justificativa_no_destinatario(section) -> None:
-    header_footer_text = f"{_container_text(section.header)}\n{_container_text(section.footer)}"
-    if _contains_justificativa_destinatario(header_footer_text):
-        raise ValueError(
-            "Secao JUSTIFICATIVA contem bloco de destinatario no header/footer."
-        )
 
 
 def _write_institutional_header(
@@ -1242,44 +1214,6 @@ def _write_institutional_header(
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if paragraph.runs:
             paragraph.runs[0].bold = True
-
-
-def _append_justificativa_section(
-    doc: DocxDocument,
-    oficio: Oficio,
-    *,
-    header_unidade: str,
-    header_origem: str,
-) -> None:
-    justificativa = (oficio.justificativa_texto or "").strip()
-    if not justificativa:
-        return
-
-    justificativa_section = doc.add_section(WD_SECTION_START.NEW_PAGE)
-    justificativa_section.header.is_linked_to_previous = False
-    justificativa_section.footer.is_linked_to_previous = False
-
-    _write_institutional_header(
-        justificativa_section.header,
-        unidade=header_unidade,
-        origem=header_origem,
-    )
-    _clear_container_text(justificativa_section.footer)
-    _strip_destinatario_from_container(justificativa_section.header)
-    _strip_destinatario_from_container(justificativa_section.footer)
-    if settings.DEBUG:
-        _validate_justificativa_no_destinatario(justificativa_section)
-
-    titulo = doc.add_paragraph()
-    titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    titulo_run = titulo.add_run("JUSTIFICATIVA")
-    titulo_run.bold = True
-
-    linhas = justificativa.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    for linha in linhas:
-        paragraph = doc.add_paragraph(linha)
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-
 
 
 # =========================
@@ -1496,12 +1430,6 @@ def build_oficio_docx_bytes(oficio: Oficio) -> BytesIO:
     safe_replace_placeholders(doc, mapping)
     _cleanup_motorista_optional_lines(doc)
     _normalize_document_microformatting(doc)
-    _append_justificativa_section(
-        doc,
-        oficio,
-        header_unidade=unidade_value,
-        header_origem=origem_value,
-    )
 
     buf = BytesIO()
     doc.save(buf)

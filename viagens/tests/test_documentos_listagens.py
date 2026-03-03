@@ -84,17 +84,6 @@ class DocumentosListagensTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "1/2026")
 
-    def test_listagem_justificativas_pendentes_filtra_corretamente(self) -> None:
-        oficio_pendente = self._build_oficio("101/2026", saida_em_dias=5)
-        oficio_completo = self._build_oficio("102/2026", saida_em_dias=5)
-        oficio_completo.justificativa_texto = "Justificativa preenchida"
-        oficio_completo.save(update_fields=["justificativa_texto"])
-
-        response = self.client.get(reverse("justificativas_list"), {"status": "pendentes"})
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, oficio_pendente.numero_formatado)
-        self.assertNotContains(response, oficio_completo.numero_formatado)
-
     def test_listagem_ordens_servico_so_traz_oficios_sem_plano(self) -> None:
         oficio_sem_plano = self._build_oficio("103/2026")
         oficio_com_plano = self._build_oficio("104/2026")

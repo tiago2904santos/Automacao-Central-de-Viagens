@@ -24,7 +24,6 @@ from .models import (
     Trecho,
     Viajante,
 )
-from .services.justificativas import JUSTIFICATIVA_TEMPLATES
 from .services.plano_trabalho import (
     ATIVIDADES_ORDEM_FIXA,
     DEFAULT_COORDENADOR_PLANO_CARGO,
@@ -1315,26 +1314,6 @@ class OrdemServicoForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["numero"].required = False
         self.fields["ano"].required = False
-        for field in self.fields.values():
-            css = field.widget.attrs.get("class", "")
-            field.widget.attrs["class"] = f"{css} input-field".strip()
-
-
-class JustificativaForm(forms.ModelForm):
-    justificativa_modelo = forms.ChoiceField(required=False)
-
-    class Meta:
-        model = Oficio
-        fields = ["justificativa_modelo", "justificativa_texto"]
-        widgets = {
-            "justificativa_texto": forms.Textarea(attrs={"rows": 12}),
-        }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["justificativa_modelo"].choices = [
-            ("", "Selecione")
-        ] + [(key, item["label"]) for key, item in JUSTIFICATIVA_TEMPLATES.items()]
         for field in self.fields.values():
             css = field.widget.attrs.get("class", "")
             field.widget.attrs["class"] = f"{css} input-field".strip()

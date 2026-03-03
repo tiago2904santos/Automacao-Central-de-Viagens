@@ -136,30 +136,3 @@ class GeradorUnicoDocumentosTests(TestCase):
 
         text = self._doc_text(build_ordem_servico_docx_bytes(oficio).getvalue())
         self.assertIn("ORDEM DE SERVIÇO Nº", text)
-
-    def test_justificativa_nao_contem_destinatario(self) -> None:
-        oficio = self._build_oficio()
-        oficio.justificativa_texto = "Justificativa operacional do deslocamento."
-        oficio.save(update_fields=["justificativa_texto"])
-
-        trecho = oficio.trechos.get(ordem=1)
-        data_saida = timezone.localdate() + timedelta(days=5)
-        trecho.saida_data = data_saida
-        trecho.chegada_data = data_saida
-        trecho.save(update_fields=["saida_data", "chegada_data"])
-
-        with self._mock_oficio_config():
-            docx_bytes = build_oficio_docx_bytes(oficio).getvalue()
-
-        doc = Document(BytesIO(docx_bytes))
-        self.assertGreaterEqual(len(doc.sections), 2)
-        justificativa_section = doc.sections[-1]
-        justificativa_scope = (
-            f"{self._container_text(justificativa_section.header)}\n"
-            f"{self._container_text(justificativa_section.footer)}"
-        ).upper()
-
-        self.assertNotIn("EXMO", justificativa_scope)
-        self.assertNotIn("EXMO.", justificativa_scope)
-        self.assertNotIn("EXMO. SR:", justificativa_scope)
-        self.assertNotIn("DELEGADO GERAL ADJUNTO", justificativa_scope)

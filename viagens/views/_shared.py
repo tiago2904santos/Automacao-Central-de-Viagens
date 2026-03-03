@@ -31,7 +31,6 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_GET, require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from ..forms import (
-    JustificativaForm,
     DiariasSimplesForm,
     EfetivoLinhaForm,
     MotoristaSelectForm,
@@ -99,14 +98,6 @@ from ..services.plano_trabalho import (
     parse_horario_atendimento_intervalo,
     has_coordenador_municipal,
 )
-from ..services.justificativas import (
-    JUSTIFICATIVA_TEMPLATES,
-    get_antecedencia_dias,
-    get_primeira_saida_data,
-    get_justificativa_template_text,
-    has_justificativa_preenchida,
-    requires_justificativa,
-)
 from ..forms_oficio_config import OficioConfigForm
 from ..services.oficio_config import get_oficio_config
 from ..utils.normalize import (
@@ -134,6 +125,10 @@ from ..documents.document import (
     docx_bytes_to_pdf_bytes,
 )
 from ..documents.generator import generate_all_documents
+from ..documents.justificativa import (
+    build_justificativa_docx_bytes,
+    get_justificativa_placeholders,
+)
 from ..documents.ordem_servico import build_ordem_servico_docx_bytes
 from ..documents.plano_trabalho import build_plano_trabalho_docx_bytes
 
@@ -795,54 +790,6 @@ def _redirect_to_edit_step(request, oficio_id: int, default_view: str):
     )
     target_view = STEP_VIEW_MAP.get(goto_raw) or default_view
     return redirect(target_view, oficio_id=oficio_id)
-
-
-JUSTIFICATIVA_REQUIRED_MESSAGE = (
-    "Oficio com antecedencia inferior a 10 dias: informe a justificativa para continuar."
-)
-
-
-def _default_justificativa_next(request, oficio: Oficio) -> str:
-    if _get_wizard_oficio_id(request) == oficio.id:
-        return reverse("oficio_step4")
-    return reverse("oficio_edit_step4", args=[oficio.id])
-
-
-def _resolve_justificativa_next(request, oficio: Oficio, raw_next: str | None) -> str:
-    default_next = _default_justificativa_next(request, oficio)
-    next_value = (raw_next or "").strip()
-    if not next_value:
-        return default_next
-    if next_value == "oficio_step4":
-        return reverse("oficio_step4")
-    if next_value == "oficio_edit_step4":
-        return reverse("oficio_edit_step4", args=[oficio.id])
-    if url_has_allowed_host_and_scheme(
-        next_value,
-        allowed_hosts={request.get_host()},
-        require_https=request.is_secure(),
-    ) and next_value.startswith("/"):
-        return next_value
-    return default_next
-
-
-def _justificativa_redirect_url(oficio_id: int, next_url: str) -> str:
-    base_url = reverse("oficio_justificativa", args=[oficio_id])
-    return f"{base_url}?{urlencode({'next': next_url})}"
-
-
-def _redirect_to_oficio_justificativa(oficio: Oficio, *, next_url: str):
-    return redirect(_justificativa_redirect_url(oficio.id, next_url))
-
-
-def _requires_justificativa_pendente(
-    oficio: Oficio,
-    *,
-    trechos_payload: list[dict[str, str | int]] | None = None,
-) -> bool:
-    if has_justificativa_preenchida(oficio):
-        return False
-    return requires_justificativa(oficio=oficio, trechos_payload=trechos_payload)
 
 
 TRECHO_FIELDS = (
@@ -3297,14 +3244,6 @@ def oficio_step3(request):
                         "roteiro_origem_id": roteiro_origem_id,
                     },
                 )
-        target_is_step4 = goto_step in {"", "4"}
-        if target_is_step4 and _requires_justificativa_pendente(
-            oficio_obj, trechos_payload=trechos_serialized
-        ):
-            return _redirect_to_oficio_justificativa(
-                oficio_obj,
-                next_url=reverse("oficio_step4"),
-            )
         if goto_step == "1":
             return redirect(f"{reverse('formulario')}?resume=1")
         if goto_step == "2":
@@ -3444,12 +3383,6 @@ def oficio_step4(request):
             return redirect("oficio_step3")
         if not oficio_obj:
             return redirect("formulario")
-        if _requires_justificativa_pendente(oficio_obj):
-            messages.error(request, JUSTIFICATIVA_REQUIRED_MESSAGE)
-            return _redirect_to_oficio_justificativa(
-                oficio_obj,
-                next_url=reverse("oficio_step4"),
-            )
         erros = _validate_oficio_for_finalize(oficio_obj)
         if not erros:
             oficio_obj, _ = _finalize_oficio_draft(oficio_obj)
@@ -3467,62 +3400,6 @@ def oficio_step4(request):
         }
     )
     return render(request, "viagens/oficio_step4.html", context)
-
-
-@require_http_methods(["GET", "POST"])
-def oficio_justificativa(request, oficio_id: int):
-    oficio = get_object_or_404(Oficio, id=oficio_id)
-    next_url = _resolve_justificativa_next(
-        request,
-        oficio,
-        request.GET.get("next") if request.method == "GET" else request.POST.get("next"),
-    )
-
-    selected_model = (oficio.justificativa_modelo or "").strip()
-    justificativa_texto = (oficio.justificativa_texto or "").strip()
-    erros: dict[str, str] = {}
-
-    if request.method == "POST":
-        selected_model = (request.POST.get("justificativa_modelo") or "").strip()
-        if selected_model not in JUSTIFICATIVA_TEMPLATES:
-            selected_model = ""
-        justificativa_texto = (request.POST.get("justificativa_texto") or "").strip()
-
-        if requires_justificativa(oficio=oficio) and not justificativa_texto:
-            erros["justificativa_texto"] = "Preencha a justificativa para continuar."
-            messages.error(request, JUSTIFICATIVA_REQUIRED_MESSAGE)
-        else:
-            oficio.justificativa_modelo = selected_model
-            oficio.justificativa_texto = justificativa_texto
-            oficio.save(
-                update_fields=[
-                    "justificativa_modelo",
-                    "justificativa_texto",
-                    "updated_at",
-                ]
-            )
-            return redirect(next_url)
-    else:
-        if not justificativa_texto and selected_model:
-            justificativa_texto = get_justificativa_template_text(selected_model)
-
-    return render(
-        request,
-        "viagens/oficio_justificativa.html",
-        {
-            "oficio": oficio,
-            "oficio_display": _oficio_display_label(oficio),
-            "justificativa_templates": JUSTIFICATIVA_TEMPLATES,
-            "justificativa_templates_json": json.dumps(
-                JUSTIFICATIVA_TEMPLATES, ensure_ascii=False
-            ),
-            "selected_model": selected_model,
-            "justificativa_texto": justificativa_texto,
-            "next_url": next_url,
-            "requires_justificativa": requires_justificativa(oficio=oficio),
-            "erros": erros,
-        },
-    )
 
 
 @require_http_methods(["GET", "POST"])
@@ -5919,17 +5796,21 @@ def _resolve_documentos_active_tab(
     raw_tab: str | None,
     *,
     tem_plano: bool,
-    exige_justificativa: bool,
 ) -> str:
     tab = (raw_tab or "").strip().lower() or "oficio"
-    allowed_tabs = {"oficio", "termo", "plano"}
+    allowed_tabs = {"oficio", "termo", "plano", "justificativa"}
     if not tem_plano:
         allowed_tabs.add("ordem")
-    if exige_justificativa:
-        allowed_tabs.add("justificativa")
     if tab not in allowed_tabs:
         return "oficio"
     return tab
+
+
+def _get_justificativa_placeholders_safe() -> list[str]:
+    try:
+        return get_justificativa_placeholders()
+    except FileNotFoundError:
+        return []
 
 
 @require_GET
@@ -5942,15 +5823,11 @@ def oficio_documentos(request, oficio_id: int):
     ordem_servico = _get_ordem_servico(oficio)
     tem_plano = plano_trabalho is not None
     tem_ordem = ordem_servico is not None
-    antecedencia = get_antecedencia_dias(oficio=oficio)
-    exige_justificativa = requires_justificativa(oficio=oficio)
-    justificativa_ok = has_justificativa_preenchida(oficio)
-    justificativa_pendente = exige_justificativa and not justificativa_ok
     active_tab = _resolve_documentos_active_tab(
         request.GET.get("tab"),
         tem_plano=tem_plano,
-        exige_justificativa=exige_justificativa,
     )
+    justificativa_placeholders = _get_justificativa_placeholders_safe()
     return render(
         request,
         "viagens/oficio_documentos.html",
@@ -5961,10 +5838,7 @@ def oficio_documentos(request, oficio_id: int):
             "active_tab": active_tab,
             "tem_plano": tem_plano,
             "tem_ordem": tem_ordem,
-            "antecedencia": antecedencia,
-            "exige_justificativa": exige_justificativa,
-            "justificativa_ok": justificativa_ok,
-            "justificativa_pendente": justificativa_pendente,
+            "justificativa_placeholders": justificativa_placeholders,
         },
     )
 
@@ -5975,13 +5849,6 @@ def oficio_documentos_gerar_todos(request, oficio_id: int):
         Oficio.objects.prefetch_related("viajantes", "trechos"),
         id=oficio_id,
     )
-    if _requires_justificativa_pendente(oficio):
-        messages.error(request, JUSTIFICATIVA_REQUIRED_MESSAGE)
-        return _redirect_to_oficio_justificativa(
-            oficio,
-            next_url=reverse("oficio_documentos", args=[oficio.id]),
-        )
-
     try:
         docs = generate_all_documents(oficio, pdf_if_available=True)
     except MotoristaCaronaValidationError as exc:
@@ -6534,140 +6401,6 @@ def plano_trabalho_download_pdf(request, oficio_id: int):
 
 
 @require_GET
-def justificativas_list(request):
-    q = (request.GET.get("q") or "").strip()
-    status_filter = (request.GET.get("status") or "pendentes").strip().lower()
-    if status_filter not in {"pendentes", "completas"}:
-        status_filter = "pendentes"
-
-    params = request.GET.copy()
-    params.pop("page", None)
-    querystring = params.urlencode()
-
-    oficios = (
-        Oficio.objects.select_related("cidade_destino", "estado_destino")
-        .prefetch_related("trechos")
-        .order_by("-created_at")
-    )
-    if q:
-        q_oficio = normalize_oficio_num(q)
-        q_protocolo = normalize_protocolo_num(q)
-        query = (
-            models.Q(oficio__icontains=q)
-            | models.Q(protocolo__icontains=q)
-            | models.Q(destino__icontains=q)
-            | models.Q(assunto__icontains=q)
-            | models.Q(cidade_destino__nome__icontains=q)
-            | models.Q(estado_destino__sigla__icontains=q)
-        )
-        if q_oficio:
-            query |= models.Q(oficio__icontains=q_oficio)
-        if q_protocolo:
-            query |= models.Q(protocolo__icontains=q_protocolo)
-        oficios = oficios.filter(query).distinct()
-
-    rows: list[dict[str, object]] = []
-    for oficio in oficios:
-        antecedencia = get_antecedencia_dias(oficio=oficio)
-        primeira_saida = get_primeira_saida_data(oficio=oficio)
-        preenchida = has_justificativa_preenchida(oficio)
-        pendente = bool(antecedencia is not None and antecedencia < 10 and not preenchida)
-        completa = preenchida
-
-        if status_filter == "pendentes" and not pendente:
-            continue
-        if status_filter == "completas" and not completa:
-            continue
-
-        rows.append(
-            {
-                "oficio": oficio,
-                "antecedencia": antecedencia,
-                "primeira_saida": primeira_saida,
-                "destinos": _resolve_destinos_oficio(oficio),
-                "pendente": pendente,
-                "completa": completa,
-            }
-        )
-
-    paginator = Paginator(rows, 25)
-    page_obj = paginator.get_page(request.GET.get("page"))
-    return render(
-        request,
-        "viagens/justificativas_list.html",
-        {
-            "rows": page_obj,
-            "page_obj": page_obj,
-            "status_filter": status_filter,
-            "q": q,
-            "querystring": querystring,
-        },
-    )
-
-
-@require_http_methods(["GET", "POST"])
-def justificativa_criar(request):
-    oficio = _criar_oficio_base_documento()
-    messages.success(request, "Justificativa criada. Continue o preenchimento.")
-    return redirect(
-        f"{reverse('justificativa_form', args=[oficio.id])}?next={reverse('justificativas_list')}"
-    )
-
-
-@require_http_methods(["GET", "POST"])
-def justificativa_form(request, oficio_id: int):
-    oficio = get_object_or_404(Oficio, id=oficio_id)
-    next_url = _resolve_justificativa_next(
-        request,
-        oficio,
-        request.GET.get("next") if request.method == "GET" else request.POST.get("next"),
-    )
-    if not next_url:
-        next_url = reverse("oficio_documentos", args=[oficio.id])
-
-    initial: dict[str, str] = {}
-    if request.method == "GET":
-        selected_model = (oficio.justificativa_modelo or "").strip()
-        justificativa_texto = (oficio.justificativa_texto or "").strip()
-        if not justificativa_texto and selected_model:
-            justificativa_texto = get_justificativa_template_text(selected_model)
-            initial["justificativa_texto"] = justificativa_texto
-        form = JustificativaForm(instance=oficio, initial=initial)
-    else:
-        form = JustificativaForm(request.POST, instance=oficio)
-        if form.is_valid():
-            justificativa_texto = (form.cleaned_data.get("justificativa_texto") or "").strip()
-            if requires_justificativa(oficio=oficio) and not justificativa_texto:
-                form.add_error(
-                    "justificativa_texto",
-                    "Preencha a justificativa para continuar.",
-                )
-                messages.error(request, JUSTIFICATIVA_REQUIRED_MESSAGE)
-            else:
-                oficio.justificativa_modelo = form.cleaned_data.get("justificativa_modelo") or ""
-                oficio.justificativa_texto = justificativa_texto
-                oficio.save(update_fields=["justificativa_modelo", "justificativa_texto", "updated_at"])
-                messages.success(request, "Justificativa salva com sucesso.")
-                return redirect(next_url)
-
-    return render(
-        request,
-        "viagens/justificativa_form.html",
-        {
-            "oficio": oficio,
-            "oficio_display": _oficio_display_label(oficio),
-            "justificativa_templates": JUSTIFICATIVA_TEMPLATES,
-            "justificativa_templates_json": json.dumps(
-                JUSTIFICATIVA_TEMPLATES, ensure_ascii=False
-            ),
-            "next_url": next_url,
-            "requires_justificativa": requires_justificativa(oficio=oficio),
-            "form": form,
-        },
-    )
-
-
-@require_GET
 def ordens_servico_list(request):
     q = (request.GET.get("q") or "").strip()
     params = request.GET.copy()
@@ -6866,12 +6599,6 @@ def oficio_download_docx(request, oficio_id: int):
         Oficio.objects.prefetch_related("viajantes", "trechos"),
         id=oficio_id,
     )
-    if _requires_justificativa_pendente(oficio):
-        messages.error(request, JUSTIFICATIVA_REQUIRED_MESSAGE)
-        return _redirect_to_oficio_justificativa(
-            oficio,
-            next_url=_default_justificativa_next(request, oficio),
-        )
 
     try:
         buf = build_oficio_docx_bytes(oficio)
@@ -6940,17 +6667,44 @@ def oficio_download_termo_autorizacao_pdf(request, oficio_id: int):
     return _pdf_http_response(pdf_bytes, filename)
 
 
+JUSTIFICATIVA_FORM_PREFIX = "justificativa_"
+
+
+@require_http_methods(["POST"])
+def oficio_download_justificativa(request, oficio_id: int):
+    get_object_or_404(Oficio, id=oficio_id)
+    try:
+        placeholders = get_justificativa_placeholders()
+    except FileNotFoundError as exc:
+        messages.error(request, str(exc))
+        return redirect("oficio_documentos", oficio_id=oficio_id)
+    prefix_len = len(JUSTIFICATIVA_FORM_PREFIX)
+    mapping = {}
+    for key in request.POST:
+        if key.startswith(JUSTIFICATIVA_FORM_PREFIX):
+            placeholder_name = key[prefix_len:]
+            mapping[placeholder_name] = request.POST.get(key, "")
+    for ph in placeholders:
+        if ph not in mapping:
+            mapping[ph] = ""
+    try:
+        buf = build_justificativa_docx_bytes(mapping)
+    except Exception as exc:
+        logger.exception(
+            "[justificativa] falha na geracao: oficio_id=%s",
+            oficio_id,
+        )
+        messages.error(request, f"Falha ao gerar justificativa. Detalhe: {exc}")
+        return redirect("oficio_documentos", oficio_id=oficio_id)
+    filename = f"justificativa_{oficio_id}.docx"
+    return _docx_http_response(buf.getvalue(), filename)
+
+
 def oficio_download_pdf(request, oficio_id):
     oficio = get_object_or_404(
         Oficio.objects.prefetch_related("viajantes", "trechos"),
         id=oficio_id,
     )
-    if _requires_justificativa_pendente(oficio):
-        messages.error(request, JUSTIFICATIVA_REQUIRED_MESSAGE)
-        return _redirect_to_oficio_justificativa(
-            oficio,
-            next_url=_default_justificativa_next(request, oficio),
-        )
 
     try:
         _docx_bytes, pdf_bytes = build_oficio_docx_and_pdf_bytes(oficio)

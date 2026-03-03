@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
@@ -526,8 +526,6 @@ class Oficio(models.Model):
         related_name="oficios_que_usam_como_carona",
     )
     motivo = models.TextField(blank=True)
-    justificativa_texto = models.TextField(blank=True, default="")
-    justificativa_modelo = models.CharField(max_length=50, blank=True, default="")
     veiculo = models.ForeignKey(
         Veiculo,
         on_delete=models.SET_NULL,
@@ -562,20 +560,6 @@ class Oficio(models.Model):
     @property
     def protocolo_formatado(self) -> str:
         return format_protocolo_num(self.protocolo)
-
-    @property
-    def precisa_justificativa(self) -> bool:
-        if not self.pk:
-            return False
-        primeiro_trecho = self.trechos.filter(saida_data__isnull=False).order_by("saida_data", "ordem").first()
-        if not primeiro_trecho or not primeiro_trecho.saida_data or not self.created_at:
-            return False
-        diferenca = primeiro_trecho.saida_data - self.created_at.date()
-        return diferenca < timedelta(days=10)
-
-    @property
-    def justificativa_obrigatoria(self) -> bool:
-        return self.precisa_justificativa and not (self.justificativa_texto or "").strip()
 
     @property
     def motorista_protocolo_formatado(self) -> str:
