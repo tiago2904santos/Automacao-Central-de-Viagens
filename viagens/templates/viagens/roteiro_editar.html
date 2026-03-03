@@ -1,0 +1,16 @@
+{% extends "viagens/roteiro_form.html" %}
+
+{% block page_title %}Editar Roteiro{% endblock %}
+{% block breadcrumb_tail %}Editar{% endblock %}
+{% block form_title %}Editar Roteiro{% endblock %}
+{% block form_subtitle %}Revise sede, destinos e horarios antes de salvar as alteracoes.{% endblock %}
+{% block submit_label %}Salvar alteracoes{% endblock %}
+
+{% block form_initial_script %}
+  const ROTEIRO_INICIAL = {{ trechos_json|safe }};
+  const SEDE_UF_INICIAL = "{{ sede_uf }}";
+  const SEDE_CIDADE_INICIAL = "{{ sede_cidade|escapejs }}";
+  const RETORNO_INICIAL = {{ retorno_json|safe }};
+  const TEMPO_VIAGEM_INICIAL = "{{ tempo_viagem|escapejs }}";
+  const ROTEIRO_FORM_SAVE_URL = "{% url 'roteiro_editar' roteiro.pk %}";
+{% endblock %}

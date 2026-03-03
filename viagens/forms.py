@@ -49,6 +49,42 @@ from .utils.normalize import (
 
 
 class TrechoForm(forms.ModelForm):
+    saida_data = forms.DateField(
+        widget=forms.DateInput(
+            attrs={"type": "date", "class": "input-field"},
+            format="%Y-%m-%d",
+        ),
+        required=False,
+    )
+    saida_hora = forms.TimeField(
+        widget=forms.TimeInput(
+            attrs={
+                "type": "time",
+                "class": "input-field",
+                "placeholder": "00:00",
+            },
+            format="%H:%M",
+        ),
+        required=False,
+    )
+    chegada_data = forms.DateField(
+        widget=forms.DateInput(
+            attrs={"type": "date", "class": "input-field"},
+            format="%Y-%m-%d",
+        ),
+        required=False,
+    )
+    chegada_hora = forms.TimeField(
+        widget=forms.TimeInput(
+            attrs={
+                "type": "time",
+                "class": "input-field",
+                "placeholder": "00:00",
+            },
+            format="%H:%M",
+        ),
+        required=False,
+    )
     origem_estado = forms.ModelChoiceField(
         queryset=Estado.objects.order_by("nome"),
         to_field_name="sigla",
@@ -80,12 +116,6 @@ class TrechoForm(forms.ModelForm):
             "chegada_data",
             "chegada_hora",
         ]
-        widgets = {
-            "saida_data": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-            "saida_hora": forms.TimeInput(attrs={"type": "time"}, format="%H:%M"),
-            "chegada_data": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-            "chegada_hora": forms.TimeInput(attrs={"type": "time"}, format="%H:%M"),
-        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1363,41 +1393,51 @@ class RoteiroForm(forms.ModelForm):
 
 
 class TrechoRoteiroForm(forms.ModelForm):
+    saida_data = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date", "class": "input-field"}),
+    )
+    saida_hora = forms.TimeField(
+        required=False,
+        widget=forms.TimeInput(attrs={"type": "time", "class": "input-field"}),
+    )
+    chegada_data = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date", "class": "input-field"}),
+    )
+    chegada_hora = forms.TimeField(
+        required=False,
+        widget=forms.TimeInput(attrs={"type": "time", "class": "input-field"}),
+    )
+
     class Meta:
         model = TrechoRoteiro
         fields = [
             "ordem",
-            "uf_origem",
-            "cidade_origem",
-            "uf_destino",
-            "cidade_destino",
-            "distancia_km",
+            "origem_estado",
+            "origem_cidade",
+            "destino_estado",
+            "destino_cidade",
+            "saida_data",
+            "saida_hora",
+            "chegada_data",
+            "chegada_hora",
         ]
         widgets = {
-            "ordem": forms.NumberInput(attrs={"class": "input-field", "min": "1"}),
-            "uf_origem": forms.TextInput(attrs={"class": "input-field", "maxlength": 2}),
-            "cidade_origem": forms.TextInput(attrs={"class": "input-field"}),
-            "uf_destino": forms.TextInput(attrs={"class": "input-field", "maxlength": 2}),
-            "cidade_destino": forms.TextInput(attrs={"class": "input-field"}),
-            "distancia_km": forms.NumberInput(
-                attrs={"class": "input-field", "step": "0.01", "min": "0"}
-            ),
+            "ordem": forms.HiddenInput(),
+            "origem_estado": forms.HiddenInput(),
+            "origem_cidade": forms.HiddenInput(),
+            "destino_estado": forms.HiddenInput(),
+            "destino_cidade": forms.HiddenInput(),
         }
-
-    def clean(self):
-        cleaned_data = super().clean()
-        for field_name in ("uf_origem", "uf_destino"):
-            value = (cleaned_data.get(field_name) or "").strip().upper()
-            cleaned_data[field_name] = value
-        return cleaned_data
 
 
 TrechoRoteiroFormSet = inlineformset_factory(
     Roteiro,
     TrechoRoteiro,
     form=TrechoRoteiroForm,
-    extra=1,
-    can_delete=True,
+    extra=0,
+    can_delete=False,
 )
 
 

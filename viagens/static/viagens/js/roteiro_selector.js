@@ -246,6 +246,38 @@
     });
   }
 
+  function buildCardsPayload(roteiro) {
+    const trechos = Array.isArray(roteiro?.trechos) ? roteiro.trechos : [];
+    if (!trechos.length) {
+      return [];
+    }
+
+    const cards = trechos.map((trecho, index) => ({
+      tipo: `Trecho ${index + 1} (Ida)`,
+      origem_estado: trecho.uf_origem || roteiro.uf_sede_sigla || roteiro.uf_origem || "",
+      origem_cidade: trecho.cidade_origem || roteiro.cidade_origem || "",
+      destino_estado: trecho.uf_destino || "",
+      destino_cidade:
+        trecho.cidade_destino_nome || trecho.cidade_destino || "",
+      card_index: index + 1,
+      is_retorno: false,
+    }));
+
+    const ultimoTrecho = trechos[trechos.length - 1];
+    cards.push({
+      tipo: "Retorno",
+      origem_estado: ultimoTrecho.uf_destino || "",
+      origem_cidade:
+        ultimoTrecho.cidade_destino_nome || ultimoTrecho.cidade_destino || "",
+      destino_estado: roteiro.uf_sede_sigla || roteiro.uf_origem || "",
+      destino_cidade: roteiro.cidade_sede_nome || roteiro.cidade_origem || "",
+      card_index: cards.length + 1,
+      is_retorno: true,
+    });
+
+    return cards;
+  }
+
   function preencherCamposComRoteiro(roteiro) {
     fillSede(roteiro);
     fillDestinos(roteiro);
@@ -286,6 +318,17 @@
     document.dispatchEvent(
       new CustomEvent("oficio:roteiro_preenchido", {
         detail: { roteiroId: roteiro.id || "", roteiro: roteiro },
+        bubbles: true,
+      })
+    );
+    document.dispatchEvent(
+      new CustomEvent("roteiro:aplicado", {
+        detail: {
+          roteiro_id: roteiro.id || "",
+          roteiro_nome: roteiro.nome || "",
+          cards: buildCardsPayload(roteiro),
+          roteiro: roteiro,
+        },
         bubbles: true,
       })
     );
@@ -480,6 +523,11 @@
     searchInput.value = "";
     document.dispatchEvent(
       new CustomEvent("roteiro:limpo", {
+        bubbles: true,
+      })
+    );
+    document.dispatchEvent(
+      new CustomEvent("roteiro:limpar", {
         bubbles: true,
       })
     );

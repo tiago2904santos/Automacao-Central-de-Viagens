@@ -16,8 +16,8 @@
       <p class="page-subtitle">Consulte os trechos e os oficios que reaproveitam este roteiro.</p>
     </div>
     <div class="page-actions">
-      <a href="{% url 'roteiro_edit' roteiro.pk %}" class="btn-primary">Editar</a>
-      <form method="post" action="{% url 'roteiro_delete' roteiro.pk %}">
+      <a href="{% url 'roteiro_editar' roteiro.pk %}" class="btn-primary">Editar</a>
+      <form method="post" action="{% url 'roteiro_excluir' roteiro.pk %}">
         {% csrf_token %}
         <button type="submit" class="btn-danger">Desativar</button>
       </form>

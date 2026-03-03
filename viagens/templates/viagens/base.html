@@ -106,7 +106,10 @@
             </a>
           </li>
           <li>
-            <a href="{% url 'roteiro_lista' %}">
+            <a
+              href="{% url 'roteiro_lista' %}"
+              class="{% if request.resolver_match.url_name == 'roteiro_lista' or request.resolver_match.url_name == 'roteiro_novo' or request.resolver_match.url_name == 'roteiro_editar' or request.resolver_match.url_name == 'roteiro_detalhe' %}active{% endif %}"
+            >
               <i data-lucide="map-pin"></i>
               Roteiros
             </a>

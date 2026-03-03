@@ -68,6 +68,47 @@
         <div class="wizard-section-head">
           <div>
             <div class="section-title-block">
+              <i data-lucide="route" style="width:18px;height:18px;color:#1a6b5a;"></i>
+              <h6 class="section-title-text">Trechos do oficio</h6>
+            </div>
+            <p class="field-help">Revise origem, destino, saida e chegada usados no plano.</p>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>TRECHO</th>
+                <th>ORIGEM</th>
+                <th>DESTINO</th>
+                <th>SAIDA</th>
+                <th>CHEGADA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for trecho in trechos_context %}
+                <tr>
+                  <td>{{ trecho.trecho }}</td>
+                  <td>{{ trecho.origem }}</td>
+                  <td>{{ trecho.destino }}</td>
+                  <td>{{ trecho.saida }}</td>
+                  <td>{{ trecho.chegada }}</td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="5">Nenhum trecho valido encontrado no oficio.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="sub-card wizard-section-card">
+        <div class="wizard-section-head">
+          <div>
+            <div class="section-title-block">
               <i data-lucide="coins" style="width:18px;height:18px;color:#1a6b5a;"></i>
               <h6 class="section-title-text">Integracao com diarias</h6>
             </div>
@@ -91,7 +132,7 @@
             <div class="sim-card-body">
               <div class="sim-periods-col">
                 <p class="sim-col-label">Periodos do oficio</p>
-                {% for trecho in oficio.trechos.all %}
+                {% for trecho in trechos_oficio %}
                   <div class="sim-period-row">
                     <div class="sim-period-badge">
                       {% firstof oficio.get_tipo_destino_display "INTERIOR" %}

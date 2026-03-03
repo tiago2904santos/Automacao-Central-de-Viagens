@@ -1,5 +1,5 @@
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
@@ -810,12 +810,37 @@ class Roteiro(models.Model):
         CAPITAL = "CAPITAL", "Capital"
         OUTRO = "OUTRO", "Outro"
 
-    nome = models.CharField(max_length=255, verbose_name="Nome do Roteiro")
+    nome = models.CharField(max_length=300, blank=True, verbose_name="Nome do Roteiro")
     descricao = models.TextField(blank=True, verbose_name="Descricao")
+    estado_sede = models.ForeignKey(
+        Estado,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="roteiros_sede_estado",
+    )
+    cidade_sede = models.ForeignKey(
+        Cidade,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="roteiros_sede_cidade",
+    )
     uf_origem = models.CharField(max_length=2, default="PR", verbose_name="UF Origem")
     cidade_origem = models.CharField(max_length=100, verbose_name="Cidade Origem")
     uf_destino = models.CharField(max_length=2, default="PR", verbose_name="UF Destino")
     cidade_destino = models.CharField(max_length=100, verbose_name="Cidade Destino")
+    retorno_saida_cidade = models.CharField(max_length=120, blank=True, default="")
+    retorno_saida_data = models.DateField(null=True, blank=True)
+    retorno_saida_hora = models.TimeField(null=True, blank=True)
+    retorno_chegada_cidade = models.CharField(max_length=120, blank=True, default="")
+    retorno_chegada_data = models.DateField(null=True, blank=True)
+    retorno_chegada_hora = models.TimeField(null=True, blank=True)
+    tempo_viagem = models.TimeField(
+        null=True,
+        blank=True,
+        help_text="Duracao no formato HH:MM",
+    )
     distancia_km = models.DecimalField(
         max_digits=8,
         decimal_places=2,
@@ -846,11 +871,73 @@ class Roteiro(models.Model):
             f"{self.cidade_destino}/{self.uf_destino}"
         )
 
+    @property
+    def created_at(self):
+        return self.criado_em
+
+    @property
+    def updated_at(self):
+        return self.atualizado_em
+
     def get_admin_url(self) -> str:
         return reverse(
             f"admin:{self._meta.app_label}_{self._meta.model_name}_change",
             args=(self.pk,),
         )
+
+    def _sync_legacy_fields(self):
+        if self.estado_sede_id and self.estado_sede:
+            self.uf_origem = self.estado_sede.sigla
+        elif self.uf_origem and not self.estado_sede_id:
+            self.estado_sede = self.uf_sede_obj
+
+        if self.cidade_sede_id and self.cidade_sede:
+            self.cidade_origem = self.cidade_sede.nome
+        elif self.cidade_origem and not self.cidade_sede_id:
+            self.cidade_sede = self.cidade_sede_obj
+
+        if self.pk and not self.retorno_saida_cidade and self.trechos.exists():
+            ultimo_trecho = self.trechos.order_by("ordem").last()
+            if ultimo_trecho:
+                self.retorno_saida_cidade = ultimo_trecho.destino_cidade_nome
+
+        if not self.retorno_chegada_cidade and self.cidade_sede:
+            self.retorno_chegada_cidade = self.cidade_sede.nome
+
+    def gerar_nome(self):
+        sede = self.cidade_sede.nome if self.cidade_sede else "?"
+        primeiro_trecho = self.trechos.order_by("ordem").first()
+
+        if primeiro_trecho and primeiro_trecho.destino_cidade:
+            destino = primeiro_trecho.destino_cidade.nome
+        elif primeiro_trecho and primeiro_trecho.cidade_destino:
+            destino = primeiro_trecho.cidade_destino
+        else:
+            destino = ""
+
+        data_hora = ""
+        if primeiro_trecho and primeiro_trecho.saida_data:
+            data_hora = primeiro_trecho.saida_data.strftime("%d/%m/%Y")
+            if primeiro_trecho.saida_hora:
+                data_hora += f" {primeiro_trecho.saida_hora.strftime('%H:%M')}"
+
+        partes = [sede]
+        if destino:
+            partes.append(destino)
+        nome = " > ".join(partes)
+        if data_hora:
+            nome += f" {data_hora}"
+        return nome
+
+    def save(self, *args, **kwargs):
+        self._sync_legacy_fields()
+        super().save(*args, **kwargs)
+
+        if not self.nome:
+            nome_gerado = self.gerar_nome()
+            if nome_gerado != self.nome:
+                self.nome = nome_gerado
+                Roteiro.objects.filter(pk=self.pk).update(nome=nome_gerado)
 
     def get_distancia_total(self) -> Decimal | None:
         if not self.pk:
@@ -866,10 +953,27 @@ class Roteiro(models.Model):
     def get_destinos_display(self) -> str:
         trechos = self.trechos.order_by("ordem")
         return " -> ".join(
-            f"{trecho.cidade_destino}/{trecho.uf_destino}"
+            f"{trecho.destino_cidade_nome}/{trecho.destino_estado_sigla}"
             for trecho in trechos
-            if trecho.cidade_destino and trecho.uf_destino
+            if trecho.destino_cidade_nome and trecho.destino_estado_sigla
         )
+
+    def get_trechos_preview(self) -> str:
+        trechos = list(self.trechos.order_by("ordem"))
+        partes: list[str] = []
+        if self.cidade_sede_nome and self.uf_origem:
+            partes.append(f"{self.cidade_sede_nome}/{self.uf_origem}")
+
+        for trecho in trechos:
+            if trecho.destino_cidade_nome and trecho.destino_estado_sigla:
+                partes.append(f"{trecho.destino_cidade_nome}/{trecho.destino_estado_sigla}")
+
+        if self.cidade_sede_nome and self.uf_origem and trechos:
+            partes.append(f"{self.cidade_sede_nome}/{self.uf_origem}")
+
+        if not partes:
+            return "Nenhum trecho definido"
+        return " -> ".join(partes)
 
     @property
     def cidades_destino(self):
@@ -885,17 +989,17 @@ class Roteiro(models.Model):
         destinos = [
             trecho
             for trecho in self.trechos.order_by("ordem")
-            if trecho.cidade_destino and trecho.uf_destino
+            if trecho.destino_cidade_nome and trecho.destino_estado_sigla
         ]
         if not destinos:
             return []
 
-        sequencia = [{"cidade": self.cidade_origem, "uf": self.uf_origem}]
+        sequencia = [{"cidade": self.cidade_sede_nome, "uf": self.uf_origem}]
         sequencia.extend(
-            {"cidade": trecho.cidade_destino, "uf": trecho.uf_destino}
+            {"cidade": trecho.destino_cidade_nome, "uf": trecho.destino_estado_sigla}
             for trecho in destinos
         )
-        sequencia.append({"cidade": self.cidade_origem, "uf": self.uf_origem})
+        sequencia.append({"cidade": self.cidade_sede_nome, "uf": self.uf_origem})
 
         cards: list[dict[str, str | int]] = []
         last_leg_index = len(sequencia) - 2
@@ -918,10 +1022,14 @@ class Roteiro(models.Model):
 
     @property
     def uf_sede_obj(self):
+        if self.estado_sede_id:
+            return self.estado_sede
         return Estado.objects.filter(sigla__iexact=(self.uf_origem or "").strip()).first()
 
     @property
     def cidade_sede_obj(self):
+        if self.cidade_sede_id:
+            return self.cidade_sede
         uf = self.uf_sede_obj
         nome = (self.cidade_origem or "").strip()
         if not nome:
@@ -962,10 +1070,51 @@ class TrechoRoteiro(models.Model):
         verbose_name="Roteiro",
     )
     ordem = models.PositiveIntegerField(default=1, verbose_name="Ordem")
+    origem_estado = models.ForeignKey(
+        Estado,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="trechos_roteiro_origem_estado",
+    )
+    origem_cidade = models.ForeignKey(
+        Cidade,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="trechos_roteiro_origem_cidade",
+    )
+    destino_estado = models.ForeignKey(
+        Estado,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="trechos_roteiro_destino_estado",
+    )
+    destino_cidade = models.ForeignKey(
+        Cidade,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="trechos_roteiro_destino_cidade",
+    )
     uf_origem = models.CharField(max_length=2, default="PR", verbose_name="UF Origem")
     cidade_origem = models.CharField(max_length=100, verbose_name="Cidade Origem")
     uf_destino = models.CharField(max_length=2, default="PR", verbose_name="UF Destino")
     cidade_destino = models.CharField(max_length=100, verbose_name="Cidade Destino")
+    saida_data = models.DateField(null=True, blank=True)
+    saida_hora = models.TimeField(null=True, blank=True)
+    chegada_data = models.DateField(null=True, blank=True)
+    chegada_hora = models.TimeField(null=True, blank=True)
+    retorno_saida_data = models.DateField(null=True, blank=True)
+    retorno_saida_hora = models.TimeField(null=True, blank=True)
+    retorno_chegada_data = models.DateField(null=True, blank=True)
+    retorno_chegada_hora = models.TimeField(null=True, blank=True)
+    tempo_viagem_minutos = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Tempo estimado em minutos",
+    )
     distancia_km = models.DecimalField(
         max_digits=8,
         decimal_places=2,
@@ -989,11 +1138,48 @@ class TrechoRoteiro(models.Model):
     def __str__(self) -> str:
         return (
             f"{self.roteiro.nome} - Trecho {self.ordem}: "
-            f"{self.cidade_origem} -> {self.cidade_destino}"
+            f"{self.origem_cidade_nome} -> {self.destino_cidade_nome}"
         )
 
     @property
+    def origem_cidade_nome(self):
+        if self.origem_cidade_id:
+            return self.origem_cidade.nome
+        return self.cidade_origem
+
+    @property
+    def origem_estado_sigla(self):
+        if self.origem_estado_id:
+            return self.origem_estado.sigla
+        return self.uf_origem
+
+    @property
+    def destino_cidade_nome(self):
+        if self.destino_cidade_id:
+            return self.destino_cidade.nome
+        return self.cidade_destino
+
+    @property
+    def destino_estado_sigla(self):
+        if self.destino_estado_id:
+            return self.destino_estado.sigla
+        return self.uf_destino
+
+    def save(self, *args, **kwargs):
+        if self.origem_estado_id and self.origem_estado:
+            self.uf_origem = self.origem_estado.sigla
+        if self.origem_cidade_id and self.origem_cidade:
+            self.cidade_origem = self.origem_cidade.nome
+        if self.destino_estado_id and self.destino_estado:
+            self.uf_destino = self.destino_estado.sigla
+        if self.destino_cidade_id and self.destino_cidade:
+            self.cidade_destino = self.destino_cidade.nome
+        super().save(*args, **kwargs)
+
+    @property
     def cidade_destino_obj(self):
+        if self.destino_cidade_id:
+            return self.destino_cidade
         nome = (self.cidade_destino or "").strip()
         if not nome:
             return None
@@ -1032,6 +1218,7 @@ class OficioRoteiro(models.Model):
 
 
 RoteiroViagem = Roteiro
+TrechoRoteiroDestino = TrechoRoteiro
 
 
 class PlanoTrabalho(models.Model):

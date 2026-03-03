@@ -1,0 +1,203 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Roteiros de Viagem{% endblock %}
+
+{% block breadcrumb %}
+  Roteiros <span class="breadcrumb-sep">/</span> Lista
+{% endblock %}
+
+{% block content %}
+  <style>
+    .search-form {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .search-form .input-field {
+      min-width: min(420px, 100%);
+    }
+
+    .roteiros-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+    }
+
+    .roteiro-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .roteiro-nome {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--brand-ink);
+    }
+
+    .roteiro-meta {
+      color: var(--brand-muted);
+      font-size: 0.88rem;
+    }
+
+    .roteiro-preview {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--brand-border);
+      background: #f8fafc;
+      color: var(--brand-muted);
+      font-size: 0.9rem;
+    }
+
+    .roteiro-acoes {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: auto;
+    }
+
+    .pagination {
+      margin-top: 20px;
+      justify-content: center;
+    }
+  </style>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Roteiros de Viagem</h2>
+      <p class="page-subtitle">Gerencie e reutilize seus roteiros cadastrados.</p>
+    </div>
+    <div class="page-actions">
+      <a href="{% url 'roteiro_novo' %}" class="btn-primary">
+        <i data-lucide="plus"></i>
+        Novo Roteiro
+      </a>
+    </div>
+  </div>
+
+  {% if messages %}
+    <div class="card" style="margin-bottom: 18px;">
+      {% for message in messages %}
+        <div class="{% if message.tags == 'error' %}error{% else %}empty{% endif %}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <form method="get" class="search-form">
+    <input type="text" name="q" value="{{ q|default:'' }}" placeholder="Buscar roteiro..." class="input-field" />
+    <button type="submit" class="btn-primary">Buscar</button>
+    {% if q %}
+      <a href="{% url 'roteiro_lista' %}" class="btn-clear">Limpar</a>
+    {% endif %}
+  </form>
+
+  <div class="roteiros-grid">
+    {% for roteiro in page_obj %}
+      <div class="card roteiro-card">
+        <div class="roteiro-nome">{{ roteiro.nome }}</div>
+        <div class="roteiro-meta">
+          {% if roteiro.trechos.count %}
+            {{ roteiro.trechos.count }} trecho(s) •
+          {% endif %}
+          Criado em: {{ roteiro.created_at|date:"d/m/Y H:i" }}
+        </div>
+        <div class="roteiro-preview">{{ roteiro.get_trechos_preview }}</div>
+        <div class="roteiro-acoes">
+          <a href="{% url 'roteiro_detalhe' roteiro.pk %}" class="btn-clear btn-small">Detalhes</a>
+          <a href="{% url 'roteiro_editar' roteiro.pk %}" class="btn-clear btn-small">
+            <i data-lucide="edit"></i>
+            Editar
+          </a>
+          <form
+            method="post"
+            action="{% url 'roteiro_excluir' roteiro.pk %}"
+            style="display:inline;"
+            data-roteiro-delete-form
+            data-roteiro-nome="{{ roteiro.nome }}"
+          >
+            {% csrf_token %}
+            <button
+              type="submit"
+              class="btn-danger btn-small"
+              onclick="return confirm('Tem certeza que deseja remover este roteiro? Esta acao nao pode ser desfeita.')"
+            >
+              <i data-lucide="trash-2"></i>
+              Excluir
+            </button>
+          </form>
+        </div>
+      </div>
+    {% empty %}
+      <div class="empty-state">
+        <p>Nenhum roteiro cadastrado ainda.</p>
+        <a href="{% url 'roteiro_novo' %}" class="btn-primary">
+          <i data-lucide="plus"></i>
+          Criar primeiro roteiro
+        </a>
+      </div>
+    {% endfor %}
+  </div>
+
+  {% if page_obj.has_other_pages %}
+    <div class="pagination">
+      {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}" class="btn-clear">Anterior</a>
+      {% endif %}
+      <span class="pagination-info">Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}" class="btn-clear">Proxima</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      function getCsrfToken(form) {
+        return (
+          form.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
+          document.cookie.match(/csrftoken=([^;]+)/)?.[1] ||
+          ""
+        );
+      }
+
+      document.querySelectorAll("[data-roteiro-delete-form]").forEach(function (form) {
+        form.addEventListener("submit", async function (event) {
+          event.preventDefault();
+
+          if (!window.confirm(`Tem certeza que deseja remover o roteiro "${form.dataset.roteiroNome}"? Esta acao nao pode ser desfeita.`)) {
+            return;
+          }
+
+          const response = await fetch(form.action, {
+            method: "POST",
+            headers: {
+              "X-CSRFToken": getCsrfToken(form),
+              "X-Requested-With": "XMLHttpRequest",
+            },
+          });
+
+          const contentType = response.headers.get("content-type") || "";
+          if (!contentType.includes("application/json")) {
+            window.alert("A exclusao retornou uma resposta invalida.");
+            return;
+          }
+
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            window.alert(data.erro || data.error || "Nao foi possivel excluir o roteiro.");
+            return;
+          }
+
+          window.location.reload();
+        });
+      });
+    });
+  </script>
+{% endblock %}

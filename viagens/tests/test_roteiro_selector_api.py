@@ -103,7 +103,7 @@ class RoteiroSelectorAPITests(TestCase):
 
     def test_detalhe_roteiro_json(self):
         response = self.client.get(
-            reverse("api_roteiro_detalhe_json", kwargs={"pk": self.roteiro1.pk})
+            reverse("api_roteiro_json", kwargs={"pk": self.roteiro1.pk})
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -114,7 +114,7 @@ class RoteiroSelectorAPITests(TestCase):
 
     def test_detalhe_roteiro_nao_encontrado(self):
         response = self.client.get(
-            reverse("api_roteiro_detalhe_json", kwargs={"pk": 99999})
+            reverse("api_roteiro_json", kwargs={"pk": 99999})
         )
         self.assertEqual(response.status_code, 404)
         self.assertIn("erro", response.json())

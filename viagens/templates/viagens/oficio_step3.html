@@ -170,7 +170,7 @@
                   placeholder="Digite o nome ou cidade do roteiro..."
                   autocomplete="off"
                   data-url-buscar="{% url 'api_roteiros_buscar' %}"
-                  data-url-detalhe="{% url 'api_roteiro_detalhe_json' pk=0 %}"
+                  data-url-detalhe="{% url 'api_roteiro_json' pk=0 %}"
                   data-url-criar="{% url 'api_roteiro_criar_inline' %}"
                 />
                 <button
@@ -553,7 +553,7 @@
               </label>
               <label>
                 Saida (hora)
-                <input type="time" name="retorno_saida_hora" id="retornoSaidaHora" value="{{ retorno_saida_hora|default:'' }}" />
+                <input type="time" name="retorno_saida_hora" id="retornoSaidaHora" value="{{ retorno_saida_hora|default:'' }}" placeholder="00:00" />
               </label>
             </div>
           </div>
@@ -571,7 +571,7 @@
               </label>
               <label>
                 Chegada (hora)
-                <input type="time" name="retorno_chegada_hora" id="retornoChegadaHora" value="{{ retorno_chegada_hora|default:'' }}" />
+                <input type="time" name="retorno_chegada_hora" id="retornoChegadaHora" value="{{ retorno_chegada_hora|default:'' }}" placeholder="00:00" />
               </label>
             </div>
           </div>

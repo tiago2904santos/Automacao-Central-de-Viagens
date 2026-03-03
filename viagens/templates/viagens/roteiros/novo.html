@@ -1,0 +1,181 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Novo Roteiro de Viagem{% endblock %}
+
+{% block breadcrumb %}
+  Roteiros <span class="breadcrumb-sep">/</span> Novo
+{% endblock %}
+
+{% block content %}
+  <link rel="stylesheet" href="{% static 'css/diarias.css' %}" />
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Novo Roteiro de Viagem</h2>
+      <p class="page-subtitle">Defina a sede, destinos e datas/horarios de cada trecho.</p>
+    </div>
+  </div>
+
+  <form
+    id="roteiroForm"
+    method="post"
+    action="{% url 'api_roteiros_salvar' %}"
+    data-redirect-url="{% url 'roteiro_lista' %}"
+    data-ufs-url="{% url 'api_ufs' %}"
+  >
+    {% csrf_token %}
+    <input type="hidden" name="nome" id="nomeRoteiro" value="" />
+
+    <div class="card">
+      <div class="sub-card" style="margin-bottom: 18px;">
+        <div class="sub-card-title">Definicao do roteiro</div>
+
+        <div class="sub-card" style="margin-top: 16px; margin-bottom: 0;">
+          <div class="sub-card-title">Entrada do roteiro</div>
+          <div class="grid">
+            <label>
+              UF (Sede)
+              <select
+                name="sede_uf"
+                id="sedeUf"
+                class="input-field"
+                data-role="sede-uf"
+              >
+                <option value="">Selecione</option>
+                {% for estado in estados %}
+                  <option value="{{ estado.sigla }}" {% if estado.sigla == 'PR' %}selected{% endif %}>
+                    {{ estado.sigla }} - {{ estado.nome }}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Cidade (Sede)
+              <select
+                name="sede_cidade"
+                id="sedeCidade"
+                class="input-field"
+                data-role="sede-cidade"
+                data-autocomplete-url="{% url 'api_cidades_por_estado' %}"
+                data-cidades-url="{% url 'api_cidades_por_estado' %}"
+                data-autocomplete-type="cidade"
+              >
+                <option value="">Selecione</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="sub-card" style="margin-bottom: 18px;">
+        <div class="sub-card-title">Destinos</div>
+        <div id="destinosList" class="destinos-list"></div>
+        <button type="button" id="addDestinoBtn" class="btn-primary" style="width: 100%; margin-top: 14px;">
+          <i data-lucide="plus"></i>
+          Adicionar destino
+        </button>
+      </div>
+
+      <div class="sub-card" id="trechos-gerados-section" style="margin-bottom: 18px;">
+        <div class="sub-card-title">Trechos que serao gerados</div>
+        <div class="trecho-list" id="trechosList" data-trechos-list>
+          <p class="field-help" id="trechos-empty-msg" style="margin: 0;">
+            Selecione a sede e adicione destinos para ver os trechos.
+          </p>
+        </div>
+      </div>
+
+      <div class="sub-card" data-retorno-card style="margin-bottom: 0;">
+        <div class="trecho-header">
+          <span class="badge">Retorno</span>
+          <div class="trecho-subtitle">Trecho unico de volta para a sede.</div>
+        </div>
+        <div class="trecho-body">
+          <div class="sub-card">
+            <div class="sub-card-title">Origem</div>
+            <div class="grid">
+              <label>
+                Local
+                <input type="text" id="retornoSaidaCidade" class="input-field" readonly />
+              </label>
+              <label>
+                Saida (data)
+                <input type="date" name="retorno_saida_data" class="input-field" />
+              </label>
+              <label>
+                Saida (hora)
+                <input type="time" name="retorno_saida_hora" class="input-field" />
+              </label>
+            </div>
+          </div>
+          <div class="sub-card">
+            <div class="sub-card-title">Destino (Sede)</div>
+            <div class="grid">
+              <label>
+                Local
+                <input type="text" id="retornoChegadaCidade" class="input-field" readonly />
+              </label>
+              <label>
+                Chegada (data)
+                <input type="date" name="retorno_chegada_data" class="input-field" />
+              </label>
+              <label>
+                Chegada (hora)
+                <input type="time" name="retorno_chegada_hora" class="input-field" />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wizard-actions">
+      <a href="{% url 'roteiro_lista' %}" class="btn-clear">Cancelar</a>
+      <button type="button" id="btnSalvarRoteiro" class="btn-primary">Salvar roteiro</button>
+    </div>
+
+    <div id="roteiro-save-feedback" class="empty" hidden></div>
+    <div id="roteiro-save-error" class="error" hidden></div>
+  </form>
+
+  <template id="destinoTemplate">
+    <div class="destino-item destino-card">
+      <div class="trecho-header destino-header">
+        <div class="destino-info">
+          <span class="badge destino-badge">Destino</span>
+          <div class="trecho-subtitle destino-preview">UF + cidade</div>
+        </div>
+        <div class="destino-actions">
+          <span class="drag-handle" title="Arrastar para reordenar" aria-label="Arrastar para reordenar">&#9776;</span>
+          <button class="btn-danger destino-remove" type="button">Remover</button>
+        </div>
+      </div>
+      <div class="grid">
+        <label>
+          UF
+          <select class="input-field destino-uf">
+            <option value="">Selecione</option>
+          </select>
+        </label>
+        <label>
+          Cidade
+          <select
+            class="input-field destino-cidade"
+            data-autocomplete-url="{% url 'api_cidades_por_estado' %}"
+            data-cidades-url="{% url 'api_cidades_por_estado' %}"
+            data-autocomplete-type="cidade"
+          >
+            <option value="">Selecione</option>
+          </select>
+        </label>
+      </div>
+      <p class="field-errors destino-error" hidden>Informe a cidade para continuar.</p>
+    </div>
+  </template>
+{% endblock %}
+
+{% block scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <script src="{% static 'viagens/js/roteiro_form.js' %}"></script>
+{% endblock %}

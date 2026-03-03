@@ -93,6 +93,10 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+LOGIN_URL = "/admin/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/admin/login/"
+
 OFICIO_ORGAO_DESTINO_PADRAO = os.getenv("OFICIO_ORGAO_DESTINO_PADRAO", "DGA")
 OFICIO_CHEFIA = {
     "nome_chefia": os.getenv("OFICIO_CHEFIA_NOME", ""),

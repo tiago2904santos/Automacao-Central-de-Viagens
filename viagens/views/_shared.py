@@ -922,9 +922,53 @@ def _normalize_trechos_initial(trechos_data) -> list[dict[str, str | int]]:
         return [{}]
     normalized: list[dict[str, str | int]] = []
     for trecho in trechos_data:
-        entry = {field: trecho.get(field, "") for field in TRECHO_FIELDS}
+        entry = {
+            "origem_estado": trecho.get("origem_estado", ""),
+            "origem_cidade": trecho.get("origem_cidade", ""),
+            "destino_estado": trecho.get("destino_estado", ""),
+            "destino_cidade": trecho.get("destino_cidade", ""),
+            "saida_data": trecho.get("saida_data", ""),
+            "saida_hora": trecho.get("saida_hora", ""),
+            "chegada_data": trecho.get("chegada_data", ""),
+            "chegada_hora": trecho.get("chegada_hora", ""),
+        }
+        if "tempo_viagem_minutos" in trecho:
+            entry["tempo_viagem_minutos"] = trecho.get("tempo_viagem_minutos", "")
         normalized.append(entry)
     return normalized or [{}]
+
+
+def _oficio_step3_trechos_from_db(oficio) -> list[dict[str, str | int]]:
+    if not oficio:
+        return []
+
+    trechos = (
+        oficio.trechos.select_related(
+            "origem_estado",
+            "origem_cidade",
+            "destino_estado",
+            "destino_cidade",
+        )
+        .order_by("ordem", "id")
+    )
+    result: list[dict[str, str | int]] = []
+    for trecho in trechos:
+        result.append(
+            {
+                "origem_estado": trecho.origem_estado.sigla if trecho.origem_estado else "",
+                "origem_cidade": str(trecho.origem_cidade_id or trecho.origem_cidade or ""),
+                "destino_estado": trecho.destino_estado.sigla if trecho.destino_estado else "",
+                "destino_cidade": str(trecho.destino_cidade_id or trecho.destino_cidade or ""),
+                "saida_data": trecho.saida_data.isoformat() if trecho.saida_data else "",
+                "saida_hora": trecho.saida_hora.strftime("%H:%M") if trecho.saida_hora else "",
+                "chegada_data": trecho.chegada_data.isoformat() if trecho.chegada_data else "",
+                "chegada_hora": trecho.chegada_hora.strftime("%H:%M") if trecho.chegada_hora else "",
+                "tempo_viagem_minutos": (
+                    trecho.tempo_viagem_minutos if hasattr(trecho, "tempo_viagem_minutos") else ""
+                ),
+            }
+        )
+    return result
 
 
 def _build_trecho_formset(extra: int):
@@ -1155,20 +1199,7 @@ def _hydrate_edit_session_from_db(oficio: Oficio) -> dict:
         ).order_by("ordem", "id")
     )
     viajantes_ids = [str(viajante.id) for viajante in oficio.viajantes.all()]
-    trechos_payload: list[dict[str, str]] = []
-    for trecho in trechos:
-        trechos_payload.append(
-            {
-                "origem_estado": trecho.origem_estado.sigla if trecho.origem_estado else "",
-                "origem_cidade": str(trecho.origem_cidade_id or ""),
-                "destino_estado": trecho.destino_estado.sigla if trecho.destino_estado else "",
-                "destino_cidade": str(trecho.destino_cidade_id or ""),
-                "saida_data": trecho.saida_data.isoformat() if trecho.saida_data else "",
-                "saida_hora": trecho.saida_hora.strftime("%H:%M") if trecho.saida_hora else "",
-                "chegada_data": trecho.chegada_data.isoformat() if trecho.chegada_data else "",
-                "chegada_hora": trecho.chegada_hora.strftime("%H:%M") if trecho.chegada_hora else "",
-            }
-        )
+    trechos_payload = _oficio_step3_trechos_from_db(oficio)
 
     sede_uf = ""
     sede_cidade = ""
@@ -2795,6 +2826,11 @@ def oficio_step3(request):
 
     trechos_session = data.get("trechos") or []
     if not trechos_session:
+        trechos_banco = _oficio_step3_trechos_from_db(oficio_obj)
+        if trechos_banco:
+            trechos_session = trechos_banco
+            data = _update_wizard_data(request, {"trechos": trechos_session})
+    if not trechos_session:
         valid_destinos = [
             destino for destino in destinos_session if destino.get("uf") and destino.get("cidade")
         ]
@@ -3408,6 +3444,32 @@ def oficio_edit_step2(request, oficio_id: int):
 def oficio_edit_step3(request, oficio_id: int):
     data = _ensure_edit_session(request, oficio_id)
     oficio_obj = get_object_or_404(Oficio, id=oficio_id)
+
+    if request.method == "GET":
+        trechos_banco = _oficio_step3_trechos_from_db(oficio_obj)
+        data = _update_edit_data(
+            request,
+            oficio_id,
+            {
+                "trechos": trechos_banco or [],
+                "retorno": {
+                    "retorno_saida_data": oficio_obj.retorno_saida_data.isoformat()
+                    if oficio_obj.retorno_saida_data
+                    else "",
+                    "retorno_saida_hora": oficio_obj.retorno_saida_hora.strftime("%H:%M")
+                    if oficio_obj.retorno_saida_hora
+                    else "",
+                    "retorno_chegada_data": oficio_obj.retorno_chegada_data.isoformat()
+                    if oficio_obj.retorno_chegada_data
+                    else "",
+                    "retorno_chegada_hora": oficio_obj.retorno_chegada_hora.strftime("%H:%M")
+                    if oficio_obj.retorno_chegada_hora
+                    else "",
+                },
+                "retorno_saida_cidade": oficio_obj.retorno_saida_cidade or "",
+                "retorno_chegada_cidade": oficio_obj.retorno_chegada_cidade or "",
+            },
+        )
 
     motivo_val = data.get("motivo", "")
     tipo_destino = (data.get("tipo_destino") or "").strip().upper()
@@ -5924,6 +5986,32 @@ def plano_trabalho_step3(request, oficio_id: int):
         id=oficio_id,
     )
     plano = _ensure_plano_wizard_instance(oficio)
+    trechos_oficio = list(oficio.trechos.order_by("ordem", "id"))
+    trechos_context = []
+    for index, trecho in enumerate(trechos_oficio, start=1):
+        trechos_context.append(
+            {
+                "trecho": f"Trecho {index}",
+                "origem": str(trecho.origem_cidade or trecho.origem_estado or "-"),
+                "destino": str(trecho.destino_cidade or trecho.destino_estado or "-"),
+                "saida": " ".join(
+                    part
+                    for part in [
+                        trecho.saida_data.strftime("%d/%m/%Y") if trecho.saida_data else "-",
+                        trecho.saida_hora.strftime("%H:%M") if trecho.saida_hora else "-",
+                    ]
+                    if part
+                ).strip(),
+                "chegada": " ".join(
+                    part
+                    for part in [
+                        trecho.chegada_data.strftime("%d/%m/%Y") if trecho.chegada_data else "-",
+                        trecho.chegada_hora.strftime("%H:%M") if trecho.chegada_hora else "-",
+                    ]
+                    if part
+                ).strip(),
+            }
+        )
     diarias_resultado, diarias_erro_inicial, diarias_diagnostico = _resolve_plano_diarias_state(
         plano,
         oficio,
@@ -5997,6 +6085,8 @@ def plano_trabalho_step3(request, oficio_id: int):
             "oficio": oficio,
             "plano": plano,
             "form": form,
+            "trechos_oficio": trechos_oficio,
+            "trechos_context": trechos_context,
             "diarias_resultado": diarias_resultado,
             "financeiro_diarias": financeiro_diarias,
             "diarias_erro_inicial": diarias_erro_inicial,

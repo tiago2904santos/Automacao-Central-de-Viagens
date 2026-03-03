@@ -1,0 +1,104 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Detalhe do Roteiro{% endblock %}
+
+{% block breadcrumb %}
+  Roteiros <span class="breadcrumb-sep">/</span> Detalhe
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Detalhe do Roteiro</h2>
+      <p class="page-subtitle">Consulte sede, trechos e retorno deste roteiro.</p>
+    </div>
+    <div class="page-actions">
+      <a href="{% url 'roteiro_editar' roteiro.pk %}" class="btn-primary">Editar</a>
+      <a href="{% url 'roteiro_lista' %}" class="btn-clear">Voltar</a>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 18px;">
+    <div class="sub-card">
+      <div class="sub-card-title">{{ roteiro.nome }}</div>
+      <div class="grid">
+        <label>
+          Sede
+          <div class="preview">
+            {% if roteiro.cidade_sede_obj %}
+              {{ roteiro.cidade_sede_obj.nome }}/{{ roteiro.uf_origem }}
+            {% else %}
+              {{ roteiro.cidade_origem }}/{{ roteiro.uf_origem }}
+            {% endif %}
+          </div>
+        </label>
+        <label>
+          Destino final
+          <div class="preview">{{ roteiro.cidade_destino }}/{{ roteiro.uf_destino }}</div>
+        </label>
+        <label>
+          Criado em
+          <div class="preview">{{ roteiro.created_at|date:"d/m/Y H:i" }}</div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 18px;">
+    <div class="sub-card-title">Trechos</div>
+    {% if roteiro.trechos.exists %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Ordem</th>
+            <th>Origem</th>
+            <th>Destino</th>
+            <th>Saida</th>
+            <th>Chegada</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for trecho in roteiro.trechos.all %}
+            <tr>
+              <td>{{ trecho.ordem }}</td>
+              <td>{{ trecho.origem_cidade_nome }}/{{ trecho.origem_estado_sigla }}</td>
+              <td>{{ trecho.destino_cidade_nome }}/{{ trecho.destino_estado_sigla }}</td>
+              <td>
+                {% if trecho.saida_data %}{{ trecho.saida_data|date:"d/m/Y" }}{% else %}-{% endif %}
+                {% if trecho.saida_hora %} {{ trecho.saida_hora|time:"H:i" }}{% endif %}
+              </td>
+              <td>
+                {% if trecho.chegada_data %}{{ trecho.chegada_data|date:"d/m/Y" }}{% else %}-{% endif %}
+                {% if trecho.chegada_hora %} {{ trecho.chegada_hora|time:"H:i" }}{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty">Nenhum trecho cadastrado.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="sub-card-title">Retorno</div>
+    <div class="grid">
+      <label>
+        Saida
+        <div class="preview">
+          {{ roteiro.retorno_saida_cidade|default:"-" }}
+          {% if roteiro.retorno_saida_data %}<br />{{ roteiro.retorno_saida_data|date:"d/m/Y" }}{% endif %}
+          {% if roteiro.retorno_saida_hora %} {{ roteiro.retorno_saida_hora|time:"H:i" }}{% endif %}
+        </div>
+      </label>
+      <label>
+        Chegada
+        <div class="preview">
+          {{ roteiro.retorno_chegada_cidade|default:"-" }}
+          {% if roteiro.retorno_chegada_data %}<br />{{ roteiro.retorno_chegada_data|date:"d/m/Y" }}{% endif %}
+          {% if roteiro.retorno_chegada_hora %} {{ roteiro.retorno_chegada_hora|time:"H:i" }}{% endif %}
+        </div>
+      </label>
+    </div>
+  </div>
+{% endblock %}

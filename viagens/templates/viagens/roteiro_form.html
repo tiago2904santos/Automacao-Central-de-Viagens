@@ -1,0 +1,432 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}{% block page_title %}Novo Roteiro de Viagem{% endblock %}{% endblock %}
+
+{% block breadcrumb %}
+  Roteiros <span class="breadcrumb-sep">/</span> {% block breadcrumb_tail %}Novo{% endblock %}
+{% endblock %}
+
+{% block content %}
+  <link rel="stylesheet" href="{% static 'css/diarias.css' %}" />
+
+  <style>
+    .destinos-list {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      margin: 14px 0 8px;
+    }
+
+    .destino-item {
+      border: 1px solid var(--brand-border);
+      border-radius: var(--radius-card);
+      padding: 20px;
+      background: #fff;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .destino-item.is-invalid {
+      border-color: var(--color-danger, #dc2626);
+      box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.2);
+    }
+
+    .destino-header,
+    .trecho-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .destino-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .destino-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .drag-handle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid rgba(15, 118, 110, 0.25);
+      background: rgba(15, 118, 110, 0.08);
+      font-size: 1.2rem;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .destinos-actions {
+      display: flex;
+      justify-content: flex-start;
+      margin-top: 8px;
+    }
+
+    .trecho-list {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .trecho-card {
+      border: 1px solid var(--brand-border);
+      border-radius: var(--radius-card);
+      padding: 18px;
+      background: #fff;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .trecho-subtitle,
+    .field-help {
+      color: var(--brand-muted);
+    }
+
+    .preview {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--brand-border);
+      background: #f8fafc;
+      color: var(--brand-ink);
+      font-weight: 600;
+    }
+
+    .field-help {
+      display: block;
+      margin-top: 6px;
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 720px) {
+      .destino-header,
+      .trecho-header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .destino-actions {
+        width: 100%;
+        justify-content: space-between;
+      }
+    }
+  </style>
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">{% block form_title %}Novo Roteiro de Viagem{% endblock %}</h2>
+      <p class="page-subtitle">{% block form_subtitle %}Defina sede, destinos e horarios por trecho.{% endblock %}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form id="roteiroForm" method="post" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="destinos-TOTAL_FORMS" value="0" />
+      <input type="hidden" name="destinos-INITIAL_FORMS" value="0" />
+      <input type="hidden" name="destinos-order" value="" />
+      <input type="hidden" name="trechos-TOTAL_FORMS" value="0" />
+      <input type="hidden" name="trechos-INITIAL_FORMS" value="0" />
+      <input type="hidden" name="trechos-MIN_NUM_FORMS" value="0" />
+      <input type="hidden" name="trechos-MAX_NUM_FORMS" value="1000" />
+
+      <div id="roteiro-save-feedback" class="empty" hidden></div>
+      <div id="roteiro-save-error" class="error" hidden></div>
+
+      <div class="sub-card">
+        <div class="sub-card-title">Sede</div>
+        <div class="grid">
+          <label>
+            UF (Sede)
+            <select
+              name="sede_uf"
+              id="sedeUf"
+              class="input-field"
+              data-role="sede-uf"
+            >
+              {% for estado in estados %}
+                <option
+                  value="{{ estado.sigla }}"
+                  {% if estado_sede_default and estado.id == estado_sede_default.id %}selected{% elif not estado_sede_default and estado.sigla == 'PR' %}selected{% endif %}
+                >
+                  {{ estado.sigla }} - {{ estado.nome }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            Cidade (Sede)
+            <select
+              name="sede_cidade"
+              id="sedeCidade"
+              class="input-field"
+              data-role="sede-cidade"
+            >
+              <option value="">Selecione</option>
+              {% for cidade in cidades_sede %}
+                <option
+                  value="{{ cidade.nome }}"
+                  {% if cidade_sede_default and cidade.id == cidade_sede_default.id %}selected{% elif sede_cidade and cidade.nome == sede_cidade %}selected{% endif %}
+                >
+                  {{ cidade.nome }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="sub-card">
+        <div class="sub-card-title">Destinos</div>
+        <p class="field-help" style="margin-top: 8px;">Adicione destinos e arraste os cards para definir a ordem.</p>
+        <div class="destinos-list" id="destinosList"></div>
+        <div class="destinos-actions">
+          <button type="button" id="addDestinoBtn" class="btn-primary">Adicionar destino</button>
+        </div>
+      </div>
+
+      <div class="sub-card">
+        <div class="sub-card-title">Duracao</div>
+        <div class="grid">
+          <label>
+            Tempo de viagem (ida e volta)
+            <input
+              type="time"
+              name="tempo_viagem"
+              id="tempoViagem"
+              class="input-field"
+              data-role="tempo-viagem"
+              placeholder="00:00"
+              value=""
+            />
+            <span class="field-help">
+              Usado para calcular chegada na ida e na volta
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div class="sub-card" id="trechosGeradosSection">
+        <div class="sub-card-title">Trechos gerados</div>
+        <div class="trecho-list" id="trechosList">
+          <p class="field-help" id="trechosEmptyMsg" style="margin: 0;">
+            Selecione a sede e adicione destinos para gerar os trechos automaticamente.
+          </p>
+        </div>
+      </div>
+
+      <div class="sub-card" id="retornoCard" data-role="retorno-card" hidden>
+        <div class="trecho-header">
+          <div>
+            <span class="badge">Retorno</span>
+            <div class="trecho-subtitle">Trecho automatico do ultimo destino de volta para a sede.</div>
+          </div>
+        </div>
+        <div class="trecho-body">
+          <div class="sub-card">
+            <div class="sub-card-title">Origem</div>
+            <div class="grid">
+              <label>
+                Local
+                <div class="preview" data-role="retorno-origem-local">-</div>
+              </label>
+              <label>
+                Saida (data)
+                <input
+                  type="date"
+                  name="retorno_saida_data"
+                  id="retornoSaidaData"
+                  value=""
+                  class="input-field"
+                  data-role="saida-data"
+                />
+              </label>
+              <label>
+                Saida (hora)
+                <input
+                  type="time"
+                  name="retorno_saida_hora"
+                  id="retornoSaidaHora"
+                  value=""
+                  placeholder="00:00"
+                  class="input-field"
+                  data-role="saida-hora"
+                />
+              </label>
+            </div>
+          </div>
+          <div class="sub-card">
+            <div class="sub-card-title">Destino (Sede)</div>
+            <div class="grid">
+              <label>
+                Local
+                <div class="preview" data-role="retorno-destino-local">-</div>
+              </label>
+              <label>
+                Chegada (data)
+                <input
+                  type="date"
+                  name="retorno_chegada_data"
+                  id="retornoChegadaData"
+                  value=""
+                  class="input-field"
+                  data-role="chegada-data"
+                />
+              </label>
+              <label>
+                Chegada (hora)
+                <input
+                  type="time"
+                  name="retorno_chegada_hora"
+                  id="retornoChegadaHora"
+                  value=""
+                  placeholder="00:00"
+                  class="input-field"
+                  data-role="chegada-hora"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wizard-actions">
+        <a href="{% url 'roteiro_lista' %}" class="btn-clear">Cancelar</a>
+        <span id="salvarRoteiroBtn" hidden></span>
+        <button type="button" id="btnSalvarRoteiro" class="btn-primary">
+          {% block submit_label %}Salvar Roteiro{% endblock %}
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <template id="destinoTemplate">
+    <div class="destino-item destino-card">
+      <div class="destino-header">
+        <div class="destino-info">
+          <span class="badge" data-role="destino-badge">Destino</span>
+          <div class="trecho-subtitle" data-role="destino-preview">UF + cidade</div>
+        </div>
+        <div class="destino-actions">
+          <span class="drag-handle" aria-label="Arraste para reordenar destino" title="Arraste para reordenar destino">&#9776;</span>
+          <button type="button" class="btn-danger" data-role="remove-destino">Remover</button>
+        </div>
+      </div>
+      <div class="grid">
+        <label>
+          UF
+          <select class="input-field" data-role="destino-uf">
+            {% for estado in estados %}
+              <option value="{{ estado.sigla }}" {% if estado.sigla == 'PR' %}selected{% endif %}>
+                {{ estado.sigla }} - {{ estado.nome }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Cidade
+          <select class="input-field" data-role="destino-cidade">
+            <option value="">Selecione</option>
+          </select>
+        </label>
+      </div>
+      <p class="field-help" data-role="destino-error" hidden>Informe a cidade para continuar.</p>
+    </div>
+  </template>
+
+  <template id="trechoTemplate">
+    <div class="trecho-card" data-role="trecho-card">
+      <div class="trecho-header">
+        <div>
+          <span class="badge" data-role="trecho-badge">Trecho</span>
+          <div class="trecho-subtitle" data-role="trecho-preview">Origem &rarr; Destino</div>
+        </div>
+      </div>
+
+      <div class="trecho-body">
+        <div class="sub-card">
+          <div class="sub-card-title">Origem</div>
+          <div class="grid">
+            <label>
+              Local
+              <div class="preview" data-role="origem-local">-</div>
+            </label>
+            <label>
+              Saida (data)
+              <input type="date" class="input-field" data-role="saida-data" />
+            </label>
+            <label>
+              Saida (hora)
+              <input
+                type="time"
+                class="input-field"
+                data-role="saida-hora"
+                placeholder="00:00"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-title">Destino</div>
+          <div class="grid">
+            <label>
+              Local
+              <div class="preview" data-role="destino-local">-</div>
+            </label>
+            <label>
+              Chegada (data)
+              <input type="date" class="input-field" data-role="chegada-data" />
+            </label>
+            <label>
+              Chegada (hora)
+              <input
+                type="time"
+                class="input-field"
+                data-role="chegada-hora"
+                placeholder="00:00"
+              />
+            </label>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </template>
+{% endblock %}
+
+{% block scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <script>
+    {% block form_initial_script %}
+      const ROTEIRO_INICIAL = [];
+      const SEDE_UF_INICIAL = "{{ estado_sede_default.sigla|default:'PR' }}";
+      const SEDE_CIDADE_INICIAL = "{{ cidade_sede_default.nome|default:''|escapejs }}";
+      const RETORNO_INICIAL = {};
+      const TEMPO_VIAGEM_INICIAL = "";
+      const ROTEIRO_FORM_SAVE_URL = "{% url 'roteiro_salvar' %}";
+    {% endblock %}
+    window.ROTEIRO_INICIAL = ROTEIRO_INICIAL;
+    window.SEDE_UF_INICIAL = SEDE_UF_INICIAL;
+    window.SEDE_CIDADE_INICIAL = SEDE_CIDADE_INICIAL;
+    window.RETORNO_INICIAL = RETORNO_INICIAL;
+    window.TEMPO_VIAGEM_INICIAL = TEMPO_VIAGEM_INICIAL;
+    window.ROTEIRO_FORM_SAVE_URL = ROTEIRO_FORM_SAVE_URL;
+  </script>
+  <script src="{% static 'viagens/js/roteiro_form.js' %}"></script>
+{% endblock %}

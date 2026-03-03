@@ -178,6 +178,12 @@ class RoteiroViewTest(TestCase):
         self.assertContains(response, "Roteiro A")
         self.assertContains(response, "Roteiro B")
 
+    def test_roteiro_lista_redireciona_para_login_admin_quando_deslogado(self):
+        self.client.logout()
+        response = self.client.get(reverse("roteiro_lista"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response["Location"])
+
     def test_roteiro_lista_busca(self):
         response = self.client.get(reverse("roteiro_lista"), {"q": "Curitiba"})
         self.assertEqual(response.status_code, 200)
@@ -185,36 +191,111 @@ class RoteiroViewTest(TestCase):
         self.assertNotContains(response, "Roteiro B")
 
     def test_roteiro_create_view(self):
-        response = self.client.get(reverse("roteiro_create"))
+        response = self.client.get(reverse("roteiro_novo"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Novo roteiro")
+        self.assertContains(response, "Novo Roteiro de Viagem")
+        self.assertContains(response, 'id="sedeUf"')
+        self.assertContains(response, 'id="sedeCidade"')
+        self.assertContains(response, 'id="destinosList"')
+        self.assertContains(response, 'id="tempoViagem"')
+        self.assertContains(response, 'name="tempo_viagem"')
+        self.assertContains(response, 'name="retorno_saida_hora"')
+        self.assertContains(response, 'name="retorno_chegada_hora"')
+        self.assertContains(response, 'placeholder="00:00"')
+        self.assertContains(response, 'name="trechos-TOTAL_FORMS"')
+        self.assertContains(response, 'id="salvarRoteiroBtn"')
 
         form_data = {
-            "nome": "Novo Roteiro Teste",
-            "descricao": "Descricao do novo roteiro",
-            "uf_origem": "RS",
-            "cidade_origem": "Porto Alegre",
-            "uf_destino": "SC",
-            "cidade_destino": "Florianopolis",
-            "distancia_km": "500",
-            "tipo_deslocamento": Roteiro.TipoDeslocamentoChoices.INTERIOR,
-            "ativo": "on",
-            "trechos_roteiro-TOTAL_FORMS": "1",
-            "trechos_roteiro-INITIAL_FORMS": "0",
-            "trechos_roteiro-MIN_NUM_FORMS": "0",
-            "trechos_roteiro-MAX_NUM_FORMS": "1000",
-            "trechos_roteiro-0-ordem": "1",
-            "trechos_roteiro-0-uf_origem": "RS",
-            "trechos_roteiro-0-cidade_origem": "Porto Alegre",
-            "trechos_roteiro-0-uf_destino": "SC",
-            "trechos_roteiro-0-cidade_destino": "Florianopolis",
-            "trechos_roteiro-0-distancia_km": "500",
+            "sede_uf": "PR",
+            "sede_cidade": str(self.cidade_curitiba.pk),
+            "destinos-TOTAL_FORMS": "1",
+            "destinos-INITIAL_FORMS": "0",
+            "destinos-order": "0",
+            "destinos-0-uf": "PR",
+            "destinos-0-cidade": str(self.cidade_maringa.pk),
+            "trechos-TOTAL_FORMS": "1",
+            "trechos-INITIAL_FORMS": "0",
+            "trechos-MIN_NUM_FORMS": "0",
+            "trechos-MAX_NUM_FORMS": "1000",
+            "trechos-0-id": "",
+            "trechos-0-ordem": "1",
+            "trechos-0-origem_estado": str(self.estado_pr.pk),
+            "trechos-0-origem_cidade": str(self.cidade_curitiba.pk),
+            "trechos-0-destino_estado": str(self.estado_pr.pk),
+            "trechos-0-destino_cidade": str(self.cidade_maringa.pk),
+            "trechos-0-saida_data": "2026-03-15",
+            "trechos-0-saida_hora": "08:00",
+            "trechos-0-chegada_data": "2026-03-15",
+            "trechos-0-chegada_hora": "11:00",
+            "retorno_saida_cidade": "Maringa",
+            "retorno_saida_data": "2026-03-16",
+            "retorno_saida_hora": "09:00",
+            "retorno_chegada_cidade": "Curitiba",
+            "retorno_chegada_data": "2026-03-16",
+            "retorno_chegada_hora": "12:00",
         }
-        response = self.client.post(reverse("roteiro_create"), form_data, follow=True)
+        response = self.client.post(reverse("roteiro_novo"), form_data, follow=True)
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(Roteiro.objects.filter(nome="Novo Roteiro Teste").exists())
-        self.assertContains(response, "Novo Roteiro Teste")
-        self.assertContains(response, "criado com sucesso")
+        self.assertTrue(Roteiro.objects.filter(nome="Curitiba > Maringa 15/03/2026 08:00").exists())
+        self.assertContains(response, "Curitiba &gt; Maringa 15/03/2026 08:00")
+        self.assertContains(response, "salvo com sucesso")
+
+    def test_roteiro_editar_view_e_post(self):
+        trecho = TrechoRoteiro.objects.create(
+            roteiro=self.roteiro1,
+            ordem=1,
+            origem_estado=self.estado_pr,
+            origem_cidade=self.cidade_curitiba,
+            destino_estado=self.estado_pr,
+            destino_cidade=self.cidade_maringa,
+            saida_data=timezone.localdate(),
+        )
+
+        response = self.client.get(reverse("roteiro_editar", args=[self.roteiro1.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Editar Roteiro")
+        self.assertContains(response, 'id="sedeUf"')
+        self.assertNotContains(response, "Tipo de Deslocamento")
+
+        form_data = {
+            "sede_uf": "PR",
+            "sede_cidade": str(self.cidade_curitiba.pk),
+            "destinos-TOTAL_FORMS": "1",
+            "destinos-INITIAL_FORMS": "0",
+            "destinos-order": "0",
+            "destinos-0-uf": "PR",
+            "destinos-0-cidade": str(self.cidade_londrina.pk),
+            "trechos-TOTAL_FORMS": "1",
+            "trechos-INITIAL_FORMS": "1",
+            "trechos-MIN_NUM_FORMS": "0",
+            "trechos-MAX_NUM_FORMS": "1000",
+            "trechos-0-id": str(trecho.pk),
+            "trechos-0-ordem": "1",
+            "trechos-0-origem_estado": str(self.estado_pr.pk),
+            "trechos-0-origem_cidade": str(self.cidade_curitiba.pk),
+            "trechos-0-destino_estado": str(self.estado_pr.pk),
+            "trechos-0-destino_cidade": str(self.cidade_londrina.pk),
+            "trechos-0-saida_data": "2026-04-01",
+            "trechos-0-saida_hora": "07:30",
+            "trechos-0-chegada_data": "2026-04-01",
+            "trechos-0-chegada_hora": "12:00",
+            "retorno_saida_cidade": "Londrina",
+            "retorno_saida_data": "2026-04-02",
+            "retorno_saida_hora": "14:00",
+            "retorno_chegada_cidade": "Curitiba",
+            "retorno_chegada_data": "2026-04-02",
+            "retorno_chegada_hora": "18:00",
+        }
+        response = self.client.post(
+            reverse("roteiro_editar", args=[self.roteiro1.pk]),
+            form_data,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.roteiro1.refresh_from_db()
+        self.assertEqual(self.roteiro1.nome, "Curitiba > Londrina 01/04/2026 07:30")
+        self.assertEqual(self.roteiro1.trechos.count(), 1)
+        self.assertEqual(self.roteiro1.trechos.first().destino_cidade.nome, "Londrina")
 
     def test_api_roteiros_buscar_retorna_json(self):
         response = self.client.get(reverse("api_roteiros_buscar"), {"q": "Roteiro"})
@@ -249,7 +330,7 @@ class RoteiroViewTest(TestCase):
             cidade_origem="Curitiba",
             cidade_destino="Florianopolis",
         )
-        response = self.client.get(reverse("api_roteiros_cards", args=[self.roteiro1.pk]))
+        response = self.client.get(reverse("api_roteiro_cards", args=[self.roteiro1.pk]))
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["id"], self.roteiro1.pk)
@@ -258,32 +339,90 @@ class RoteiroViewTest(TestCase):
 
     def test_api_salvar_roteiro(self):
         payload = {
-            "nome": "Curitiba -> Maringa -> Londrina",
-            "uf_sede": "PR",
-            "cidade_sede": "Curitiba",
+            "nome": "",
+            "sede_uf": "PR",
+            "sede_cidade": str(self.cidade_curitiba.pk),
             "destinos": [
-                {"uf": "PR", "cidade": "Maringa"},
-                {"uf": "PR", "cidade": "Londrina"},
+                {"uf": "PR", "cidade": str(self.cidade_maringa.pk)},
+                {"uf": "PR", "cidade": str(self.cidade_londrina.pk)},
             ],
+            "trechos": [
+                {
+                    "saida_data": "2026-03-15",
+                    "saida_hora": "08:00",
+                    "chegada_data": "2026-03-15",
+                    "chegada_hora": "11:30",
+                },
+                {
+                    "saida_data": "2026-03-16",
+                    "saida_hora": "09:00",
+                    "chegada_data": "2026-03-16",
+                    "chegada_hora": "12:15",
+                },
+            ],
+            "retorno": {
+                "saida_data": "2026-03-17",
+                "saida_hora": "14:00",
+                "chegada_data": "2026-03-17",
+                "chegada_hora": "18:45",
+            },
         }
         response = self.client.post(
-            reverse("api_roteiros_salvar"),
+            reverse("api_roteiro_salvar"),
             data=json.dumps(payload),
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 201)
         data = response.json()
-        self.assertEqual(data["nome"], payload["nome"])
+        self.assertEqual(data["nome"], "Curitiba > Maringa 15/03/2026 08:00")
+        self.assertTrue(data["ok"])
+        roteiro = Roteiro.objects.get(pk=data["id"])
+        self.assertEqual(roteiro.retorno_saida_data.isoformat(), "2026-03-17")
+        self.assertEqual(
+            roteiro.trechos.order_by("ordem").first().saida_hora.strftime("%H:%M"),
+            "08:00",
+        )
         self.assertEqual(len(data["cards"]), 3)
+
+    def test_salvar_roteiro_endpoint_retorna_json(self):
+        payload = {
+            "nome": "",
+            "sede_uf": "PR",
+            "sede_cidade": str(self.cidade_curitiba.pk),
+            "destinos": [{"uf": "PR", "cidade": str(self.cidade_maringa.pk)}],
+            "trechos": [{"saida_data": "2026-03-20", "saida_hora": "09:30"}],
+        }
+        response = self.client.post(
+            reverse("api_roteiro_salvar"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response["Content-Type"], "application/json")
+        data = response.json()
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["sucesso"])
+        self.assertIn("message", data)
+        self.assertEqual(data["nome"], "Curitiba > Maringa 20/03/2026 09:30")
+
+    def test_api_cidades_por_estado_alias_retorna_json(self):
+        response = self.client.get(
+            reverse("api_cidades_por_estado"),
+            {"uf": "PR"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("cidades", data)
+        self.assertTrue(any(item["nome"] == "Curitiba" for item in data["cidades"]))
 
     def test_api_salvar_sem_destino(self):
         response = self.client.post(
-            reverse("api_roteiros_salvar"),
+            reverse("api_roteiro_salvar"),
             data=json.dumps(
                 {
-                    "nome": "Roteiro sem destino",
-                    "uf_sede": "PR",
-                    "cidade_sede": "Curitiba",
+                    "nome": "",
+                    "sede_uf": "PR",
+                    "sede_cidade": str(self.cidade_curitiba.pk),
                     "destinos": [],
                 }
             ),
@@ -292,26 +431,27 @@ class RoteiroViewTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.json()["error"],
-            "O roteiro deve ter pelo menos um destino.",
+            "Informe ao menos um destino.",
         )
 
-    def test_api_salvar_sem_nome(self):
+    def test_api_salvar_sem_nome_gera_nome_automatico(self):
         response = self.client.post(
-            reverse("api_roteiros_salvar"),
+            reverse("api_roteiro_salvar"),
             data=json.dumps(
                 {
                     "nome": "",
-                    "uf_sede": "PR",
-                    "cidade_sede": "Curitiba",
-                    "destinos": [{"uf": "PR", "cidade": "Maringa"}],
+                    "sede_uf": "PR",
+                    "sede_cidade": str(self.cidade_curitiba.pk),
+                    "destinos": [{"uf": "PR", "cidade": str(self.cidade_maringa.pk)}],
+                    "trechos": [{"saida_data": "2026-03-21", "saida_hora": "10:15"}],
                 }
             ),
             content_type="application/json",
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 201)
         self.assertEqual(
-            response.json()["error"],
-            "O nome do roteiro e obrigatorio.",
+            response.json()["nome"],
+            "Curitiba > Maringa 21/03/2026 10:15",
         )
 
     def test_uf_padrao_pr(self):
@@ -428,20 +568,16 @@ class RoteiroViewTest(TestCase):
             OficioRoteiro.objects.filter(oficio=self.oficio, roteiro=self.roteiro1).exists()
         )
 
-    def test_delete_roteiro_com_vinculo_retorna_erro(self):
+    def test_delete_roteiro_com_vinculo_realiza_soft_delete(self):
         OficioRoteiro.objects.create(oficio=self.oficio, roteiro=self.roteiro1)
-        response = self.client.post(reverse("roteiro_delete", args=[self.roteiro1.pk]), follow=True)
+        response = self.client.post(reverse("roteiro_excluir", args=[self.roteiro1.pk]), follow=True)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(
-            response,
-            "Nao e possivel excluir o roteiro pois ele esta vinculado a um ou mais oficios.",
-        )
-        self.assertTrue(Roteiro.objects.filter(pk=self.roteiro1.pk, ativo=True).exists())
+        self.assertContains(response, "Roteiro removido.")
+        self.assertFalse(Roteiro.objects.filter(pk=self.roteiro1.pk, ativo=True).exists())
 
     def test_soft_delete_roteiro_sem_vinculo(self):
-        response = self.client.post(reverse("roteiro_delete", args=[self.roteiro2.pk]), follow=True)
+        response = self.client.post(reverse("roteiro_excluir", args=[self.roteiro2.pk]), follow=True)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Roteiro B")
-        self.assertContains(response, "desativado com sucesso")
+        self.assertContains(response, "Roteiro removido.")
         self.assertFalse(Roteiro.objects.filter(pk=self.roteiro2.pk, ativo=True).exists())
         self.assertTrue(Roteiro.objects.filter(pk=self.roteiro2.pk, ativo=False).exists())

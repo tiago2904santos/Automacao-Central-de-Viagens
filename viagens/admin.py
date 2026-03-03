@@ -63,18 +63,19 @@ class TrechoInline(admin.TabularInline):
 
 class TrechoRoteiroInline(admin.TabularInline):
     model = TrechoRoteiro
-    extra = 1
+    extra = 0
     fields = (
         "ordem",
-        "uf_origem",
-        "cidade_origem",
-        "uf_destino",
-        "cidade_destino",
-        "distancia_km",
-        "modal",
-        "observacao",
+        "origem_cidade",
+        "destino_cidade",
+        "saida_data",
+        "saida_hora",
+        "chegada_data",
+        "chegada_hora",
+        "tempo_viagem_minutos",
     )
     ordering = ("ordem", "id")
+    raw_id_fields = ("origem_estado", "origem_cidade", "destino_estado", "destino_cidade")
 
 
 @admin.register(Oficio)
@@ -105,31 +106,36 @@ class OficioAdmin(admin.ModelAdmin):
 class RoteiroViagemAdmin(admin.ModelAdmin):
     list_display = (
         "nome",
-        "cidade_origem",
-        "uf_origem",
-        "total_cidades",
-        "tipo_deslocamento",
+        "cidade_sede",
         "ativo",
-        "criado_em",
+        "created_at",
     )
-    list_filter = ("tipo_deslocamento", "ativo", "uf_origem", "uf_destino")
-    search_fields = ("nome", "cidade_origem", "cidade_destino", "descricao")
+    list_filter = ("ativo",)
+    search_fields = ("nome",)
     inlines = (TrechoRoteiroInline,)
     ordering = ("-criado_em", "-id")
     date_hierarchy = "criado_em"
+    readonly_fields = ("nome", "criado_em", "atualizado_em")
     fieldsets = (
-        (None, {"fields": ("nome", "descricao", "ativo")}),
+        (None, {"fields": ("estado_sede", "cidade_sede", "ativo")}),
         (
-            "Detalhes do roteiro",
+            "Dados de retorno",
             {
                 "fields": (
-                    "uf_origem",
-                    "cidade_origem",
-                    "uf_destino",
-                    "cidade_destino",
-                    "distancia_km",
-                    "tipo_deslocamento",
+                    "retorno_saida_cidade",
+                    "retorno_saida_data",
+                    "retorno_saida_hora",
+                    "retorno_chegada_cidade",
+                    "retorno_chegada_data",
+                    "retorno_chegada_hora",
                 )
+            }
+        ),
+        (
+            "Informacoes de sistema",
+            {
+                "fields": ("nome", "criado_em", "atualizado_em"),
+                "classes": ("collapse",),
             },
         ),
     )

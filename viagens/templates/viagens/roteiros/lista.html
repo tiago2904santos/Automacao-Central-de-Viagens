@@ -1,20 +1,83 @@
 {% extends "viagens/base.html" %}
 {% load static %}
 
-{% block title %}Roteiros de viagem{% endblock %}
+{% block title %}Roteiros de Viagem{% endblock %}
 
 {% block breadcrumb %}
-  Roteiros <span class="breadcrumb-sep">/</span> Biblioteca
+  Roteiros <span class="breadcrumb-sep">/</span> Lista
 {% endblock %}
 
 {% block content %}
+  <style>
+    .roteiros-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 18px;
+    }
+
+    .roteiro-card {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      height: 100%;
+    }
+
+    .roteiro-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .roteiro-card-title {
+      margin: 0;
+      font-size: 1rem;
+      color: var(--brand-ink);
+    }
+
+    .roteiro-meta {
+      color: var(--brand-muted);
+      font-size: 0.85rem;
+    }
+
+    .roteiro-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .roteiro-preview {
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px solid var(--brand-border);
+      color: var(--brand-muted);
+      font-size: 0.9rem;
+    }
+
+    .roteiro-card-actions {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .roteiro-action-danger {
+      color: #b91c1c;
+      border-color: rgba(185, 28, 28, 0.25);
+    }
+  </style>
+
   <div class="page-header">
     <div>
-      <h2 class="page-title">Gerenciar roteiros de viagem</h2>
-      <p class="page-subtitle">Monte trajetos reutilizaveis com retorno automatico para Curitiba.</p>
+      <h2 class="page-title">Roteiros de Viagem</h2>
+      <p class="page-subtitle">Gerencie e reutilize seus roteiros de deslocamento.</p>
     </div>
     <div class="page-actions">
-      <span class="badge">{{ total_roteiros }} roteiro{{ total_roteiros|pluralize }}</span>
+      <a href="{% url 'roteiro_novo' %}" class="btn-primary">
+        <i data-lucide="plus"></i>
+        Novo Roteiro
+      </a>
     </div>
   </div>
 
@@ -26,122 +89,83 @@
     </div>
   {% endif %}
 
-  <div class="card" style="margin-bottom: 18px;">
-    <div class="page-header" style="margin-bottom: 18px;">
-      <div>
-        <h3 class="sub-card-title" style="margin-bottom: 4px;">Novo roteiro de viagem</h3>
-        <p class="field-help" style="margin: 0;">Defina a ordem das cidades e veja os trechos que serao gerados.</p>
-      </div>
-    </div>
-
-    <div class="grid">
-      <label class="full">
-        Nome do roteiro
-        <input
-          type="text"
-          id="roteiro-nome"
-          class="input-field"
-          placeholder="Ex: Curitiba -> Maringa -> Londrina"
-        />
-      </label>
-      <label>
-        UF sede
-        <select id="roteiro-uf-sede" class="input-field">
-          <option value="PR" selected>PR - Parana</option>
-        </select>
-      </label>
-      <label>
-        Cidade sede
-        <input
-          type="text"
-          id="roteiro-cidade-sede"
-          class="input-field"
-          value="Curitiba"
-          readonly
-        />
-      </label>
-    </div>
-
-    <div class="sub-card" style="margin-top: 18px;">
-      <div class="page-header" style="margin-bottom: 14px;">
-        <div>
-          <h3 class="sub-card-title" style="margin-bottom: 4px;">Destinos</h3>
-          <p class="field-help" style="margin: 0;">Adicione quantas cidades precisar. O retorno para a sede e automatico.</p>
-        </div>
-        <div class="page-actions">
-          <button type="button" id="btn-add-destino" class="btn-primary">Adicionar destino</button>
-        </div>
-      </div>
-      <div id="destinos-container" class="destinos-list"></div>
-    </div>
-
-    <div id="preview-cards" class="sub-card" style="margin-top: 18px; display: none;">
-      <div class="sub-card-title">Trechos que serao gerados</div>
-      <div id="preview-cards-lista" class="trecho-list" style="gap: 12px;"></div>
-    </div>
-
-    <div class="wizard-actions" style="margin-top: 18px;">
-      <button type="button" id="btn-salvar-roteiro" class="btn-primary">Salvar roteiro</button>
-    </div>
-  </div>
-
-  <div class="list-card" style="margin-bottom: 18px;">
-    <form method="get" class="filter-form">
+  <div class="card filter-bar" style="margin-bottom: 18px;">
+    <form method="get" action="{% url 'roteiro_lista' %}" class="filter-form">
       <div class="filter-left">
         <div class="filter-group">
-          <label>Buscar roteiros</label>
+          <label for="q">Buscar roteiros</label>
           <input
             type="text"
+            id="q"
             name="q"
             value="{{ query }}"
-            placeholder="Nome, origem, destino ou cidade..."
+            placeholder="Buscar por nome ou cidade..."
           />
         </div>
       </div>
-      <div class="filter-actions">
+      <div class="page-actions">
         <button type="submit" class="btn-primary">Buscar</button>
-        <a href="{% url 'roteiro_lista' %}" class="btn-clear">Limpar</a>
+        {% if query %}
+          <a href="{% url 'roteiro_lista' %}" class="btn-clear">Limpar</a>
+        {% endif %}
       </div>
     </form>
   </div>
 
-  <div id="roteiros-salvos" class="card">
-    <div class="page-header" style="margin-bottom: 18px;">
-      <div>
-        <h3 class="sub-card-title" style="margin-bottom: 4px;">Roteiros salvos</h3>
-        <p class="field-help" style="margin: 0;">Biblioteca reutilizavel para a etapa 3 dos oficios.</p>
-      </div>
-    </div>
-
-    <div id="lista-roteiros-container" style="display: flex; flex-direction: column; gap: 14px;">
-      <p class="empty" id="no-roteiros-message" {% if page_obj.object_list %}hidden{% endif %}>Nenhum roteiro salvo ainda.</p>
-      {% for roteiro in page_obj.object_list %}
-        <div class="sub-card" style="margin: 0;">
-          <div class="page-header" style="margin-bottom: 12px;">
+  {% if roteiros %}
+    <div class="roteiros-grid">
+      {% for roteiro in roteiros %}
+        <div class="card roteiro-card">
+          <div class="roteiro-card-top">
             <div>
-              <h3 class="sub-card-title" style="margin-bottom: 4px;">{{ roteiro.nome }}</h3>
-              <p class="field-help" style="margin: 0;">
-                {{ roteiro.cidade_origem }}/{{ roteiro.uf_origem }} -> {{ roteiro.get_destinos_display|default:"-" }}
-              </p>
+              <h3 class="roteiro-card-title">{{ roteiro.nome }}</h3>
+              <div class="roteiro-meta">Criado em {{ roteiro.criado_em|date:"d/m/Y H:i" }}</div>
             </div>
-            <div class="page-actions">
-              <span class="badge">{{ roteiro.total_cidades }} destino{{ roteiro.total_cidades|pluralize }}</span>
+            <div class="roteiro-card-actions">
+              <a href="{% url 'roteiro_detalhe' roteiro.pk %}" class="btn-icon" title="Ver detalhes">
+                <i data-lucide="eye"></i>
+              </a>
+              <a href="{% url 'roteiro_editar' roteiro.pk %}" class="btn-icon" title="Editar">
+                <i data-lucide="pencil"></i>
+              </a>
+              <button
+                type="button"
+                class="btn-icon roteiro-action-danger"
+                title="Excluir"
+                data-delete-roteiro
+                data-delete-id="{{ roteiro.pk }}"
+                data-delete-name="{{ roteiro.nome }}"
+                data-delete-url="{% url 'roteiro_excluir' roteiro.pk %}"
+              >
+                <i data-lucide="trash-2"></i>
+              </button>
             </div>
           </div>
-          <div class="wizard-actions" style="margin-top: 0;">
-            <a href="{% url 'roteiro_detalhe' roteiro.pk %}" class="btn-clear">Ver</a>
-            <a href="{% url 'roteiro_edit' roteiro.pk %}" class="btn-clear">Editar</a>
-            <form method="post" action="{% url 'roteiro_delete' roteiro.pk %}">
-              {% csrf_token %}
-              <button type="submit" class="btn-danger">Desativar</button>
-            </form>
+
+          <div class="roteiro-tags">
+            {% if roteiro.cidade_origem %}
+              <span class="badge">{{ roteiro.cidade_origem }}/{{ roteiro.uf_origem }} (Sede)</span>
+            {% endif %}
+            {% for destino in roteiro.trechos.all %}
+              <span class="badge">{{ destino.cidade_destino }}/{{ destino.uf_destino }}</span>
+            {% endfor %}
+          </div>
+
+          <div class="roteiro-preview">
+            {{ roteiro.get_trechos_preview }}
+          </div>
+
+          <div class="wizard-actions" style="margin-top: auto;">
+            <a href="{% url 'oficios_lista' %}?roteiro_id={{ roteiro.pk }}" class="btn-clear">
+              Usar em Oficio
+            </a>
           </div>
         </div>
       {% endfor %}
     </div>
 
-    {% if page_obj.has_previous or page_obj.has_next %}
-      <div class="wizard-actions" style="border-top: 1px solid var(--brand-border); margin-top: 18px; padding-top: 16px;">
+    {% if is_paginated %}
+      <div class="pagination">
         {% if page_obj.has_previous %}
           <a
             href="?page={{ page_obj.previous_page_number }}{% if query %}&q={{ query|urlencode }}{% endif %}"
@@ -150,29 +174,95 @@
             Anterior
           </a>
         {% else %}
-          <span class="empty">Pagina {{ page_obj.number }}</span>
+          <span class="btn-clear is-disabled">Anterior</span>
         {% endif %}
+
+        {% for page_number in page_obj.paginator.page_range %}
+          {% if page_number == page_obj.number %}
+            <span class="pagination-info">Pagina {{ page_number }}</span>
+          {% else %}
+            <a
+              href="?page={{ page_number }}{% if query %}&q={{ query|urlencode }}{% endif %}"
+              class="btn-clear"
+            >
+              {{ page_number }}
+            </a>
+          {% endif %}
+        {% endfor %}
+
         {% if page_obj.has_next %}
           <a
             href="?page={{ page_obj.next_page_number }}{% if query %}&q={{ query|urlencode }}{% endif %}"
-            class="btn-primary"
+            class="btn-clear"
           >
             Proxima
           </a>
+        {% else %}
+          <span class="btn-clear is-disabled">Proxima</span>
         {% endif %}
       </div>
     {% endif %}
-  </div>
+  {% else %}
+    <div class="empty-state">
+      <i data-lucide="map-pin"></i>
+      <p>Nenhum roteiro cadastrado.</p>
+      <a href="{% url 'roteiro_novo' %}" class="btn-primary">Criar primeiro roteiro</a>
+    </div>
+  {% endif %}
+
+  <dialog
+    id="confirmDeleteModal"
+    style="border: 1px solid var(--brand-border); border-radius: 14px; padding: 0; width: min(100%, 420px);"
+  >
+    <div class="card" style="margin: 0;">
+      <div class="page-header" style="margin-bottom: 14px;">
+        <div>
+          <h3 class="sub-card-title" style="margin-bottom: 4px;">Confirmar exclusao</h3>
+          <p class="field-help" style="margin: 0;">Esta acao nao pode ser desfeita.</p>
+        </div>
+      </div>
+      <p id="roteiroNomeExcluir" style="margin: 0 0 18px;"></p>
+      <div class="wizard-actions" style="margin-top: 0;">
+        <button type="button" class="btn-clear" id="cancelDeleteBtn">Cancelar</button>
+        <form id="deleteRoteiroForm" method="post" style="display: inline;">
+          {% csrf_token %}
+          <button type="submit" class="btn-danger">Excluir</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
 {% endblock %}
 
 {% block scripts %}
-  <script src="{% static 'viagens/js/roteiro_builder.js' %}"></script>
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-      if (window.initRoteiroBuilder) {
-        window.initRoteiroBuilder();
-      }
+      const dialog = document.getElementById("confirmDeleteModal");
+      const deleteText = document.getElementById("roteiroNomeExcluir");
+      const deleteForm = document.getElementById("deleteRoteiroForm");
+      const cancelButton = document.getElementById("cancelDeleteBtn");
+
+      cancelButton?.addEventListener("click", function () {
+        dialog?.close();
+      });
+
+      document.querySelectorAll("[data-delete-roteiro]").forEach((button) => {
+        button.addEventListener("click", function () {
+          const deleteUrl = this.dataset.deleteUrl;
+          const roteiroNome = this.dataset.deleteName;
+
+          if (!dialog || !deleteForm || !deleteText || typeof dialog.showModal !== "function") {
+            if (window.confirm(`Deseja excluir o roteiro "${roteiroNome}"?`)) {
+              deleteForm.action = deleteUrl;
+              deleteForm.submit();
+            }
+            return;
+          }
+
+          deleteForm.action = deleteUrl;
+          deleteText.textContent = `Tem certeza que deseja excluir o roteiro "${roteiroNome}"?`;
+          dialog.showModal();
+        });
+      });
     });
   </script>
 {% endblock %}

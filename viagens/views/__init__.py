@@ -49,3 +49,7 @@ def oficio_download_ordem_servico_pdf(request, oficio_id: int):
 def oficio_download_pdf(request, oficio_id: int):
     _sync_pdf_dependencies()
     return _shared_module.oficio_download_pdf(request, oficio_id)
+
+
+def api_cidades_por_estado(request):
+    return cidades_api(request)
