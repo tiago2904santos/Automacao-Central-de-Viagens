@@ -1,9 +1,14 @@
 {% extends "viagens/base.html" %}
+{% load static %}
 
-{% block title %}Documentos do oficio{% endblock %}
+{% block title %}Documentos do ofício{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+{% endblock %}
 
 {% block breadcrumb %}
-  Oficios <span class="breadcrumb-sep">/</span> Documentos
+  Ofícios <span class="breadcrumb-sep">/</span> Documentos
 {% endblock %}
 
 {% block content %}
@@ -11,11 +16,11 @@
     <div>
       <h2 class="page-title">Central de Documentos</h2>
       <p class="page-subtitle">
-        Oficio {{ oficio.numero_formatado|default:oficio.oficio|default:oficio.id }}
+        Ofício {{ oficio.numero_formatado|default:oficio.oficio|default:oficio.id }}
       </p>
     </div>
     <div class="page-actions">
-      <a class="btn-clear btn-small" href="{% url 'oficios_lista' %}">Voltar para oficios</a>
+      <a class="btn-clear btn-small" href="{% url 'oficios_lista' %}">Voltar para ofícios</a>
     </div>
   </div>
 
@@ -27,22 +32,12 @@
     {% endfor %}
   {% endif %}
 
-  <div class="card">
-    <div class="wizard-actions documentos-central-actions">
-      <form method="post" action="{% url 'oficio_documentos_gerar_todos' oficio.id %}">
-        {% csrf_token %}
-        <button class="btn-primary" type="submit">
-          Gerar todos os documentos
-        </button>
-      </form>
-      <a class="btn-clear" href="{% url 'planos_trabalho_list' %}">Planos</a>
-      <a class="btn-clear" href="{% url 'ordens_servico_list' %}">Ordens</a>
-    </div>
-  </div>
-
-  <div class="document-tabs" role="tablist" aria-label="Abas de documentos">
+  <div class="document-tabs doc-manager-tabs" role="tablist" aria-label="Abas de documentos">
+    <a class="btn-clear{% if active_tab == 'resumo' %} is-active{% endif %}" href="{% url 'oficio_documentos' oficio.id %}?tab=resumo">
+      Resumo
+    </a>
     <a class="btn-clear{% if active_tab == 'oficio' %} is-active{% endif %}" href="{% url 'oficio_documentos' oficio.id %}?tab=oficio">
-      Oficio
+      Ofício
     </a>
     <a class="btn-clear{% if active_tab == 'termo' %} is-active{% endif %}" href="{% url 'oficio_documentos' oficio.id %}?tab=termo">
       Termo
@@ -52,7 +47,7 @@
     </a>
     {% if not tem_plano %}
       <a class="btn-clear{% if active_tab == 'ordem' %} is-active{% endif %}" href="{% url 'oficio_documentos' oficio.id %}?tab=ordem">
-        Ordem de Servico
+        Ordem de Serviço
       </a>
     {% endif %}
     <a class="btn-clear{% if active_tab == 'justificativa' %} is-active{% endif %}" href="{% url 'oficio_documentos' oficio.id %}?tab=justificativa">
@@ -60,16 +55,21 @@
     </a>
   </div>
 
+  {% if active_tab == "resumo" %}
+    <div class="doc-manager-resumo card">
+      {% include "viagens/partials/oficio_documentos_cards.html" with oficio=oficio documentos_status=documentos_status is_fragment=False %}
+    </div>
+  {% else %}
   <section class="sub-card">
     {% if active_tab == "oficio" %}
-      <div class="sub-card-title">Oficio</div>
+      <div class="sub-card-title">Ofício</div>
       <p>Gerar e baixar ofício em DOCX ou PDF.</p>
       <div class="wizard-actions">
         <a class="btn-clear" href="{% url 'oficio_download_docx' oficio.id %}">Baixar DOCX</a>
         <a class="btn-clear" href="{% url 'oficio_download_pdf' oficio.id %}">Baixar PDF</a>
       </div>
     {% elif active_tab == "termo" %}
-      <div class="sub-card-title">Termo de Autorizacao</div>
+      <div class="sub-card-title">Termo de Autorização</div>
       <p>Gerar e baixar termo em DOCX ou PDF.</p>
       <div class="wizard-actions">
         <a class="btn-clear" href="{% url 'oficio_download_termo_autorizacao' oficio.id %}">Baixar DOCX</a>
@@ -78,54 +78,56 @@
     {% elif active_tab == "plano" %}
       <div class="sub-card-title">Plano de Trabalho</div>
       {% if tem_plano and plano_trabalho %}
-        <p>Plano {{ plano_trabalho.numero }}/{{ plano_trabalho.ano }} ja cadastrado.</p>
+        <p>Plano {{ plano_trabalho.numero }}/{{ plano_trabalho.ano }} já cadastrado.</p>
         <div class="wizard-actions">
           <a class="btn-clear" href="{% url 'plano_trabalho_editar' oficio.id %}">Editar</a>
           <a class="btn-clear" href="{% url 'plano_trabalho_download_docx' oficio.id %}">Baixar DOCX</a>
           <a class="btn-clear" href="{% url 'plano_trabalho_download_pdf' oficio.id %}">Baixar PDF</a>
         </div>
       {% else %}
-        <p>Este oficio ainda nao possui plano de trabalho.</p>
+        <p>Este ofício ainda não possui plano de trabalho.</p>
         <div class="wizard-actions">
           <a class="btn-primary" href="{% url 'plano_trabalho_editar' oficio.id %}">Criar Plano de Trabalho</a>
         </div>
       {% endif %}
     {% elif active_tab == "ordem" and not tem_plano %}
-      <div class="sub-card-title">Ordem de Servico</div>
+      <div class="sub-card-title">Ordem de Serviço</div>
       {% if tem_ordem and ordem_servico %}
-        <p>Ordem {{ ordem_servico.numero }}/{{ ordem_servico.ano }} ja cadastrada.</p>
+        <p>Ordem {{ ordem_servico.numero }}/{{ ordem_servico.ano }} já cadastrada.</p>
         <div class="wizard-actions">
           <a class="btn-clear" href="{% url 'ordem_servico_editar' oficio.id %}">Editar</a>
           <a class="btn-clear" href="{% url 'ordem_servico_download_docx' oficio.id %}">Baixar DOCX</a>
           <a class="btn-clear" href="{% url 'ordem_servico_download_pdf' oficio.id %}">Baixar PDF</a>
         </div>
       {% else %}
-        <p>Este oficio nao possui plano de trabalho, portanto usa ordem de servico.</p>
+        <p>Este ofício não possui plano de trabalho, portanto usa ordem de serviço.</p>
         <div class="wizard-actions">
-          <a class="btn-primary" href="{% url 'ordem_servico_editar' oficio.id %}">Criar Ordem de Servico</a>
+          <a class="btn-primary" href="{% url 'ordem_servico_editar' oficio.id %}">Criar Ordem de Serviço</a>
         </div>
       {% endif %}
     {% elif active_tab == "justificativa" %}
       <div class="sub-card-title">Justificativa</div>
-      <p>Preencha os campos abaixo conforme o modelo de justificativa. Os valores substituirao os placeholders no documento.</p>
-      {% if justificativa_placeholders %}
-        <form method="post" action="{% url 'oficio_download_justificativa' oficio.id %}" class="justificativa-form">
-          {% csrf_token %}
-          <div class="form-grid-justificativa">
-            {% for ph in justificativa_placeholders %}
-              <div class="form-group">
-                <label for="justificativa_{{ ph|slugify }}">{{ ph }}</label>
-                <input type="text" id="justificativa_{{ ph|slugify }}" name="justificativa_{{ ph }}" value="" placeholder="{{ ph }}">
-              </div>
-            {% endfor %}
-          </div>
-          <div class="wizard-actions" style="margin-top: 1rem;">
-            <button class="btn-primary" type="submit">Gerar e baixar Justificativa (DOCX)</button>
-          </div>
-        </form>
+      {% if oficio.justificativa_texto %}
+        <p><strong>Justificativa preenchida.</strong> Edite ou gere DOCX/PDF abaixo.</p>
+        {% if documentos_status.justificativa.preview %}
+          <p class="doc-card-preview doc-preview-standalone">{{ documentos_status.justificativa.preview }}</p>
+        {% endif %}
       {% else %}
-        <p class="error">Modelo de justificativa (modelo_Justificativa.docx) nao encontrado em viagens/documents.</p>
+        <p>Para ofícios com prazo &lt; 10 dias é obrigatório preencher a justificativa antes de gerar o ofício. Use o gerador vinculado para preencher e salvar.</p>
       {% endif %}
+      <p>No gerador vinculado: assinante (agente do banco), cargo, data e dados da configuração são aplicados automaticamente. Use «Salvar e voltar» para gravar no ofício.</p>
+      <div class="wizard-actions">
+        <a class="btn-primary" href="{% url 'justificativa_oficio' oficio.id %}?next=oficio_documentos">{% if oficio.justificativa_texto %}Editar justificativa{% else %}Preencher justificativa{% endif %}</a>
+        {% if oficio.justificativa_texto %}
+          <a class="btn-clear" href="{% url 'oficio_download_justificativa_docx' oficio.id %}">Baixar DOCX</a>
+          <a class="btn-clear" href="{% url 'oficio_download_justificativa_pdf' oficio.id %}">Baixar PDF</a>
+        {% endif %}
+      </div>
     {% endif %}
   </section>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'viagens/documentos_manager.js' %}"></script>
 {% endblock %}

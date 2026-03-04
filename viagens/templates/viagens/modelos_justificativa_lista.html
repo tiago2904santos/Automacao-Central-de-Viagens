@@ -1,0 +1,76 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Modelos de justificativa{% endblock %}
+
+{% block breadcrumb %}
+  Documentos <span class="breadcrumb-sep">/</span> Modelos de justificativa
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Modelos de justificativa</h2>
+      <p class="page-subtitle">Modelos pré-prontos para o gerador. Adicione, edite, defina o padrão ou salve como novo.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-primary" href="{% url 'modelo_justificativa_criar' %}">Novo modelo</a>
+      <a class="btn-clear" href="{% url 'gerador_justificativas' %}">Ir para o gerador</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="{% if message.tags == 'error' %}error{% else %}success{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="list-card">
+    {% if modelos %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Nome</th>
+            <th>Padrão</th>
+            <th>Ordem</th>
+            <th>Ativo</th>
+            <th class="table-actions-header">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in modelos %}
+            <tr>
+              <td><code>{{ m.codigo }}</code></td>
+              <td>{{ m.label }}</td>
+              <td>{% if m.padrao %}<span class="badge">Padrão</span>{% else %}—{% endif %}</td>
+              <td>{{ m.ordem }}</td>
+              <td>{% if m.ativo %}Sim{% else %}Não{% endif %}</td>
+              <td class="table-actions-cell">
+                <div class="table-actions table-actions--right">
+                  <a href="{% url 'modelo_justificativa_editar' m.pk %}" class="btn-edit btn-small">Editar</a>
+                  {% if not m.padrao %}
+                    <form method="post" action="{% url 'modelo_justificativa_definir_padrao' m.pk %}" style="display:inline;">
+                      {% csrf_token %}
+                      <button type="submit" class="btn-clear btn-small">Definir como padrão</button>
+                    </form>
+                  {% endif %}
+                  <a href="{% url 'modelo_justificativa_salvar_como_novo' m.pk %}" class="btn-clear btn-small">Salvar como novo</a>
+                  <form method="post" action="{% url 'modelo_justificativa_excluir' m.pk %}" style="display:inline;" onsubmit="return confirm('Excluir este modelo?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-danger btn-small">Excluir</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <p>Nenhum modelo cadastrado. <a href="{% url 'modelo_justificativa_criar' %}">Criar o primeiro</a>.</p>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

@@ -1,7 +1,11 @@
 {% extends "viagens/base.html" %}
-{% load viagens_extras %}
+{% load viagens_extras static %}
 
-{% block title %}Lista de oficios{% endblock %}
+{% block title %}Lista de ofícios{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+{% endblock %}
 
 {% block breadcrumb %}
   Oficios <span class="breadcrumb-sep">/</span> Lista
@@ -90,10 +94,12 @@
                 <div class="table-actions table-actions--right">
                   {% if oficio.status == "DRAFT" %}
                     <a href="{% url 'oficio_draft_resume' oficio.id %}" class="btn-edit">Continuar rascunho</a>
-                    <a href="{% url 'oficio_documentos' oficio.id %}" class="btn-clear btn-small">Documentos</a>
+                    <a href="{% url 'evento_redirect_from_oficio' oficio.id %}" class="btn-clear btn-small">Pacote evento</a>
+                    <a href="{% url 'oficio_documentos' oficio.id %}" class="btn-clear btn-small" data-doc-drawer data-oficio-id="{{ oficio.id }}" data-oficio-label="{{ oficio.numero_formatado|default:oficio.oficio|default:'' }}">Documentos</a>
                   {% else %}
                     <a href="{% url 'oficio_edit_step1' oficio.id %}" class="btn-edit">Editar</a>
-                    <a href="{% url 'oficio_documentos' oficio.id %}" class="btn-clear btn-small">Documentos</a>
+                    <a href="{% url 'evento_redirect_from_oficio' oficio.id %}" class="btn-clear btn-small">Pacote evento</a>
+                    <a href="{% url 'oficio_documentos' oficio.id %}" class="btn-clear btn-small" data-doc-drawer data-oficio-id="{{ oficio.id }}" data-oficio-label="{{ oficio.numero_formatado|default:oficio.oficio|default:'' }}">Documentos</a>
                     <a class="btn-icon btn-icon--docx" href="{% url 'oficio_download_docx' oficio.id %}" aria-label="Baixar DOCX">W</a>
                     <a class="btn-icon btn-icon--pdf" href="{% url 'oficio_download_pdf' oficio.id %}" aria-label="Baixar PDF">PDF</a>
                   {% endif %}
@@ -136,9 +142,19 @@
   <div class="fab-stack" aria-label="Atalhos">
     <a class="fab" href="{% url 'formulario' %}">+ Novo oficio</a>
   </div>
+
+  <div id="docDrawerOverlay" class="doc-drawer-overlay" aria-hidden="true"></div>
+  <aside id="docDrawer" class="doc-drawer" role="dialog" aria-labelledby="docDrawerTitle" aria-modal="true">
+    <div class="doc-drawer-header">
+      <h2 id="docDrawerTitle" class="doc-drawer-title">Documentos</h2>
+      <button type="button" class="doc-drawer-close" data-doc-drawer-close aria-label="Fechar">×</button>
+    </div>
+    <div id="docDrawerBody" class="doc-drawer-body"></div>
+  </aside>
 {% endblock %}
 
 {% block scripts %}
+  <script src="{% static 'viagens/documentos_manager.js' %}"></script>
   <script>
     const filterForm = document.querySelector(".filter-form");
     if (filterForm) {

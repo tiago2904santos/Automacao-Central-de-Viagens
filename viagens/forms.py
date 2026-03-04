@@ -15,6 +15,7 @@ from .models import (
     Cidade,
     CoordenadorMunicipal,
     Estado,
+    ModeloJustificativa,
     Oficio,
     OficioRoteiro,
     OrdemServico,
@@ -1433,4 +1434,67 @@ class OficioVincularRoteiroForm(forms.ModelForm):
         fields = ["roteiro", "observacao"]
         widgets = {
             "observacao": forms.TextInput(attrs={"class": "input-field"}),
+        }
+
+
+class JustificativaGeradorForm(forms.Form):
+    """Formulário da página dedicada ao gerador de justificativas."""
+    modelo = forms.ModelChoiceField(
+        queryset=ModeloJustificativa.objects.filter(ativo=True).order_by("ordem", "label"),
+        required=False,
+        label="Modelo pré-pronto (opcional)",
+        empty_label="Nenhum — texto livre",
+        widget=forms.Select(attrs={"class": "input-field", "id": "id_modelo_justificativa"}),
+    )
+    oficio_numero_ano = forms.CharField(
+        required=False,
+        max_length=20,
+        label="Ofício nº / Ano",
+        widget=forms.TextInput(
+            attrs={
+                "class": "input-field",
+                "placeholder": "Ex: 123/2026 (substitui X/ANO no texto)",
+            }
+        ),
+    )
+    assinante = forms.ModelChoiceField(
+        queryset=Viajante.objects.order_by("nome"),
+        required=True,
+        label="Assinante (agente)",
+        empty_label="Selecione o agente",
+        widget=forms.Select(attrs={"class": "input-field", "id": "id_assinante_justificativa"}),
+    )
+    justificativa = forms.CharField(
+        required=True,
+        label="Texto da justificativa",
+        widget=forms.Textarea(
+            attrs={
+                "class": "input-field",
+                "rows": 6,
+                "placeholder": "Descreva o motivo ou selecione um modelo acima.",
+                "id": "id_justificativa",
+            }
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["assinante"].label_from_instance = (
+            lambda obj: f"{obj.nome} — {obj.cargo or ''}".strip(" —")
+        )
+
+
+class ModeloJustificativaForm(forms.ModelForm):
+    """Formulário para criar/editar modelo de justificativa."""
+
+    class Meta:
+        model = ModeloJustificativa
+        fields = ["codigo", "label", "texto", "ordem", "ativo", "padrao"]
+        widgets = {
+            "codigo": forms.TextInput(attrs={"class": "input-field", "placeholder": "ex: recebimento_tardio"}),
+            "label": forms.TextInput(attrs={"class": "input-field"}),
+            "texto": forms.Textarea(attrs={"class": "input-field", "rows": 10}),
+            "ordem": forms.NumberInput(attrs={"class": "input-field", "min": 0}),
+            "ativo": forms.CheckboxInput(attrs={"class": "input-checkbox"}),
+            "padrao": forms.CheckboxInput(attrs={"class": "input-checkbox"}),
         }

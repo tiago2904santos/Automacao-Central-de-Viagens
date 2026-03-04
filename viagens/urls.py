@@ -134,9 +134,24 @@ urlpatterns = [
         name="oficio_documentos",
     ),
     path(
+        "oficios/<int:oficio_id>/documentos/fragment/",
+        views.oficio_documentos_fragment,
+        name="oficio_documentos_fragment",
+    ),
+    path(
         "oficios/<int:oficio_id>/documentos/gerar_todos/",
         views.oficio_documentos_gerar_todos,
         name="oficio_documentos_gerar_todos",
+    ),
+    path(
+        "oficios/<int:oficio_id>/documentos/justificativa.docx",
+        views.oficio_download_justificativa_docx,
+        name="oficio_download_justificativa_docx",
+    ),
+    path(
+        "oficios/<int:oficio_id>/documentos/justificativa.pdf",
+        views.oficio_download_justificativa_pdf,
+        name="oficio_download_justificativa_pdf",
     ),
     path(
         "oficios/<int:oficio_id>/documentos/plano_trabalho.docx",
@@ -228,6 +243,92 @@ urlpatterns = [
     path("veiculos/<int:veiculo_id>/editar/", views.veiculo_editar, name="veiculo_editar"),
     path("veiculos/", views.veiculos_lista, name="veiculos_lista"),
     path("oficios/", views.oficios_lista, name="oficios_lista"),
+    path(
+        "oficios/<int:oficio_id>/pacote-evento/",
+        views.evento_redirect_from_oficio,
+        name="evento_redirect_from_oficio",
+    ),
+    path("eventos/", views.eventos_lista, name="eventos_lista"),
+    path(
+        "eventos/<int:evento_id>/pacote/",
+        views.evento_pacote,
+        name="evento_pacote",
+    ),
+    path(
+        "eventos/<int:evento_id>/pacote/upload-assinado/",
+        views.evento_upload_assinado,
+        name="evento_upload_assinado",
+    ),
+    path(
+        "eventos/<int:evento_id>/pacote/remover-assinado/<int:arquivo_id>/",
+        views.evento_remover_assinado,
+        name="evento_remover_assinado",
+    ),
+    path(
+        "eventos/<int:evento_id>/pacote/gerar-pdf-protocolo/",
+        views.evento_gerar_pdf_protocolo,
+        name="evento_gerar_pdf_protocolo",
+    ),
+    path(
+        "eventos/<int:evento_id>/pacote/download-compilado/",
+        views.evento_download_compilado,
+        name="evento_download_compilado",
+    ),
+    path(
+        "justificativas/",
+        views.justificativas_lista,
+        name="justificativas_lista",
+    ),
+    path(
+        "justificativas/oficio/<int:oficio_id>/",
+        views.justificativa_oficio,
+        name="justificativa_oficio",
+    ),
+    path(
+        "justificativas/nova/",
+        views.gerador_justificativas,
+        name="justificativa_nova",
+    ),
+    path(
+        "documentos/gerador-justificativas/",
+        views.gerador_justificativas,
+        name="gerador_justificativas",
+    ),
+    path(
+        "documentos/modelos-justificativa/",
+        views.modelos_justificativa_lista,
+        name="modelos_justificativa_lista",
+    ),
+    path(
+        "documentos/modelos-justificativa/novo/",
+        views.modelo_justificativa_criar,
+        name="modelo_justificativa_criar",
+    ),
+    path(
+        "documentos/modelos-justificativa/<int:pk>/editar/",
+        views.modelo_justificativa_editar,
+        name="modelo_justificativa_editar",
+    ),
+    path(
+        "documentos/modelos-justificativa/<int:pk>/definir-padrao/",
+        views.modelo_justificativa_definir_padrao,
+        name="modelo_justificativa_definir_padrao",
+    ),
+    path(
+        "documentos/modelos-justificativa/<int:pk>/salvar-como-novo/",
+        views.modelo_justificativa_salvar_como_novo,
+        name="modelo_justificativa_salvar_como_novo",
+    ),
+    path(
+        "documentos/modelos-justificativa/<int:pk>/excluir/",
+        views.modelo_justificativa_excluir,
+        name="modelo_justificativa_excluir",
+    ),
+    path(
+        "api/modelos-justificativa/<int:pk>/texto/",
+        views.modelo_justificativa_texto_api,
+        name="modelo_justificativa_texto_api",
+    ),
     path(
         "termos-autorizacao/",
         views.termos_autorizacao_lista,

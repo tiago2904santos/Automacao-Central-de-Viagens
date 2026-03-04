@@ -1,0 +1,82 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}Gerador de justificativas{% endblock %}
+
+{% block breadcrumb %}
+  Documentos <span class="breadcrumb-sep">/</span> Gerador de justificativas
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Gerador de justificativas</h2>
+      <p class="page-subtitle">Selecione um ofício para abrir o gerador na Central de Documentos (aba Justificativa).</p>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="{% if message.tags == 'error' %}error{% else %}success{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="list-card">
+    {% if page_obj.object_list %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Oficio</th>
+            <th>Data</th>
+            <th>Protocolo</th>
+            <th>Destino</th>
+            <th>Acao</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for oficio in page_obj.object_list %}
+            <tr>
+              <td>{{ oficio.numero_formatado|default:oficio.oficio|default:oficio.id }}</td>
+              <td>{{ oficio.created_at|date:"d/m/Y" }}</td>
+              <td>{{ oficio.protocolo_formatado|default:oficio.protocolo|default:"-" }}</td>
+              <td>
+                {% if oficio.cidade_destino and oficio.estado_destino %}
+                  {{ oficio.cidade_destino.nome }}/{{ oficio.estado_destino.sigla }}
+                {% else %}
+                  {{ oficio.get_destino_display|default:"-" }}
+                {% endif %}
+              </td>
+              <td>
+                <a href="{% url 'oficio_documentos' oficio.id %}?tab=justificativa" class="btn-primary btn-small">Abrir gerador</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if page_obj.paginator.num_pages > 1 %}
+        <div class="pagination" style="margin-top: 1rem;">
+          {% if page_obj.has_previous %}
+            <a class="btn-clear btn-small" href="?page={{ page_obj.previous_page_number }}">Anterior</a>
+          {% else %}
+            <span class="btn-clear btn-small is-disabled">Anterior</span>
+          {% endif %}
+          <span class="pagination-info">Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a class="btn-clear btn-small" href="?page={{ page_obj.next_page_number }}">Proxima</a>
+          {% else %}
+            <span class="btn-clear btn-small is-disabled">Proxima</span>
+          {% endif %}
+        </div>
+      {% endif %}
+    {% else %}
+      <div class="empty-state">
+        <div>
+          <strong>Nenhum oficio encontrado</strong>
+          <p>Crie um oficio para usar o gerador de justificativas.</p>
+        </div>
+        <a class="btn-primary" href="{% url 'formulario' %}">Novo oficio</a>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

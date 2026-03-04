@@ -981,6 +981,40 @@ function initRoteiroFormset() {
       syncDestinosOrder();
     });
   }
+
+  // Ao selecionar um roteiro existente, preencher datas e horários dos trechos e do retorno
+  document.addEventListener("roteiro:aplicado", (event) => {
+    const roteiro = event.detail?.roteiro;
+    if (!roteiro) return;
+    const trechos = Array.isArray(roteiro.trechos) ? roteiro.trechos : [];
+    const allCards = getCards();
+    const idaCards = allCards.filter(
+      (c) =>
+        !c.hasAttribute("data-retorno-card") &&
+        !c.hasAttribute("data-diarias-card")
+    );
+    idaCards.forEach((card, index) => {
+      const trecho = trechos[index];
+      if (!trecho) return;
+      const saidaData = card.querySelector("[data-role='saida-data']");
+      const saidaHora = card.querySelector("[data-role='saida-hora']");
+      const chegadaData = card.querySelector("[data-role='chegada-data']");
+      const chegadaHora = card.querySelector("[data-role='chegada-hora']");
+      if (saidaData) saidaData.value = trecho.saida_data || "";
+      if (saidaHora) saidaHora.value = trecho.saida_hora || "";
+      if (chegadaData) chegadaData.value = trecho.chegada_data || "";
+      if (chegadaHora) chegadaHora.value = trecho.chegada_hora || "";
+    });
+    const retorno = roteiro.retorno;
+    if (retorno) {
+      if (retornoSaidaDataInput) retornoSaidaDataInput.value = retorno.saida_data || "";
+      if (retornoSaidaHoraInput) retornoSaidaHoraInput.value = retorno.saida_hora || "";
+      if (retornoChegadaDataInput) retornoChegadaDataInput.value = retorno.chegada_data || "";
+      if (retornoChegadaHoraInput) retornoChegadaHoraInput.value = retorno.chegada_hora || "";
+    }
+    updateRetornoFields();
+    invalidateDiarias();
+  });
 }
 
 if (document.readyState === "loading") {

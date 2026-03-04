@@ -68,10 +68,34 @@ class DocumentosCentralUiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Central de Documentos")
+        self.assertContains(response, "?tab=resumo")
         self.assertContains(response, "?tab=oficio")
         self.assertContains(response, "?tab=termo")
         self.assertContains(response, "?tab=plano")
         self.assertContains(response, "?tab=ordem")
+
+    def test_oficio_documentos_resumo_contem_cards(self) -> None:
+        oficio = self._build_oficio(saida_em_dias=5)
+        response = self.client.get(
+            reverse("oficio_documentos", args=[oficio.id]),
+            data={"tab": "resumo"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Resumo")
+        self.assertContains(response, "Ofício")
+        self.assertContains(response, "Justificativa")
+        self.assertContains(response, "Plano de Trabalho")
+
+    def test_oficio_documentos_fragment_retorna_200_e_cards(self) -> None:
+        oficio = self._build_oficio(saida_em_dias=5)
+        response = self.client.get(
+            reverse("oficio_documentos_fragment", args=[oficio.id]),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ofício")
+        self.assertContains(response, "Justificativa")
+        self.assertContains(response, "Plano de Trabalho")
+        self.assertContains(response, "Abrir Central de Documentos")
 
     def test_menu_base_contem_links_globais_de_documentos(self) -> None:
         response = self.client.get(reverse("oficios_lista"))

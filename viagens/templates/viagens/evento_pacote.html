@@ -1,0 +1,257 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Pacote — {{ evento.titulo }}{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+{% endblock %}
+
+{% block breadcrumb %}
+  Eventos <span class="breadcrumb-sep">/</span> Pacote
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">{{ evento.titulo }}</h2>
+      <p class="page-subtitle">
+        {% if evento.cidade_base %}{{ evento.cidade_base.nome }}{% endif %}
+        {% if evento.data_inicio %} — {{ evento.data_inicio|date:"d/m/Y" }}{% if evento.data_fim %} a {{ evento.data_fim|date:"d/m/Y" }}{% endif %}{% endif %}
+      </p>
+      {% if checklist.readiness.pronto_para_protocolar %}
+        <span class="doc-card-badge doc-card-badge--ok">Pronto para protocolar</span>
+      {% else %}
+        <span class="doc-card-badge doc-card-badge--pendente">Pendências no checklist</span>
+      {% endif %}
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear btn-small" href="{% url 'eventos_lista' %}">Voltar para eventos</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="{% if message.tags == 'error' %}error{% else %}success{% endif %}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="document-tabs doc-manager-tabs" role="tablist">
+    <a class="btn-clear{% if active_tab == 'resumo' %} is-active{% endif %}" href="{% url 'evento_pacote' evento.id %}?tab=resumo">Resumo</a>
+    <a class="btn-clear{% if active_tab == 'oficios' %} is-active{% endif %}" href="{% url 'evento_pacote' evento.id %}?tab=oficios">Ofícios</a>
+    <a class="btn-clear{% if active_tab == 'termos' %} is-active{% endif %}" href="{% url 'evento_pacote' evento.id %}?tab=termos">Termos</a>
+    <a class="btn-clear{% if active_tab == 'plano' %} is-active{% endif %}" href="{% url 'evento_pacote' evento.id %}?tab=plano">Plano / Ordem</a>
+    <a class="btn-clear{% if active_tab == 'justificativas' %} is-active{% endif %}" href="{% url 'evento_pacote' evento.id %}?tab=justificativas">Justificativas</a>
+  </div>
+
+  <div class="card doc-manager-resumo">
+    {% if active_tab == "resumo" %}
+      <h3 class="doc-card-title">Checklist para compilar protocolo (documentos assinados)</h3>
+      {% if pendencias_compilacao %}
+        <ul class="doc-card-links" style="list-style: disc; padding-left: 1.5rem; margin-bottom: 1rem;">
+          {% for msg in pendencias_compilacao %}
+            <li class="doc-card-badge doc-card-badge--pendente" style="display: inline-block; margin: 2px;">{{ msg }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p><span class="doc-card-badge doc-card-badge--ok">Tudo assinado</span> — Você pode gerar o PDF do protocolo.</p>
+      {% endif %}
+      <div class="doc-card-actions" style="margin: 1rem 0;">
+        {% if pronto_para_compilar %}
+          <form method="post" action="{% url 'evento_gerar_pdf_protocolo' evento.id %}" style="display: inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn-primary">Gerar PDF do Protocolo (Anexo)</button>
+          </form>
+          <form method="post" action="{% url 'evento_gerar_pdf_protocolo' evento.id %}" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="download" value="1" />
+            <button type="submit" class="btn-clear">Gerar e baixar</button>
+          </form>
+        {% else %}
+          <button type="button" class="btn-primary" disabled title="Faça upload de todos os documentos assinados obrigatórios.">Gerar PDF do Protocolo (Anexo)</button>
+        {% endif %}
+        {% if ultimo_protocolo %}
+          <a href="{% url 'evento_download_compilado' evento.id %}" class="btn-clear btn-small">Baixar último PDF (v{{ ultimo_protocolo.versao }})</a>
+        {% endif %}
+      </div>
+      <h3 class="doc-card-title" style="margin-top: 1.5rem;">Checklist do pacote (conteúdo)</h3>
+      <ul class="doc-card-links" style="list-style: disc; padding-left: 1.5rem;">
+        <li><strong>Roteiro (trechos):</strong> {{ checklist.required_docs.roteiro.total_trechos }} trecho(s) — {{ checklist.required_docs.roteiro.status|upper }}</li>
+        <li><strong>Plano ou Ordem (1 por evento):</strong> {% if checklist.tem_convite_ou_oficio_evento %}Não exigido (tem convite/ofício){% else %}{{ checklist.required_docs.plano_ou_ordem.status|upper }}{% endif %}</li>
+        <li><strong>Ofícios (1+):</strong> {{ oficios|length }} ofício(s)</li>
+        <li><strong>Termos (1 por servidor não-ASCOM):</strong> {{ checklist.required_docs.termos|length }} servidor(es)</li>
+      </ul>
+      <h3 class="doc-card-title" style="margin-top: 1rem;">Ofícios do evento — Assinado</h3>
+      <div class="doc-manager-grid">
+        {% for oficio, o in oficios_com_assinado %}
+          <div class="doc-card">
+            <h4 class="doc-card-title">Ofício {{ o.numero_display }}</h4>
+            <p>Assinado: {% if o.assinado %}<span class="doc-card-badge doc-card-badge--ok">Sim</span>{% if o.arquivo %} — {{ o.arquivo.name }} ({{ o.arquivo.uploaded_at|date:"d/m/Y H:i" }}){% endif %}{% else %}<span class="doc-card-badge doc-card-badge--pendente">Pendente</span>{% endif %}</p>
+            <form method="post" action="{% url 'evento_upload_assinado' evento.id %}" enctype="multipart/form-data" style="margin-top: 8px;">
+              {% csrf_token %}
+              <input type="hidden" name="tipo" value="OFICIO_ASSINADO" />
+              <input type="hidden" name="oficio_id" value="{{ oficio.id }}" />
+              <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" required />
+              <button type="submit" class="btn-primary btn-small">{% if o.assinado %}Substituir{% else %}Upload assinado{% endif %}</button>
+            </form>
+            {% if o.assinado and o.arquivo.id %}
+              <form method="post" action="{% url 'evento_remover_assinado' evento.id o.arquivo.id %}" style="display: inline; margin-top: 4px;">
+                {% csrf_token %}
+                <button type="submit" class="btn-clear btn-small">Remover</button>
+              </form>
+            {% endif %}
+            <div class="doc-card-actions" style="margin-top: 8px;">
+              <a class="btn-clear btn-small" href="{% url 'oficio_documentos' oficio.id %}">Central Documentos</a>
+              <a class="btn-clear btn-small" href="{% url 'oficio_download_docx' oficio.id %}">DOCX</a>
+              <a class="btn-clear btn-small" href="{% url 'oficio_download_pdf' oficio.id %}">PDF</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% elif active_tab == "oficios" %}
+      <h3 class="doc-card-title">Ofícios ({{ oficios|length }})</h3>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Ofício</th>
+            <th>Protocolo</th>
+            <th>Justificativa</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for oficio in oficios %}
+            <tr>
+              <td>{{ oficio.numero_formatado|default:oficio.oficio|default:oficio.id }}</td>
+              <td>{{ oficio.protocolo_formatado|default:oficio.protocolo|default:"—" }}</td>
+              <td>
+                {% for o in checklist.required_docs.oficios %}
+                  {% if o.oficio_id == oficio.id %}
+                    {% if o.exige_justificativa %}
+                      {% if o.justificativa_ok %}<span class="doc-card-badge doc-card-badge--ok">OK</span>{% else %}<span class="doc-card-badge doc-card-badge--pendente">Pendente</span>{% endif %}
+                    {% else %}—{% endif %}
+                  {% endif %}
+                {% endfor %}
+              </td>
+              <td>
+                <a href="{% url 'oficio_documentos' oficio.id %}" class="btn-clear btn-small">Documentos</a>
+                <a href="{% url 'justificativa_oficio' oficio.id %}?next=evento_pacote" class="btn-clear btn-small">Justificativa</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% elif active_tab == "termos" %}
+      <h3 class="doc-card-title">Termos (1 por servidor não-ASCOM) — Assinado</h3>
+      {% if status_assinados.termos %}
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Servidor</th>
+              <th>Assinado</th>
+              <th>Upload</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in status_assinados.termos %}
+              <tr>
+                <td>{{ t.nome }}</td>
+                <td>{% if t.assinado %}<span class="doc-card-badge doc-card-badge--ok">Sim</span>{% if t.arquivo %} — {{ t.arquivo.name }} ({{ t.arquivo.uploaded_at|date:"d/m/Y H:i" }}){% endif %}{% else %}<span class="doc-card-badge doc-card-badge--pendente">Pendente</span>{% endif %}</td>
+                <td>
+                  <form method="post" action="{% url 'evento_upload_assinado' evento.id %}" enctype="multipart/form-data" style="display: inline;">
+                    {% csrf_token %}
+                    <input type="hidden" name="tipo" value="TERMO_ASSINADO" />
+                    <input type="hidden" name="viajante_id" value="{{ t.viajante_id }}" />
+                    <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" required />
+                    <button type="submit" class="btn-primary btn-small">{% if t.assinado %}Substituir{% else %}Upload assinado{% endif %}</button>
+                  </form>
+                  {% if t.assinado and t.arquivo.id %}
+                    <form method="post" action="{% url 'evento_remover_assinado' evento.id t.arquivo.id %}" style="display: inline;">
+                      {% csrf_token %}
+                      <button type="submit" class="btn-clear btn-small">Remover</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p>Nenhum viajante não-ASCOM no evento; termos não exigidos.</p>
+      {% endif %}
+    {% elif active_tab == "plano" %}
+      <h3 class="doc-card-title">Plano de Trabalho / Ordem de Serviço — Assinado</h3>
+      {% if not checklist.tem_convite_ou_oficio_evento %}
+        <p>Assinado: Plano {% if status_assinados.plano_ou_ordem.plano_assinado %}<span class="doc-card-badge doc-card-badge--ok">Sim</span>{% if status_assinados.plano_ou_ordem.arquivo_plano %} — {{ status_assinados.plano_ou_ordem.arquivo_plano.name }}{% endif %}{% else %}<span class="doc-card-badge doc-card-badge--pendente">Pendente</span>{% endif %}
+        | Ordem {% if status_assinados.plano_ou_ordem.ordem_assinado %}<span class="doc-card-badge doc-card-badge--ok">Sim</span>{% if status_assinados.plano_ou_ordem.arquivo_ordem %} — {{ status_assinados.plano_ou_ordem.arquivo_ordem.name }}{% endif %}{% else %}<span class="doc-card-badge doc-card-badge--pendente">Pendente</span>{% endif %}</p>
+        <p>
+          <strong>Plano:</strong>
+          <form method="post" action="{% url 'evento_upload_assinado' evento.id %}" enctype="multipart/form-data" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="tipo" value="PLANO_ASSINADO" />
+            <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" required />
+            <button type="submit" class="btn-primary btn-small">{% if status_assinados.plano_ou_ordem.plano_assinado %}Substituir plano{% else %}Upload plano assinado{% endif %}</button>
+          </form>
+          {% if status_assinados.plano_ou_ordem.arquivo_plano and status_assinados.plano_ou_ordem.arquivo_plano.id %}
+            <form method="post" action="{% url 'evento_remover_assinado' evento.id status_assinados.plano_ou_ordem.arquivo_plano.id %}" style="display: inline;">{% csrf_token %}<button type="submit" class="btn-clear btn-small">Remover</button></form>
+          {% endif %}
+        </p>
+        <p>
+          <strong>Ordem:</strong>
+          <form method="post" action="{% url 'evento_upload_assinado' evento.id %}" enctype="multipart/form-data" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="tipo" value="ORDEM_ASSINADO" />
+            <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" required />
+            <button type="submit" class="btn-primary btn-small">{% if status_assinados.plano_ou_ordem.ordem_assinado %}Substituir ordem{% else %}Upload ordem assinada{% endif %}</button>
+          </form>
+          {% if status_assinados.plano_ou_ordem.arquivo_ordem and status_assinados.plano_ou_ordem.arquivo_ordem.id %}
+            <form method="post" action="{% url 'evento_remover_assinado' evento.id status_assinados.plano_ou_ordem.arquivo_ordem.id %}" style="display: inline;">{% csrf_token %}<button type="submit" class="btn-clear btn-small">Remover</button></form>
+          {% endif %}
+        </p>
+        {% if plano_oficio %}
+          <p>Plano vinculado ao ofício {{ plano_oficio.numero_formatado|default:plano_oficio.id }}.</p>
+          <a class="btn-clear" href="{% url 'plano_trabalho_editar' plano_oficio.id %}">Editar plano</a>
+          <a class="btn-clear" href="{% url 'oficio_download_plano_trabalho_docx' plano_oficio.id %}">DOCX</a>
+          <a class="btn-clear" href="{% url 'oficio_download_plano_trabalho_pdf' plano_oficio.id %}">PDF</a>
+        {% elif ordem_oficio %}
+          <p>Ordem de serviço vinculada ao ofício {{ ordem_oficio.numero_formatado|default:ordem_oficio.id }}.</p>
+          <a class="btn-clear" href="{% url 'ordem_servico_editar' ordem_oficio.id %}">Editar ordem</a>
+          <a class="btn-clear" href="{% url 'oficio_download_ordem_servico_docx' ordem_oficio.id %}">DOCX</a>
+          <a class="btn-clear" href="{% url 'oficio_download_ordem_servico_pdf' ordem_oficio.id %}">PDF</a>
+        {% else %}
+          <p>Evento sem convite/ofício exige Plano ou Ordem. Crie um ofício e associe ao evento, depois crie o plano ou ordem.</p>
+          <a class="btn-primary" href="{% url 'formulario' %}">Novo ofício</a>
+        {% endif %}
+      {% else %}
+        <p>Evento tem convite/ofício; Plano/Ordem não obrigatórios.</p>
+      {% endif %}
+    {% elif active_tab == "justificativas" %}
+      <h3 class="doc-card-title">Justificativas por ofício — Assinado</h3>
+      {% for j in status_assinados.justificativas %}
+        <div class="doc-card" style="margin-bottom: 1rem;">
+          <h4>Ofício {{ j.numero_display }}</h4>
+          <p>Texto: {% for o in checklist.required_docs.oficios %}{% if o.oficio_id == j.oficio_id %}{% if o.justificativa_ok %}<span class="doc-card-badge doc-card-badge--ok">Preenchida</span>{% else %}<span class="doc-card-badge doc-card-badge--pendente">Pendente</span>{% endif %}{% endif %}{% endfor %}
+          | Assinado: {% if j.assinado %}<span class="doc-card-badge doc-card-badge--ok">Sim</span>{% if j.arquivo %} — {{ j.arquivo.name }}{% endif %}{% else %}<span class="doc-card-badge doc-card-badge--pendente">Pendente</span>{% endif %}</p>
+          <form method="post" action="{% url 'evento_upload_assinado' evento.id %}" enctype="multipart/form-data" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="tipo" value="JUSTIFICATIVA_ASSINADA" />
+            <input type="hidden" name="oficio_id" value="{{ j.oficio_id }}" />
+            <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" required />
+            <button type="submit" class="btn-primary btn-small">{% if j.assinado %}Substituir assinado{% else %}Upload assinado{% endif %}</button>
+          </form>
+          {% if j.assinado and j.arquivo.id %}
+            <form method="post" action="{% url 'evento_remover_assinado' evento.id j.arquivo.id %}" style="display: inline;">{% csrf_token %}<button type="submit" class="btn-clear btn-small">Remover</button></form>
+          {% endif %}
+          <div class="doc-card-actions" style="margin-top: 8px;">
+            <a class="btn-primary btn-small" href="{% url 'justificativa_oficio' j.oficio_id %}?next=evento_pacote">Preencher/Editar texto</a>
+            <a class="btn-clear btn-small" href="{% url 'oficio_download_justificativa_docx' j.oficio_id %}">DOCX</a>
+            <a class="btn-clear btn-small" href="{% url 'oficio_download_justificativa_pdf' j.oficio_id %}">PDF</a>
+          </div>
+        </div>
+      {% endfor %}
+      {% if not status_assinados.justificativas %}
+        <p>Nenhuma justificativa exigida (antecedência &gt;= 10 dias) ou nenhum ofício no evento.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+{% endblock %}

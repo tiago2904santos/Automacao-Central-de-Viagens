@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}Central de Viagens{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'viagens/form.css' %}" />
+    {% block extra_head %}{% endblock %}
     <script src="https://unpkg.com/lucide@latest"></script>
   </head>
   <body>
@@ -51,6 +52,12 @@
               </li>
             </ul>
           </li>
+          <li>
+            <a href="{% url 'eventos_lista' %}">
+              <i data-lucide="calendar-days"></i>
+              Eventos (pacotes)
+            </a>
+          </li>
           <li class="has-submenu">
             <a href="#" class="submenu-toggle">
               <i data-lucide="file-check"></i>
@@ -68,6 +75,33 @@
                 <a href="{% url 'termos_autorizacao_lista' %}">
                   <i data-lucide="list"></i>
                   Lista de termos
+                </a>
+              </li>
+            </ul>
+          </li>
+          <li class="has-submenu">
+            <a href="#" class="submenu-toggle">
+              <i data-lucide="file-check"></i>
+              Justificativas
+              <i data-lucide="chevron-down" class="chevron"></i>
+            </a>
+            <ul class="submenu">
+              <li>
+                <a href="{% url 'justificativa_nova' %}">
+                  <i data-lucide="plus-circle"></i>
+                  Nova justificativa
+                </a>
+              </li>
+              <li>
+                <a href="{% url 'justificativas_lista' %}">
+                  <i data-lucide="list"></i>
+                  Lista de justificativas
+                </a>
+              </li>
+              <li>
+                <a href="{% url 'modelos_justificativa_lista' %}">
+                  <i data-lucide="file-text"></i>
+                  Modelos de justificativa
                 </a>
               </li>
             </ul>

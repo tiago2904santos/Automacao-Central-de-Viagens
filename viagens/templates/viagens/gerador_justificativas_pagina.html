@@ -1,0 +1,146 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}{% if vinculada_oficio %}Justificativa do ofício{% else %}Gerador de justificativas{% endif %}{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/justificativas.css' %}" />
+{% endblock %}
+
+{% block breadcrumb %}
+  {% if vinculada_oficio %}
+    Justificativas <span class="breadcrumb-sep">/</span> Ofício {{ oficio.numero_formatado|default:oficio_id }}
+  {% else %}
+    Justificativas <span class="breadcrumb-sep">/</span> Nova justificativa
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header gerador-justificativa-header">
+    <div>
+      <h2 class="page-title">{% if vinculada_oficio %}Justificativa do ofício{% else %}Gerador de justificativas{% endif %}</h2>
+      <p class="page-subtitle">{% if vinculada_oficio %}Preencha e salve no ofício ou gere DOCX/PDF. Use «Salvar e voltar» para retornar ao fluxo.{% else %}Escolha um modelo (ou texto livre), informe o Ofício nº/Ano se aplicável, assinante e gere o documento.{% endif %}</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear" href="{% url 'modelos_justificativa_lista' %}">Gerenciar modelos</a>
+      {% if vinculada_oficio and oficio_id %}
+        <a class="btn-clear" href="{% url 'oficio_documentos' oficio_id %}">Abrir ofício</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="{% if message.tags == 'error' %}error{% else %}success{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="card gerador-justificativa-card">
+    <form method="post" id="geradorJustificativaForm" class="gerador-justificativa-form">
+      {% csrf_token %}
+      {% if vinculada_oficio and next_url %}
+        <input type="hidden" name="next_url" value="{{ next_url }}" />
+      {% endif %}
+
+      {% if vinculada_oficio and oficio %}
+        <section class="gerador-section gerador-vinculo-card">
+          <h3 class="gerador-section-title">Vínculo do ofício</h3>
+          <p>Ofício <strong>{{ oficio.numero_formatado|default:oficio.oficio|default:oficio_id }}</strong> — Protocolo: {{ oficio.protocolo|default:"—" }}. O campo «Ofício nº/Ano» abaixo foi pré-preenchido. Ao salvar, o texto ficará vinculado a este ofício.</p>
+        </section>
+      {% endif %}
+
+      <section class="gerador-section gerador-section--modelo">
+        <h3 class="gerador-section-title">Modelo e Ofício</h3>
+        <div class="gerador-modelo-row">
+          <div class="form-group">
+            <label for="id_modelo_justificativa">{{ form.modelo.label }}</label>
+            {{ form.modelo }}
+            {{ form.modelo.errors }}
+          </div>
+          <div class="form-group">
+            <label for="id_oficio_numero_ano">{{ form.oficio_numero_ano.label }}</label>
+            {{ form.oficio_numero_ano }}
+            {{ form.oficio_numero_ano.errors }}
+          </div>
+        </div>
+        <p class="field-help">Se escolher um modelo, o texto será preenchido abaixo. Informe o Ofício nº/Ano (ex: 123/2026) para substituir X/ANO no texto.</p>
+      </section>
+
+      <section class="gerador-section gerador-section--texto">
+        <h3 class="gerador-section-title">Texto da justificativa</h3>
+        <div class="form-group">
+          <label for="id_justificativa">{{ form.justificativa.label }}</label>
+          {{ form.justificativa }}
+          {{ form.justificativa.errors }}
+        </div>
+      </section>
+
+      <section class="gerador-section gerador-section--assinante gerador-section--last">
+        <h3 class="gerador-section-title">Assinante</h3>
+        <p class="field-help">O assinante padrão vem das <a href="{% url 'config_oficio' %}">Configurações</a> (campo «Assinatura – justificativas»). Você pode alterar aqui para esta justificativa.</p>
+        <div class="form-group">
+          <label for="id_assinante_justificativa">{{ form.assinante.label }}</label>
+          {{ form.assinante }}
+          {{ form.assinante.errors }}
+          <p id="cargoAssinanteDisplay" class="gerador-cargo-display" aria-live="polite">
+            <span class="gerador-cargo-label">Cargo:</span>
+            <span id="cargoAssinanteValue">Selecione um agente acima.</span>
+          </p>
+        </div>
+      </section>
+
+      <div class="gerador-actions">
+        {% if vinculada_oficio and next_url %}
+          <button type="submit" name="action" value="salvar_voltar" class="btn-salvar-voltar">Salvar e voltar</button>
+        {% endif %}
+        <button type="submit" name="gerar_docx" class="btn-primary">Gerar e baixar DOCX</button>
+        <button type="submit" name="gerar_pdf" value="1" class="btn-clear">Gerar e baixar PDF</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (function() {
+      var selectAssinante = document.getElementById('id_assinante_justificativa');
+      var cargoSpan = document.getElementById('cargoAssinanteValue');
+      if (selectAssinante && cargoSpan) {
+        function updateCargo() {
+          var opt = selectAssinante.options[selectAssinante.selectedIndex];
+          if (!opt || !opt.value) {
+            cargoSpan.textContent = 'Selecione um agente acima.';
+            return;
+          }
+          var text = opt.textContent || opt.innerText || '';
+          var sep = ' — ';
+          var idx = text.indexOf(sep);
+          if (idx !== -1) {
+            cargoSpan.textContent = text.slice(idx + sep.length).trim() || '(sem cargo)';
+          } else {
+            cargoSpan.textContent = '(cargo não informado)';
+          }
+        }
+        selectAssinante.addEventListener('change', updateCargo);
+        updateCargo();
+      }
+
+      var selectModelo = document.getElementById('id_modelo_justificativa');
+      var textareaJustificativa = document.getElementById('id_justificativa');
+      if (selectModelo && textareaJustificativa) {
+        selectModelo.addEventListener('change', function() {
+          var id = this.value;
+          if (!id) return;
+          var url = "{% url 'modelo_justificativa_texto_api' 1 %}".replace('/1/', '/' + id + '/');
+          fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+            if (data && data.texto !== undefined) {
+              textareaJustificativa.value = data.texto;
+            }
+          }).catch(function() {});
+        });
+      }
+    })();
+  </script>
+{% endblock %}

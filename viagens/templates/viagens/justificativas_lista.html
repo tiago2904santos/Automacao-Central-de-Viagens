@@ -1,0 +1,102 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Justificativas{% endblock %}
+
+{% block breadcrumb %}
+  Justificativas <span class="breadcrumb-sep">/</span> Lista
+{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/justificativas.css' %}" />
+{% endblock %}
+
+{% block content %}
+  <div class="page-header justificativas-list-header">
+    <h2 class="page-title">Justificativas</h2>
+    <p class="page-subtitle">Ofícios com prazo &lt; 10 dias: pendentes (sem texto) e concluídas (com justificativa preenchida).</p>
+  </div>
+
+  <div class="justificativas-tabs">
+    <a href="?tab=pendentes" class="justificativas-tab {% if tab == 'pendentes' %}active{% endif %}">Pendentes</a>
+    <a href="?tab=concluidas" class="justificativas-tab {% if tab == 'concluidas' %}active{% endif %}">Concluídas</a>
+  </div>
+
+  <div class="card justificativas-card">
+    {% if tab == 'pendentes' %}
+      <h3 class="justificativas-card-title">Pendentes (exige justificativa e texto vazio)</h3>
+      {% if pendentes %}
+        <div class="justificativas-table-wrap">
+          <table class="justificativas-table">
+            <thead>
+              <tr>
+                <th>Ofício</th>
+                <th>Protocolo</th>
+                <th>Data da saída</th>
+                <th>Antecedência</th>
+                <th>Destino(s)</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in pendentes %}
+                <tr>
+                  <td>{{ row.oficio.numero_formatado|default:row.oficio.oficio|default:"—" }}</td>
+                  <td>{{ row.oficio.protocolo|default:"—" }}</td>
+                  <td>{% if row.data_saida %}{{ row.data_saida|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+                  <td>{% if row.dias_antecedencia is not None %}{{ row.dias_antecedencia }} dias{% else %}—{% endif %}</td>
+                  <td>{{ row.destinos }}</td>
+                  <td><span class="status-badge status-pendente">Pendente</span></td>
+                  <td class="justificativas-actions">
+                    <a href="{% url 'justificativa_oficio' row.oficio.id %}?next=oficio_documentos" class="btn-sm btn-primary">Editar justificativa</a>
+                    <a href="{% url 'oficio_documentos' row.oficio.id %}" class="btn-sm btn-clear">Abrir ofício</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="justificativas-empty">Nenhum ofício pendente de justificativa.</p>
+      {% endif %}
+    {% else %}
+      <h3 class="justificativas-card-title">Concluídas (justificativa preenchida)</h3>
+      {% if concluidas %}
+        <div class="justificativas-table-wrap">
+          <table class="justificativas-table">
+            <thead>
+              <tr>
+                <th>Ofício</th>
+                <th>Protocolo</th>
+                <th>Data da saída</th>
+                <th>Antecedência</th>
+                <th>Destino(s)</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in concluidas %}
+                <tr>
+                  <td>{{ row.oficio.numero_formatado|default:row.oficio.oficio|default:"—" }}</td>
+                  <td>{{ row.oficio.protocolo|default:"—" }}</td>
+                  <td>{% if row.data_saida %}{{ row.data_saida|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+                  <td>{% if row.dias_antecedencia is not None %}{{ row.dias_antecedencia }} dias{% else %}—{% endif %}</td>
+                  <td>{{ row.destinos }}</td>
+                  <td><span class="status-badge status-concluida">Concluída</span></td>
+                  <td class="justificativas-actions">
+                    <a href="{% url 'justificativa_oficio' row.oficio.id %}" class="btn-sm btn-primary">Editar justificativa</a>
+                    <a href="{% url 'oficio_documentos' row.oficio.id %}" class="btn-sm btn-clear">Abrir ofício</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="justificativas-empty">Nenhuma justificativa concluída.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+{% endblock %}

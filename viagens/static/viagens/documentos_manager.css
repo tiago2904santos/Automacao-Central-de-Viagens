@@ -1,0 +1,254 @@
+/* Gerenciador de documentos por ofício — cards, drawer, tabs */
+
+/* ---- Tabs ---- */
+.doc-manager-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  padding: 0.25rem 0;
+}
+.doc-manager-tabs .btn-clear {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+.doc-manager-tabs .btn-clear.is-active {
+  background: var(--brand-primary, #0f766e);
+  color: #fff;
+  border-color: var(--brand-primary, #0f766e);
+}
+
+/* ---- Grid de cards ---- */
+.doc-manager-cards {
+  margin: 0;
+}
+.doc-manager-actions--top {
+  margin-bottom: 1.25rem;
+}
+.doc-manager-btn-gerar-todos[data-loading="true"] .doc-manager-btn-label {
+  display: none;
+}
+.doc-manager-btn-gerar-todos[data-loading="true"] .doc-manager-btn-loading {
+  display: inline;
+}
+.doc-manager-btn-loading {
+  display: none;
+}
+
+.doc-manager-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.doc-card {
+  background: var(--surface-contrast, #fff);
+  border: 1px solid var(--brand-border, #e2e8f0);
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.doc-card:hover {
+  border-color: rgba(15, 118, 110, 0.3);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.doc-card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem 0;
+  color: var(--brand-ink, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.doc-card-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.doc-card-badge--ok {
+  background: var(--brand-soft, #e6f4f1);
+  color: var(--brand-primary-dark, #115e59);
+}
+.doc-card-badge--pendente {
+  background: #fef3c7;
+  color: #92400e;
+}
+.doc-card-badge--nao-cadastrado {
+  background: #f1f5f9;
+  color: var(--brand-muted, #5b6677);
+}
+.doc-card-badge--nao-exigido {
+  background: #f1f5f9;
+  color: var(--brand-muted, #5b6677);
+}
+.doc-card-badge--info {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.doc-card-desc {
+  font-size: 0.875rem;
+  color: var(--brand-muted, #5b6677);
+  margin: 0 0 0.75rem 0;
+  line-height: 1.45;
+}
+.doc-card-preview {
+  font-size: 0.8125rem;
+  color: var(--brand-ink, #0f172a);
+  margin: 0.5rem 0 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border-left: 3px solid var(--brand-primary, #0f766e);
+  line-height: 1.45;
+  max-height: 4.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-preview-standalone {
+  max-height: none;
+}
+
+.doc-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.doc-card-actions .btn-small {
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.doc-card-links {
+  list-style: none;
+  margin: 0.5rem 0 0 0;
+  padding: 0;
+  font-size: 0.875rem;
+}
+.doc-card-links li {
+  margin-bottom: 0.35rem;
+}
+.doc-card-links a {
+  color: var(--brand-primary, #0f766e);
+  font-weight: 500;
+  text-decoration: none;
+}
+.doc-card-links a:hover {
+  text-decoration: underline;
+}
+
+.doc-manager-drawer-actions {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--brand-border, #e2e8f0);
+}
+
+.doc-manager-resumo.card {
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+
+/* ---- Drawer (lista de ofícios) ---- */
+.doc-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.doc-drawer-overlay.is-open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.doc-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 100%;
+  max-width: 520px;
+  height: 100%;
+  background: var(--surface-contrast, #fff);
+  z-index: 1001;
+  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.15);
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.doc-drawer.is-open {
+  transform: translateX(0);
+}
+
+.doc-drawer-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--brand-border, #e2e8f0);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+.doc-drawer-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--brand-ink, #0f172a);
+}
+.doc-drawer-close {
+  padding: 0.35rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--brand-muted, #5b6677);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.doc-drawer-close:hover {
+  background: var(--surface-soft, #f3f6fb);
+  color: var(--brand-ink, #0f172a);
+}
+
+.doc-drawer-body {
+  padding: 1.25rem 1.5rem;
+  flex: 1;
+  min-height: 0;
+}
+.doc-drawer-body.is-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+.doc-drawer-loading-text {
+  color: var(--brand-muted, #5b6677);
+  font-size: 0.9375rem;
+}
+.doc-drawer-error {
+  padding: 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #b91c1c;
+  font-size: 0.9375rem;
+}
+
+@media (max-width: 560px) {
+  .doc-manager-grid {
+    grid-template-columns: 1fr;
+  }
+}

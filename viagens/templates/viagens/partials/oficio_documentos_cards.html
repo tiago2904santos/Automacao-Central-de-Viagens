@@ -1,0 +1,129 @@
+{% load static %}
+{# Partial: cards de documentos do ofício. Usado na Central (tab Resumo) e no drawer da lista. #}
+<div class="doc-manager-cards" data-oficio-id="{{ oficio.id }}">
+  {% if not is_fragment %}
+  <div class="doc-manager-actions doc-manager-actions--top">
+    <form method="post" action="{% url 'oficio_documentos_gerar_todos' oficio.id %}" class="doc-manager-gerar-todos-form" data-gerar-todos>
+      {% csrf_token %}
+      <button type="submit" class="btn-primary doc-manager-btn-gerar-todos" data-loading="false">
+        <span class="doc-manager-btn-label">Gerar todos os documentos</span>
+        <span class="doc-manager-btn-loading" aria-hidden="true">Gerando…</span>
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="doc-manager-grid">
+    {# Ofício #}
+    <div class="doc-card doc-card--oficio">
+      <h3 class="doc-card-title">Ofício</h3>
+      <span class="doc-card-badge doc-card-badge--ok">OK</span>
+      <p class="doc-card-desc">Gerar e baixar ofício em DOCX ou PDF.</p>
+      <div class="doc-card-actions">
+        <a class="btn-clear btn-small" href="{% url 'oficio_download_docx' oficio.id %}">DOCX</a>
+        <a class="btn-clear btn-small" href="{% url 'oficio_download_pdf' oficio.id %}">PDF</a>
+      </div>
+    </div>
+
+    {# Termo #}
+    <div class="doc-card doc-card--termo">
+      <h3 class="doc-card-title">Termo de Autorização</h3>
+      <span class="doc-card-badge doc-card-badge--ok">OK</span>
+      <p class="doc-card-desc">Gerar e baixar termo em DOCX ou PDF.</p>
+      <div class="doc-card-actions">
+        <a class="btn-clear btn-small" href="{% url 'oficio_download_termo_autorizacao' oficio.id %}">DOCX</a>
+        <a class="btn-clear btn-small" href="{% url 'oficio_download_termo_autorizacao_pdf' oficio.id %}">PDF</a>
+      </div>
+    </div>
+
+    {# Justificativa #}
+    <div class="doc-card doc-card--justificativa">
+      <h3 class="doc-card-title">Justificativa</h3>
+      {% if documentos_status.justificativa.status == 'pendente' %}
+        <span class="doc-card-badge doc-card-badge--pendente">Pendente</span>
+        <p class="doc-card-desc">Para ofícios com prazo &lt; 10 dias é obrigatório preencher a justificativa.</p>
+        <div class="doc-card-actions">
+          <a class="btn-primary btn-small" href="{% url 'justificativa_oficio' oficio.id %}{% if not is_fragment %}?next=oficio_documentos{% endif %}">Preencher</a>
+        </div>
+      {% elif documentos_status.justificativa.status == 'ok' %}
+        <span class="doc-card-badge doc-card-badge--ok">OK</span>
+        {% if documentos_status.justificativa.preview %}
+          <p class="doc-card-preview" title="{{ documentos_status.justificativa.preview }}">{{ documentos_status.justificativa.preview }}</p>
+        {% endif %}
+        <div class="doc-card-actions">
+          <a class="btn-clear btn-small" href="{% url 'justificativa_oficio' oficio.id %}{% if not is_fragment %}?next=oficio_documentos{% endif %}">Editar</a>
+          <a class="btn-clear btn-small" href="{% url 'oficio_download_justificativa_docx' oficio.id %}">DOCX</a>
+          <a class="btn-clear btn-small" href="{% url 'oficio_download_justificativa_pdf' oficio.id %}">PDF</a>
+        </div>
+      {% else %}
+        <span class="doc-card-badge doc-card-badge--nao-exigido">Não exigido</span>
+        <p class="doc-card-desc">Prazo ≥ 10 dias. Opcional preencher.</p>
+        <div class="doc-card-actions">
+          <a class="btn-clear btn-small" href="{% url 'justificativa_oficio' oficio.id %}{% if not is_fragment %}?next=oficio_documentos{% endif %}">Abrir justificativa</a>
+        </div>
+      {% endif %}
+    </div>
+
+    {# Plano de Trabalho #}
+    <div class="doc-card doc-card--plano">
+      <h3 class="doc-card-title">Plano de Trabalho</h3>
+      {% if documentos_status.plano.status == 'ok' %}
+        <span class="doc-card-badge doc-card-badge--ok">Cadastrado</span>
+        <p class="doc-card-desc">Plano {{ documentos_status.plano.numero }}/{{ documentos_status.plano.ano }}.</p>
+        <div class="doc-card-actions">
+          <a class="btn-clear btn-small" href="{% url 'plano_trabalho_editar' oficio.id %}">Editar</a>
+          <a class="btn-clear btn-small" href="{% url 'oficio_download_plano_trabalho_docx' oficio.id %}">DOCX</a>
+          <a class="btn-clear btn-small" href="{% url 'oficio_download_plano_trabalho_pdf' oficio.id %}">PDF</a>
+        </div>
+      {% else %}
+        <span class="doc-card-badge doc-card-badge--nao-cadastrado">Não cadastrado</span>
+        <p class="doc-card-desc">Crie o plano de trabalho para este ofício.</p>
+        <div class="doc-card-actions">
+          <a class="btn-primary btn-small" href="{% url 'plano_trabalho_editar' oficio.id %}">Criar</a>
+        </div>
+      {% endif %}
+    </div>
+
+    {# Ordem de Serviço (só quando não tem plano) #}
+    {% if documentos_status.ordem.visible %}
+    <div class="doc-card doc-card--ordem">
+      <h3 class="doc-card-title">Ordem de Serviço</h3>
+      {% if documentos_status.ordem.status == 'ok' %}
+        <span class="doc-card-badge doc-card-badge--ok">Cadastrada</span>
+        <p class="doc-card-desc">Ordem {{ documentos_status.ordem.numero }}/{{ documentos_status.ordem.ano }}.</p>
+        <div class="doc-card-actions">
+          <a class="btn-clear btn-small" href="{% url 'ordem_servico_editar' oficio.id %}">Editar</a>
+          <a class="btn-clear btn-small" href="{% url 'oficio_download_ordem_servico_docx' oficio.id %}">DOCX</a>
+          <a class="btn-clear btn-small" href="{% url 'oficio_download_ordem_servico_pdf' oficio.id %}">PDF</a>
+        </div>
+      {% else %}
+        <span class="doc-card-badge doc-card-badge--nao-cadastrado">Não cadastrada</span>
+        <p class="doc-card-desc">Sem plano de trabalho; use ordem de serviço.</p>
+        <div class="doc-card-actions">
+          <a class="btn-primary btn-small" href="{% url 'ordem_servico_editar' oficio.id %}">Criar</a>
+        </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# Outros #}
+    {% if documentos_status.outros %}
+    <div class="doc-card doc-card--outros">
+      <h3 class="doc-card-title">Outros documentos</h3>
+      <span class="doc-card-badge doc-card-badge--info">Links</span>
+      <p class="doc-card-desc">Listas e termos.</p>
+      <ul class="doc-card-links">
+        {% for item in documentos_status.outros %}
+          <li><a href="{{ item.url }}">{{ item.label }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if is_fragment %}
+  <div class="doc-manager-drawer-actions">
+    <a class="btn-primary" href="{% url 'oficio_documentos' oficio.id %}">Abrir Central de Documentos</a>
+  </div>
+  {% endif %}
+</div>

@@ -1,0 +1,69 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Eventos (pacotes){% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+{% endblock %}
+
+{% block breadcrumb %}
+  Eventos <span class="breadcrumb-sep">/</span> Lista
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h2 class="page-title">Eventos (pacotes)</h2>
+    <p class="page-subtitle">Gerencie os pacotes por evento: roteiro, ofícios, plano/ordem, termos e justificativas.</p>
+  </div>
+
+  <div class="list-card">
+    {% if rows %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Evento</th>
+            <th>Datas</th>
+            <th>Cidade base</th>
+            <th>Ofícios</th>
+            <th>Checklist</th>
+            <th class="table-actions-header">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td><strong>{{ row.evento.titulo }}</strong></td>
+              <td>
+                {% if row.evento.data_inicio %}
+                  {{ row.evento.data_inicio|date:"d/m/Y" }}
+                  {% if row.evento.data_fim %} – {{ row.evento.data_fim|date:"d/m/Y" }}{% endif %}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td>{% if row.evento.cidade_base %}{{ row.evento.cidade_base.nome }}/{{ row.evento.cidade_base.estado.sigla }}{% else %}—{% endif %}</td>
+              <td>{{ row.oficios_count }}</td>
+              <td>
+                {% if row.checklist.readiness.pronto_para_protocolar %}
+                  <span class="doc-card-badge doc-card-badge--ok">Pronto para protocolar</span>
+                {% else %}
+                  <span class="doc-card-badge doc-card-badge--pendente">Pendências</span>
+                {% endif %}
+              </td>
+              <td class="table-actions-cell">
+                <a href="{% url 'evento_pacote' row.evento.id %}" class="btn-primary btn-small">Abrir Pacote</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <strong>Nenhum evento cadastrado</strong>
+        <p>Os eventos são criados ao abrir «Abrir Pacote do Evento» na lista de ofícios ou ao vincular ofícios a um evento.</p>
+        <a class="btn-primary" href="{% url 'oficios_lista' %}">Ir para Ofícios</a>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

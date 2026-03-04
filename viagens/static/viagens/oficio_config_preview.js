@@ -16,6 +16,7 @@
   const telefoneInput = form.querySelector("#id_telefone");
   const emailInput = form.querySelector("#id_email");
   const assinanteSelect = form.querySelector("#id_assinante");
+  const assinanteJustificativaSelect = form.querySelector("#id_assinante_justificativa");
   const cepStatus = document.getElementById("cepStatus");
 
   const previewDivisao = document.getElementById("previewDivisao");
@@ -26,6 +27,8 @@
   const previewEmail = document.getElementById("previewEmail");
   const previewAssinanteNome = document.getElementById("previewAssinanteNome");
   const previewAssinanteCargo = document.getElementById("previewAssinanteCargo");
+  const previewAssinanteJustificativaNome = document.getElementById("previewAssinanteJustificativaNome");
+  const previewAssinanteJustificativaCargo = document.getElementById("previewAssinanteJustificativaCargo");
 
   const particles = new Set(["da", "de", "do", "dos", "das", "e"]);
 
@@ -102,13 +105,27 @@
     if (!label) {
       setPreview(previewAssinanteNome, "");
       setPreview(previewAssinanteCargo, "");
-      return;
+    } else {
+      const parts = label.split(" - ");
+      const nome = parts[0] || "";
+      const cargo = parts.slice(1).join(" - ");
+      setPreview(previewAssinanteNome, titleCasePt(nome));
+      setPreview(previewAssinanteCargo, titleCasePt(cargo));
     }
-    const parts = label.split(" - ");
-    const nome = parts[0] || "";
-    const cargo = parts.slice(1).join(" - ");
-    setPreview(previewAssinanteNome, titleCasePt(nome));
-    setPreview(previewAssinanteCargo, titleCasePt(cargo));
+
+    const selectedJust = assinanteJustificativaSelect?.selectedOptions?.[0];
+    const hasJust = selectedJust && selectedJust.value;
+    const labelJust = hasJust ? selectedJust.textContent.trim() : "";
+    if (!labelJust) {
+      setPreview(previewAssinanteJustificativaNome, "");
+      setPreview(previewAssinanteJustificativaCargo, "");
+    } else {
+      const partsJust = labelJust.split(" - ");
+      const nomeJust = partsJust[0] || "";
+      const cargoJust = partsJust.slice(1).join(" - ");
+      setPreview(previewAssinanteJustificativaNome, titleCasePt(nomeJust));
+      setPreview(previewAssinanteJustificativaCargo, titleCasePt(cargoJust));
+    }
   };
 
   const setCepStatus = (message, isError) => {
@@ -189,6 +206,9 @@
 
   if (assinanteSelect) {
     assinanteSelect.addEventListener("change", updatePreview);
+  }
+  if (assinanteJustificativaSelect) {
+    assinanteJustificativaSelect.addEventListener("change", updatePreview);
   }
 
   if (cepInput) {

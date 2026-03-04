@@ -28,6 +28,11 @@ class Viajante(models.Model):
     cpf = models.CharField(max_length=50)
     cargo = models.CharField(max_length=120)
     telefone = models.CharField(max_length=30, blank=True)
+    is_ascom = models.BooleanField(
+        default=True,
+        verbose_name="É da ASCOM?",
+        help_text="Se sim, não exige Termo de Autorização no pacote do evento.",
+    )
 
     def __str__(self) -> str:
         return self.nome
@@ -206,6 +211,13 @@ class OficioConfig(models.Model):
         blank=True,
         related_name="oficio_configs",
     )
+    assinante_justificativa = models.ForeignKey(
+        Viajante,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="oficio_config_assinante_justificativa",
+    )
     sede_cidade_default = models.ForeignKey(
         Cidade,
         on_delete=models.SET_NULL,
@@ -230,6 +242,34 @@ class OficioConfig(models.Model):
         if self.origem_nome:
             self.origem_nome = self.origem_nome.upper()
         self.pk = 1
+        super().save(*args, **kwargs)
+
+
+class ModeloJustificativa(models.Model):
+    """Modelos de texto pré-prontos para justificativas (prazo &lt; 10 dias)."""
+    codigo = models.CharField(max_length=80, unique=True, help_text="Ex: recebimento_tardio")
+    label = models.CharField(max_length=200, verbose_name="Nome do modelo")
+    texto = models.TextField(verbose_name="Texto da justificativa")
+    ordem = models.PositiveIntegerField(default=0)
+    ativo = models.BooleanField(default=True)
+    padrao = models.BooleanField(
+        default=False,
+        help_text="Se marcado, este modelo será o padrão no gerador.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Modelo de justificativa"
+        verbose_name_plural = "Modelos de justificativa"
+        ordering = ("ordem", "label")
+
+    def __str__(self) -> str:
+        return self.label
+
+    def save(self, *args, **kwargs):
+        if self.padrao:
+            ModeloJustificativa.objects.exclude(pk=self.pk).update(padrao=False)
         super().save(*args, **kwargs)
 
 
@@ -280,6 +320,125 @@ def get_next_ordem_num(ano: int) -> int:
         counter.last_num += 1
         counter.save(update_fields=["last_num", "updated_at"])
         return int(counter.last_num)
+
+
+class Evento(models.Model):
+    """Pacote do evento: unidade central que agrupa roteiro, ofícios, plano/ordem, termos e justificativas."""
+
+    titulo = models.CharField(max_length=255, verbose_name="Título / Nome do evento")
+    cidade_base = models.ForeignKey(
+        "Cidade",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="eventos_base",
+        verbose_name="Cidade base",
+    )
+    data_inicio = models.DateField(null=True, blank=True, verbose_name="Data início")
+    data_fim = models.DateField(null=True, blank=True, verbose_name="Data fim")
+    tem_convite_ou_oficio_evento = models.BooleanField(
+        default=True,
+        verbose_name="Tem ofício solicitando ou convite do evento?",
+        help_text="Se não, o evento exige Plano de Trabalho ou Ordem de Serviço (1 por evento).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Evento"
+        verbose_name_plural = "Eventos"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return self.titulo or f"Evento #{self.pk}"
+
+
+class DocumentoEventoArquivo(models.Model):
+    """Arquivo de documento do pacote do evento: gerado pelo sistema ou assinado (upload)."""
+
+    class Tipo(models.TextChoices):
+        OFICIO_ASSINADO = "OFICIO_ASSINADO", "Ofício assinado"
+        PLANO_ASSINADO = "PLANO_ASSINADO", "Plano de trabalho assinado"
+        ORDEM_ASSINADO = "ORDEM_ASSINADO", "Ordem de serviço assinada"
+        JUSTIFICATIVA_ASSINADA = "JUSTIFICATIVA_ASSINADA", "Justificativa assinada"
+        TERMO_ASSINADO = "TERMO_ASSINADO", "Termo de autorização assinado"
+
+    evento = models.ForeignKey(
+        Evento,
+        on_delete=models.CASCADE,
+        related_name="arquivos_documentos",
+        verbose_name="Evento",
+    )
+    tipo = models.CharField(max_length=32, choices=Tipo.choices, db_index=True)
+    oficio = models.ForeignKey(
+        "Oficio",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="arquivos_evento",
+        verbose_name="Ofício",
+    )
+    viajante = models.ForeignKey(
+        Viajante,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="arquivos_termo_evento",
+        verbose_name="Servidor (termo)",
+    )
+    arquivo = models.FileField(
+        upload_to="evento_documentos/%Y/%m/",
+        max_length=500,
+        verbose_name="Arquivo",
+    )
+    original_name = models.CharField(max_length=255, blank=True)
+    mime_type = models.CharField(max_length=100, blank=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Apenas o ativo por (evento, tipo, ofício/viajante) conta para checklist.",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Arquivo de documento do evento"
+        verbose_name_plural = "Arquivos de documentos do evento"
+        ordering = ["-uploaded_at"]
+        indexes = [
+            models.Index(fields=["evento", "tipo", "oficio"], name="deae_ev_tipo_of"),
+            models.Index(fields=["evento", "tipo", "viajante"], name="deae_ev_tipo_via"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_tipo_display()} — {self.evento_id}"
+
+
+class EventoProtocoloArquivo(models.Model):
+    """PDF compilado do protocolo (anexo único) do evento."""
+
+    evento = models.ForeignKey(
+        Evento,
+        on_delete=models.CASCADE,
+        related_name="protocolos_compilados",
+        verbose_name="Evento",
+    )
+    pdf_compilado = models.FileField(
+        upload_to="evento_protocolo/%Y/%m/",
+        max_length=500,
+        verbose_name="PDF compilado",
+    )
+    compilado_em = models.DateTimeField(auto_now_add=True)
+    compilado_por_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    hash_sha256 = models.CharField(max_length=64, blank=True)
+    versao = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        verbose_name = "Protocolo compilado do evento"
+        verbose_name_plural = "Protocolos compilados"
+        ordering = ["-compilado_em"]
+
+    def __str__(self) -> str:
+        return f"Protocolo {self.evento_id} v{self.versao}"
 
 
 class AcaoInstitucionalManager(models.Manager):
@@ -334,6 +493,22 @@ class TermoAutorizacao(models.Model):
         blank=True,
         verbose_name="Acao Institucional",
     )
+    evento = models.ForeignKey(
+        "Evento",
+        on_delete=models.CASCADE,
+        related_name="termos",
+        null=True,
+        blank=True,
+        verbose_name="Evento",
+    )
+    viajante = models.ForeignKey(
+        Viajante,
+        on_delete=models.CASCADE,
+        related_name="termos_autorizacao",
+        null=True,
+        blank=True,
+        verbose_name="Servidor",
+    )
     data_inicio = models.DateField()
     data_fim = models.DateField(null=True, blank=True)
     data_unica = models.BooleanField(default=False)
@@ -381,6 +556,14 @@ class Oficio(models.Model):
         null=True,
         blank=True,
         verbose_name="Acao Institucional",
+    )
+    evento = models.ForeignKey(
+        "Evento",
+        on_delete=models.SET_NULL,
+        related_name="oficios",
+        null=True,
+        blank=True,
+        verbose_name="Evento (pacote)",
     )
     roteiro = models.ForeignKey(
         "Roteiro",
@@ -526,6 +709,17 @@ class Oficio(models.Model):
         related_name="oficios_que_usam_como_carona",
     )
     motivo = models.TextField(blank=True)
+    justificativa_modelo = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        help_text="Código do modelo de justificativa usado (ex: recebimento_tardio).",
+    )
+    justificativa_texto = models.TextField(
+        blank=True,
+        default="",
+        help_text="Texto da justificativa preenchido (prazo < 10 dias). Preenchido desbloqueia geração do ofício.",
+    )
     veiculo = models.ForeignKey(
         Veiculo,
         on_delete=models.SET_NULL,

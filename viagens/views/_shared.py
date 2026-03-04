@@ -28,7 +28,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_time
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_GET, require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.decorators.csrf import csrf_exempt
 from ..forms import (
     DiariasSimplesForm,
@@ -49,8 +49,12 @@ from ..models import (
     Cargo,
     Cidade,
     CoordenadorMunicipal,
+    DocumentoEventoArquivo,
     Efetivo,
     Estado,
+    Evento,
+    EventoProtocoloArquivo,
+    ModeloJustificativa,
     Oficio,
     OficioCounter,
     OrdemServico,
@@ -126,6 +130,7 @@ from ..documents.document import (
 )
 from ..documents.generator import generate_all_documents
 from ..documents.justificativa import (
+    build_justificativa_context_from_config,
     build_justificativa_docx_bytes,
     get_justificativa_placeholders,
 )
@@ -3377,6 +3382,12 @@ def oficio_step4(request):
     oficio_obj = _get_wizard_oficio(request, create=False)
     erros: dict[str, str] = {}
 
+    if request.method == "GET" and oficio_obj:
+        from viagens.services.justificativa_helpers import exige_justificativa, justificativa_preenchida
+        if exige_justificativa(oficio_obj) and not justificativa_preenchida(oficio_obj):
+            justificativa_url = reverse("justificativa_oficio", args=[oficio_obj.id])
+            return redirect(f"{justificativa_url}?next=oficio_step4")
+
     if request.method == "POST":
         action = (request.POST.get("action") or "").strip()
         if action == "prev":
@@ -4406,6 +4417,644 @@ def oficios_lista(request):
     )
 
 
+def ensure_oficio_has_evento(oficio: Oficio) -> Evento:
+    """Se o ofício não tem evento, cria um e associa (migrate-on-access)."""
+    if getattr(oficio, "evento_id", None):
+        return oficio.evento
+    titulo = f"Pacote — {getattr(oficio, 'numero_formatado', None) or getattr(oficio, 'oficio', None) or oficio.assunto or f'Ofício {oficio.id}'}"
+    evento = Evento.objects.create(titulo=titulo[:255], tem_convite_ou_oficio_evento=True)
+    Oficio.objects.filter(pk=oficio.pk).update(evento=evento)
+    oficio.evento = evento
+    return evento
+
+
+@require_GET
+def eventos_lista(request):
+    """Listagem de eventos (pacotes) com status do checklist."""
+    from ..services.evento_checklist import build_evento_checklist
+
+    eventos = (
+        Evento.objects.prefetch_related("oficios__trechos", "oficios__viajantes")
+        .select_related("cidade_base")
+        .order_by("-created_at")
+    )
+    rows = []
+    for ev in eventos:
+        checklist = build_evento_checklist(ev)
+        oficios_count = ev.oficios.count()
+        rows.append({
+            "evento": ev,
+            "checklist": checklist,
+            "oficios_count": oficios_count,
+        })
+    return render(
+        request,
+        "viagens/eventos_lista.html",
+        {"rows": rows},
+    )
+
+
+@require_GET
+def evento_pacote(request, evento_id: int):
+    """Pacote do evento: central única com resumo, ofícios, termos, plano/ordem, justificativas e uploads assinados."""
+    from ..services.documentos_manager import build_documentos_status
+    from ..services.evento_checklist import build_evento_checklist
+    from ..services.evento_assinados import (
+        get_status_assinados_evento,
+        is_evento_pronto_para_compilar,
+        listar_pendencias_compilacao,
+    )
+
+    evento = get_object_or_404(
+        Evento.objects.prefetch_related(
+            "oficios__trechos",
+            "oficios__viajantes",
+        ).select_related("cidade_base"),
+        id=evento_id,
+    )
+    checklist = build_evento_checklist(evento)
+    status_assinados = get_status_assinados_evento(evento)
+    pronto_para_compilar = is_evento_pronto_para_compilar(evento)
+    pendencias_compilacao = listar_pendencias_compilacao(evento)
+    ultimo_protocolo = evento.protocolos_compilados.order_by("-compilado_em").first()
+    oficios = list(evento.oficios.all().order_by("id"))
+    oficios_assinados_map = {s["oficio_id"]: s for s in status_assinados["oficios"]}
+    oficios_com_assinado = [
+        (o, oficios_assinados_map.get(o.id, {"assinado": False, "arquivo": None, "numero_display": getattr(o, "numero_formatado", None) or getattr(o, "oficio", None) or str(o.id)}))
+        for o in oficios
+    ]
+    documentos_status_por_oficio = {o.id: build_documentos_status(o) for o in oficios}
+    tab = (request.GET.get("tab") or "resumo").strip().lower()
+    allowed = {"resumo", "oficios", "termos", "plano", "justificativas"}
+    if tab not in allowed:
+        tab = "resumo"
+    from ..services.documentos_manager import _get_ordem, _get_plano
+    plano_oficio = None
+    ordem_oficio = None
+    for o in oficios:
+        if _get_plano(o) is not None and plano_oficio is None:
+            plano_oficio = o
+        if _get_ordem(o) is not None and ordem_oficio is None:
+            ordem_oficio = o
+    return render(
+        request,
+        "viagens/evento_pacote.html",
+        {
+            "evento": evento,
+            "checklist": checklist,
+            "status_assinados": status_assinados,
+            "oficios_com_assinado": oficios_com_assinado,
+            "pronto_para_compilar": pronto_para_compilar,
+            "pendencias_compilacao": pendencias_compilacao,
+            "ultimo_protocolo": ultimo_protocolo,
+            "oficios": oficios,
+            "documentos_status_por_oficio": documentos_status_por_oficio,
+            "active_tab": tab,
+            "plano_oficio": plano_oficio,
+            "ordem_oficio": ordem_oficio,
+        },
+    )
+
+
+def evento_redirect_from_oficio(request, oficio_id: int):
+    """Redireciona para o pacote do evento; cria evento se o ofício ainda não tiver."""
+    oficio = get_object_or_404(Oficio, id=oficio_id)
+    evento = ensure_oficio_has_evento(oficio)
+    return redirect("evento_pacote", evento_id=evento.id)
+
+
+ALLOWED_UPLOAD_MIMES = {"application/pdf", "image/jpeg", "image/png", "image/jpg"}
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
+
+
+def _convert_upload_to_pdf_if_image(uploaded_file):
+    """Se for imagem (jpg/png), converte para PDF em memória; senão retorna (None, None) para usar o arquivo direto."""
+    name = (getattr(uploaded_file, "name", "") or "").lower()
+    content_type = getattr(uploaded_file, "content_type", "") or ""
+    if content_type.startswith("image/") or name.endswith((".jpg", ".jpeg", ".png")):
+        from PIL import Image
+        import io as io_module
+        uploaded_file.seek(0)
+        img = Image.open(uploaded_file)
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        buf = io_module.BytesIO()
+        img.save(buf, "PDF")
+        buf.seek(0)
+        return buf.getvalue(), ".pdf"
+    return None, None
+
+
+@login_required
+@require_POST
+def evento_upload_assinado(request, evento_id: int):
+    """Upload de documento assinado (PDF ou imagem convertida para PDF) para o pacote do evento."""
+    evento = get_object_or_404(Evento, id=evento_id)
+    tipo = (request.POST.get("tipo") or "").strip()
+    if tipo not in dict(DocumentoEventoArquivo.Tipo.choices):
+        messages.error(request, "Tipo de documento inválido.")
+        return redirect("evento_pacote", evento_id=evento.id)
+    oficio_id = request.POST.get("oficio_id")
+    oficio = None
+    if oficio_id:
+        try:
+            oficio = evento.oficios.get(id=int(oficio_id))
+        except (ValueError, Oficio.DoesNotExist):
+            pass
+    viajante_id = request.POST.get("viajante_id")
+    viajante = None
+    if viajante_id:
+        try:
+            viajante = Viajante.objects.get(id=int(viajante_id))
+        except (ValueError, Viajante.DoesNotExist):
+            pass
+    arquivo = request.FILES.get("arquivo")
+    if not arquivo:
+        messages.error(request, "Nenhum arquivo enviado.")
+        return redirect("evento_pacote", evento_id=evento.id)
+    ext = (arquivo.name or "").lower()
+    if not any(ext.endswith(e) for e in ALLOWED_UPLOAD_EXTENSIONS):
+        messages.error(request, "Formato não permitido. Use PDF, JPG ou PNG.")
+        return redirect("evento_pacote", evento_id=evento.id)
+    from django.core.files.base import ContentFile
+    pdf_bytes, suffix = _convert_upload_to_pdf_if_image(arquivo)
+    if pdf_bytes is not None:
+        original_name = (arquivo.name or "documento") + (suffix or "")
+        mime = "application/pdf"
+        file_to_save = ContentFile(pdf_bytes)
+    else:
+        arquivo.seek(0)
+        original_name = arquivo.name or "documento.pdf"
+        mime = getattr(arquivo, "content_type", "") or "application/pdf"
+        file_to_save = arquivo
+    with transaction.atomic():
+        DocumentoEventoArquivo.objects.filter(
+            evento=evento,
+            tipo=tipo,
+            is_active=True,
+            oficio=oficio,
+            viajante=viajante,
+        ).update(is_active=False)
+        novo = DocumentoEventoArquivo(
+            evento=evento,
+            tipo=tipo,
+            oficio=oficio,
+            viajante=viajante,
+            original_name=original_name[:255],
+            mime_type=mime[:100],
+            uploaded_by_id=getattr(request.user, "id", None),
+        )
+        novo.arquivo.save(original_name.replace(" ", "_"), file_to_save, save=True)
+        novo.save()
+    messages.success(request, "Documento assinado enviado com sucesso.")
+    return redirect("evento_pacote", evento_id=evento.id)
+
+
+@login_required
+@require_POST
+def evento_remover_assinado(request, evento_id: int, arquivo_id: int):
+    """Desativa um arquivo assinado (remove da lista ativa)."""
+    evento = get_object_or_404(Evento, id=evento_id)
+    arq = get_object_or_404(DocumentoEventoArquivo, id=arquivo_id, evento=evento)
+    arq.is_active = False
+    arq.save(update_fields=["is_active"])
+    messages.success(request, "Documento assinado removido.")
+    return redirect("evento_pacote", evento_id=evento.id)
+
+
+@login_required
+@require_GET
+def evento_download_compilado(request, evento_id: int):
+    """Download do PDF compilado do protocolo (última versão)."""
+    evento = get_object_or_404(Evento, id=evento_id)
+    ultimo = evento.protocolos_compilados.order_by("-compilado_em").first()
+    if not ultimo or not ultimo.pdf_compilado:
+        messages.warning(request, "Nenhum protocolo compilado disponível. Gere o PDF primeiro.")
+        return redirect("evento_pacote", evento_id=evento.id)
+    from django.http import HttpResponse
+    nome = ultimo.pdf_compilado.name.split("/")[-1] or "protocolo.pdf"
+    with ultimo.pdf_compilado.open("rb") as f:
+        content = f.read()
+    resp = HttpResponse(content, content_type="application/pdf")
+    resp["Content-Disposition"] = f'attachment; filename="{nome}"'
+    return resp
+
+
+@login_required
+@require_POST
+def evento_gerar_pdf_protocolo(request, evento_id: int):
+    """Gera o PDF compilado do protocolo e redireciona para o pacote (ou download)."""
+    from ..services.evento_compilacao import compilar_pdf_protocolo
+    from ..services.evento_assinados import is_evento_pronto_para_compilar
+    evento = get_object_or_404(Evento, id=evento_id)
+    if not is_evento_pronto_para_compilar(evento):
+        messages.error(request, "Pacote incompleto: faça upload de todos os documentos assinados obrigatórios.")
+        return redirect("evento_pacote", evento_id=evento.id)
+    obj = compilar_pdf_protocolo(evento, compilado_por_id=getattr(request.user, "id", None))
+    if obj:
+        messages.success(request, "PDF do protocolo gerado com sucesso.")
+        if request.POST.get("download") == "1":
+            return redirect("evento_download_compilado", evento_id=evento.id)
+    else:
+        messages.error(request, "Não foi possível gerar o PDF do protocolo.")
+    return redirect("evento_pacote", evento_id=evento.id)
+
+
+def _get_justificativa_config_display() -> dict:
+    """Dados da configuração para exibição na página do gerador (somente leitura)."""
+    from viagens.documents.justificativa import build_justificativa_context_from_config
+    return build_justificativa_context_from_config()
+
+
+@require_http_methods(["GET", "POST"])
+def gerador_justificativas(request):
+    """Página dedicada ao gerador de justificativas: formulário com dados da config + assinante + texto."""
+    from viagens.documents.justificativa import (
+        build_justificativa_context_from_config,
+        build_justificativa_docx_bytes,
+    )
+    from viagens.forms import JustificativaGeradorForm
+
+    config_display = _get_justificativa_config_display()
+    _padrao = ModeloJustificativa.objects.filter(ativo=True, padrao=True).first()
+    modelo_padrao_id = _padrao.pk if _padrao else None
+
+    if request.method == "POST":
+        form = JustificativaGeradorForm(request.POST)
+        if form.is_valid():
+            viajante = form.cleaned_data["assinante"]
+            justificativa_texto = form.cleaned_data["justificativa"]
+            oficio_numero_ano = (form.cleaned_data.get("oficio_numero_ano") or "").strip()
+            if oficio_numero_ano:
+                from viagens.documents.justificativa import replace_oficio_numero_no_texto
+                justificativa_texto = replace_oficio_numero_no_texto(justificativa_texto, oficio_numero_ano)
+            from viagens.services.text import title_case_pt
+            assinante_nome = title_case_pt((viajante.nome or "").strip())
+            assinante_cargo = title_case_pt((viajante.cargo or "").strip())
+
+            mapping = build_justificativa_context_from_config(
+                assinante_nome=assinante_nome,
+                assinante_cargo=assinante_cargo,
+                justificativa_texto=justificativa_texto,
+            )
+            try:
+                buf = build_justificativa_docx_bytes(mapping)
+            except Exception as exc:
+                logger.exception("[justificativa] falha na geracao")
+                messages.error(request, f"Falha ao gerar documento. Detalhe: {exc}")
+                return render(
+                    request,
+                    "viagens/gerador_justificativas_pagina.html",
+                    {"form": form, "config_display": config_display, "modelo_padrao_id": modelo_padrao_id},
+                )
+
+            docx_bytes = buf.getvalue()
+            if request.POST.get("gerar_pdf"):
+                try:
+                    pdf_bytes = docx_bytes_to_pdf_bytes(docx_bytes, oficio_id=None)
+                    from django.utils import timezone
+                    now = timezone.now()
+                    filename = f"justificativa_{now.strftime('%Y%m%d_%H%M')}.pdf"
+                    return _pdf_http_response(pdf_bytes, filename)
+                except DocxPdfConversionError as exc:
+                    messages.error(
+                        request,
+                        f"PDF indisponível neste ambiente. Baixe o DOCX. Detalhe: {exc}",
+                    )
+                    return render(
+                        request,
+                        "viagens/gerador_justificativas_pagina.html",
+                        {"form": form, "config_display": config_display, "modelo_padrao_id": modelo_padrao_id},
+                    )
+                except Exception as exc:
+                    logger.exception("[justificativa-pdf] falha")
+                    messages.error(request, f"Falha ao gerar PDF. Detalhe: {exc}")
+                    return render(
+                        request,
+                        "viagens/gerador_justificativas_pagina.html",
+                        {"form": form, "config_display": config_display, "modelo_padrao_id": modelo_padrao_id},
+                    )
+            from django.utils import timezone
+            now = timezone.now()
+            filename = f"justificativa_{now.strftime('%Y%m%d_%H%M')}.docx"
+            return _docx_http_response(docx_bytes, filename)
+        # form inválido: cai no render abaixo com form
+    else:
+        initial = {}
+        assinante_id = _resolve_assinante_justificativa_id_default()
+        if assinante_id is not None:
+            initial["assinante"] = assinante_id
+        modelo_id = request.GET.get("modelo")
+        modelo_padrao = ModeloJustificativa.objects.filter(ativo=True, padrao=True).first()
+        if modelo_id:
+            modelo = ModeloJustificativa.objects.filter(ativo=True, pk=modelo_id).first()
+            if modelo:
+                initial["modelo"] = modelo.pk
+                initial["justificativa"] = modelo.texto
+        elif modelo_padrao:
+            initial["modelo"] = modelo_padrao.pk
+            initial["justificativa"] = modelo_padrao.texto
+        form = JustificativaGeradorForm(initial=initial)
+
+    return render(
+        request,
+        "viagens/gerador_justificativas_pagina.html",
+        {
+            "form": form,
+            "config_display": config_display,
+            "modelo_padrao_id": modelo_padrao_id,
+        },
+    )
+
+
+# ---------- Lista de justificativas (pendentes / concluídas) ----------
+
+
+def _justificativa_lista_querysets():
+    """Retorna (pendentes, concluídas): ofícios que exigem justificativa e ainda vazios vs preenchidos."""
+    from viagens.services.justificativa_helpers import exige_justificativa, justificativa_preenchida
+
+    oficios = (
+        Oficio.objects.prefetch_related("trechos")
+        .select_related("cidade_destino", "estado_destino", "cidade_sede", "estado_sede")
+        .order_by("-created_at")
+    )
+    pendentes = []
+    concluidas = []
+    for o in oficios:
+        if exige_justificativa(o):
+            if justificativa_preenchida(o):
+                concluidas.append(o)
+            else:
+                pendentes.append(o)
+        elif justificativa_preenchida(o):
+            concluidas.append(o)
+    return pendentes, concluidas
+
+
+@require_GET
+def justificativas_lista(request):
+    """Lista de justificativas: abas Pendentes e Concluídas."""
+    from viagens.services.justificativa_helpers import (
+        get_data_inicio_viagem,
+        get_dias_antecedencia,
+    )
+
+    tab = (request.GET.get("tab") or "pendentes").strip().lower()
+    if tab not in ("pendentes", "concluidas"):
+        tab = "pendentes"
+
+    pendentes, concluidas = _justificativa_lista_querysets()
+
+    def _row(o):
+        data_saida = get_data_inicio_viagem(o)
+        dias = get_dias_antecedencia(o)
+        destinos = ""
+        if o.cidade_destino and o.estado_destino:
+            destinos = f"{o.cidade_destino.nome}/{o.estado_destino.sigla}"
+        else:
+            destinos = o.get_destino_display() or "-"
+        return {
+            "oficio": o,
+            "data_saida": data_saida,
+            "dias_antecedencia": dias,
+            "destinos": destinos,
+        }
+
+    pendentes_rows = [_row(o) for o in pendentes]
+    concluidas_rows = [_row(o) for o in concluidas]
+
+    return render(
+        request,
+        "viagens/justificativas_lista.html",
+        {
+            "tab": tab,
+            "pendentes": pendentes_rows,
+            "concluidas": concluidas_rows,
+        },
+    )
+
+
+# ---------- Justificativa vinculada ao ofício ----------
+
+
+@require_http_methods(["GET", "POST"])
+def justificativa_oficio(request, oficio_id: int):
+    """Gerador de justificativa vinculado ao ofício: pré-preenche número, Salvar e voltar persiste no Oficio."""
+    from viagens.documents.justificativa import (
+        build_justificativa_context_from_config,
+        build_justificativa_docx_bytes,
+        replace_oficio_numero_no_texto,
+    )
+    from viagens.forms import JustificativaGeradorForm
+    from viagens.services.justificativa_helpers import exige_justificativa, justificativa_preenchida
+
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("trechos").select_related("cidade_sede", "estado_sede"),
+        id=oficio_id,
+    )
+    next_url = request.GET.get("next", "").strip()
+    if not next_url:
+        next_url = reverse("oficio_documentos", args=[oficio_id])
+    elif not next_url.startswith("/"):
+        if next_url == "oficio_step4":
+            next_url = reverse("oficio_step4")
+        elif next_url == "oficio_documentos":
+            next_url = reverse("oficio_documentos", args=[oficio_id])
+        elif next_url == "evento_pacote":
+            evento = ensure_oficio_has_evento(oficio)
+            next_url = reverse("evento_pacote", args=[evento.id])
+        else:
+            next_url = reverse("oficio_documentos", args=[oficio_id])
+
+    config_display = _get_justificativa_config_display()
+    _padrao = ModeloJustificativa.objects.filter(ativo=True, padrao=True).first()
+    modelo_padrao_id = _padrao.pk if _padrao else None
+
+    oficio_numero_display = oficio.numero_formatado or (oficio.oficio or "").strip() or f"{oficio.numero or ''}/{oficio.ano or ''}".strip("/") or str(oficio_id)
+    if oficio.ano and oficio.numero:
+        oficio_numero_display = f"{oficio.numero}/{oficio.ano}"
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+        form = JustificativaGeradorForm(request.POST)
+        if action == "salvar_voltar":
+            if form.is_valid():
+                texto = form.cleaned_data["justificativa"]
+                oficio_numero_ano = (form.cleaned_data.get("oficio_numero_ano") or "").strip() or oficio_numero_display
+                texto = replace_oficio_numero_no_texto(texto, oficio_numero_ano)
+                modelo = form.cleaned_data.get("modelo")
+                oficio.justificativa_texto = texto
+                oficio.justificativa_modelo = (modelo.codigo if modelo else "").strip()
+                oficio.save(update_fields=["justificativa_texto", "justificativa_modelo"])
+                messages.success(request, "Justificativa salva no ofício.")
+                return redirect(next_url)
+        elif form.is_valid():
+            # Gerar DOCX ou PDF (mesma lógica do gerador livre)
+            from viagens.services.text import title_case_pt
+            viajante = form.cleaned_data["assinante"]
+            justificativa_texto = form.cleaned_data["justificativa"]
+            oficio_numero_ano = (form.cleaned_data.get("oficio_numero_ano") or "").strip() or oficio_numero_display
+            justificativa_texto = replace_oficio_numero_no_texto(justificativa_texto, oficio_numero_ano)
+            assinante_nome = title_case_pt((viajante.nome or "").strip())
+            assinante_cargo = title_case_pt((viajante.cargo or "").strip())
+            mapping = build_justificativa_context_from_config(
+                assinante_nome=assinante_nome,
+                assinante_cargo=assinante_cargo,
+                justificativa_texto=justificativa_texto,
+            )
+            try:
+                buf = build_justificativa_docx_bytes(mapping)
+            except Exception as exc:
+                logger.exception("[justificativa] falha na geracao oficio_id=%s", oficio_id)
+                messages.error(request, f"Falha ao gerar documento. Detalhe: {exc}")
+            else:
+                docx_bytes = buf.getvalue()
+                if request.POST.get("gerar_pdf"):
+                    try:
+                        pdf_bytes = docx_bytes_to_pdf_bytes(docx_bytes, oficio_id=oficio_id)
+                        from django.utils import timezone
+                        now = timezone.now()
+                        filename = f"justificativa_{oficio_id}_{now.strftime('%Y%m%d_%H%M')}.pdf"
+                        return _pdf_http_response(pdf_bytes, filename)
+                    except DocxPdfConversionError as exc:
+                        messages.error(request, f"PDF indisponível. Baixe o DOCX. Detalhe: {exc}")
+                    except Exception as exc:
+                        logger.exception("[justificativa-pdf] falha oficio_id=%s", oficio_id)
+                        messages.error(request, f"Falha ao gerar PDF. Detalhe: {exc}")
+                else:
+                    from django.utils import timezone
+                    now = timezone.now()
+                    filename = f"justificativa_{oficio_id}_{now.strftime('%Y%m%d_%H%M')}.docx"
+                    return _docx_http_response(docx_bytes, filename)
+    else:
+        initial = {
+            "oficio_numero_ano": oficio_numero_display,
+            "justificativa": (oficio.justificativa_texto or "").strip(),
+        }
+        assinante_id = _resolve_assinante_justificativa_id_default()
+        if assinante_id is not None:
+            initial["assinante"] = assinante_id
+        modelo_padrao = ModeloJustificativa.objects.filter(ativo=True, padrao=True).first()
+        if not initial["justificativa"] and modelo_padrao:
+            initial["modelo"] = modelo_padrao.pk
+            initial["justificativa"] = modelo_padrao.texto
+        form = JustificativaGeradorForm(initial=initial)
+
+    return render(
+        request,
+        "viagens/gerador_justificativas_pagina.html",
+        {
+            "form": form,
+            "config_display": config_display,
+            "modelo_padrao_id": modelo_padrao_id,
+            "oficio": oficio,
+            "oficio_id": oficio_id,
+            "next_url": next_url,
+            "vinculada_oficio": True,
+        },
+    )
+
+
+# ---------- CRUD Modelos de Justificativa ----------
+
+
+@require_GET
+def modelos_justificativa_lista(request):
+    """Lista modelos de justificativa para gerenciar (adicionar, editar, excluir, definir padrão)."""
+    modelos = ModeloJustificativa.objects.all().order_by("ordem", "label")
+    return render(
+        request,
+        "viagens/modelos_justificativa_lista.html",
+        {"modelos": modelos},
+    )
+
+
+@require_GET
+def modelo_justificativa_texto_api(request, pk: int):
+    """API: retorna o texto do modelo (para preencher o textarea ao selecionar no gerador)."""
+    modelo = get_object_or_404(ModeloJustificativa.objects.filter(ativo=True), pk=pk)
+    return JsonResponse({"texto": modelo.texto or ""})
+
+
+@require_http_methods(["GET", "POST"])
+def modelo_justificativa_criar(request):
+    """Criar novo modelo de justificativa."""
+    from ..forms import ModeloJustificativaForm
+    if request.method == "POST":
+        form = ModeloJustificativaForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Modelo de justificativa criado.")
+            return redirect("modelos_justificativa_lista")
+    else:
+        form = ModeloJustificativaForm()
+    return render(request, "viagens/modelo_justificativa_form.html", {"form": form, "titulo": "Novo modelo"})
+
+
+@require_http_methods(["GET", "POST"])
+def modelo_justificativa_editar(request, pk: int):
+    """Editar modelo de justificativa."""
+    from ..forms import ModeloJustificativaForm
+    obj = get_object_or_404(ModeloJustificativa, pk=pk)
+    if request.method == "POST":
+        form = ModeloJustificativaForm(request.POST, instance=obj)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Modelo atualizado.")
+            return redirect("modelos_justificativa_lista")
+    else:
+        form = ModeloJustificativaForm(instance=obj)
+    return render(request, "viagens/modelo_justificativa_form.html", {"form": form, "titulo": "Editar modelo", "modelo": obj})
+
+
+@require_http_methods(["POST"])
+def modelo_justificativa_definir_padrao(request, pk: int):
+    """Define este modelo como padrão (único)."""
+    obj = get_object_or_404(ModeloJustificativa, pk=pk)
+    obj.padrao = True
+    obj.save(update_fields=["padrao", "updated_at"])
+    messages.success(request, f'"{obj.label}" definido como modelo padrão.')
+    return redirect("modelos_justificativa_lista")
+
+
+@require_http_methods(["GET", "POST"])
+def modelo_justificativa_salvar_como_novo(request, pk: int):
+    """Duplica o modelo com novo código/label (salvar como novo)."""
+    from ..forms import ModeloJustificativaForm
+    origem = get_object_or_404(ModeloJustificativa, pk=pk)
+    if request.method == "POST":
+        form = ModeloJustificativaForm(request.POST)
+        if form.is_valid():
+            obj = form.save(commit=False)
+            obj.padrao = False
+            obj.save()
+            messages.success(request, "Modelo salvo como novo.")
+            return redirect("modelos_justificativa_lista")
+    else:
+        form = ModeloJustificativaForm(
+            initial={
+                "codigo": f"{origem.codigo}_copia",
+                "label": f"{origem.label} (cópia)",
+                "texto": origem.texto,
+                "ordem": ModeloJustificativa.objects.count(),
+                "ativo": True,
+                "padrao": False,
+            }
+        )
+    return render(request, "viagens/modelo_justificativa_form.html", {"form": form, "titulo": "Salvar como novo modelo"})
+
+
+@require_http_methods(["POST"])
+def modelo_justificativa_excluir(request, pk: int):
+    """Excluir modelo de justificativa."""
+    obj = get_object_or_404(ModeloJustificativa, pk=pk)
+    label = obj.label
+    obj.delete()
+    messages.success(request, f'Modelo "{label}" excluído.')
+    return redirect("modelos_justificativa_lista")
+
+
 def _termo_form_context(
     *,
     erros: dict[str, str] | None = None,
@@ -5262,6 +5911,15 @@ def _resolve_assinante_id_default() -> int | None:
     return int(assinante.id)
 
 
+def _resolve_assinante_justificativa_id_default() -> int | None:
+    """Assinante padrão apenas para o gerador de justificativas (independente do assinante dos ofícios)."""
+    cfg = get_oficio_config()
+    assinante = getattr(cfg, "assinante_justificativa", None)
+    if not assinante:
+        return None
+    return int(assinante.id)
+
+
 def _plano_locais_default(oficio: Oficio, data_inicio: date) -> list[dict[str, str]]:
     locais: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -5797,24 +6455,31 @@ def _resolve_documentos_active_tab(
     *,
     tem_plano: bool,
 ) -> str:
-    tab = (raw_tab or "").strip().lower() or "oficio"
-    allowed_tabs = {"oficio", "termo", "plano", "justificativa"}
+    tab = (raw_tab or "").strip().lower() or "resumo"
+    allowed_tabs = {"resumo", "oficio", "termo", "plano", "justificativa"}
     if not tem_plano:
         allowed_tabs.add("ordem")
     if tab not in allowed_tabs:
-        return "oficio"
+        return "resumo"
     return tab
 
 
-def _get_justificativa_placeholders_safe() -> list[str]:
+def _get_justificativa_placeholders_safe() -> list[dict]:
+    """Retorna lista de {key, label} para o formulário (labels amigáveis, sem XML)."""
     try:
-        return get_justificativa_placeholders()
+        keys = get_justificativa_placeholders()
     except FileNotFoundError:
         return []
+    return [
+        {"key": k, "label": k.replace("_", " ").strip().title()}
+        for k in keys
+    ]
 
 
 @require_GET
 def oficio_documentos(request, oficio_id: int):
+    from ..services.documentos_manager import build_documentos_status
+
     oficio = get_object_or_404(
         Oficio.objects.prefetch_related("viajantes", "trechos"),
         id=oficio_id,
@@ -5828,6 +6493,7 @@ def oficio_documentos(request, oficio_id: int):
         tem_plano=tem_plano,
     )
     justificativa_placeholders = _get_justificativa_placeholders_safe()
+    documentos_status = build_documentos_status(oficio)
     return render(
         request,
         "viagens/oficio_documentos.html",
@@ -5839,6 +6505,7 @@ def oficio_documentos(request, oficio_id: int):
             "tem_plano": tem_plano,
             "tem_ordem": tem_ordem,
             "justificativa_placeholders": justificativa_placeholders,
+            "documentos_status": documentos_status,
         },
     )
 
@@ -5867,6 +6534,28 @@ def oficio_documentos_gerar_todos(request, oficio_id: int):
         "Documentos gerados com sucesso: " + ", ".join(sorted(docs.keys())),
     )
     return redirect("oficio_documentos", oficio_id=oficio.id)
+
+
+@require_GET
+def oficio_documentos_fragment(request, oficio_id: int):
+    """Retorna apenas o HTML dos cards de documentos (para drawer na lista de ofícios)."""
+    from ..services.documentos_manager import build_documentos_status
+
+    oficio = get_object_or_404(
+        Oficio.objects.prefetch_related("viajantes", "trechos"),
+        id=oficio_id,
+    )
+    documentos_status = build_documentos_status(oficio)
+    return render(
+        request,
+        "viagens/partials/oficio_documentos_cards.html",
+        {
+            "oficio": oficio,
+            "documentos_status": documentos_status,
+            "tem_plano": documentos_status["plano"]["status"] == "ok",
+            "is_fragment": True,
+        },
+    )
 
 
 def _criar_oficio_base_documento() -> Oficio:
@@ -6599,6 +7288,13 @@ def oficio_download_docx(request, oficio_id: int):
         Oficio.objects.prefetch_related("viajantes", "trechos"),
         id=oficio_id,
     )
+    from viagens.services.justificativa_helpers import exige_justificativa, justificativa_preenchida
+    if exige_justificativa(oficio) and not justificativa_preenchida(oficio):
+        messages.warning(
+            request,
+            "É necessário preencher a justificativa (prazo menor que 10 dias) antes de gerar o ofício.",
+        )
+        return redirect("justificativa_oficio", oficio_id=oficio_id)
 
     try:
         buf = build_oficio_docx_bytes(oficio)
@@ -6670,6 +7366,12 @@ def oficio_download_termo_autorizacao_pdf(request, oficio_id: int):
 JUSTIFICATIVA_FORM_PREFIX = "justificativa_"
 
 
+def _redirect_oficio_documentos_justificativa(oficio_id: int):
+    """Redireciona para a aba Justificativa da Central de Documentos (mantém formulário na aba)."""
+    url = reverse("oficio_documentos", args=[oficio_id])
+    return redirect(f"{url}?tab=justificativa")
+
+
 @require_http_methods(["POST"])
 def oficio_download_justificativa(request, oficio_id: int):
     get_object_or_404(Oficio, id=oficio_id)
@@ -6677,7 +7379,7 @@ def oficio_download_justificativa(request, oficio_id: int):
         placeholders = get_justificativa_placeholders()
     except FileNotFoundError as exc:
         messages.error(request, str(exc))
-        return redirect("oficio_documentos", oficio_id=oficio_id)
+        return _redirect_oficio_documentos_justificativa(oficio_id)
     prefix_len = len(JUSTIFICATIVA_FORM_PREFIX)
     mapping = {}
     for key in request.POST:
@@ -6695,9 +7397,100 @@ def oficio_download_justificativa(request, oficio_id: int):
             oficio_id,
         )
         messages.error(request, f"Falha ao gerar justificativa. Detalhe: {exc}")
-        return redirect("oficio_documentos", oficio_id=oficio_id)
+        return _redirect_oficio_documentos_justificativa(oficio_id)
+
+    docx_bytes = buf.getvalue()
+    gerar_pdf = request.POST.get("gerar_pdf")
+
+    if gerar_pdf:
+        try:
+            pdf_bytes = docx_bytes_to_pdf_bytes(docx_bytes, oficio_id=oficio_id)
+            filename = f"justificativa_{oficio_id}.pdf"
+            return _pdf_http_response(pdf_bytes, filename)
+        except DocxPdfConversionError as exc:
+            messages.error(
+                request,
+                f"PDF indisponível neste ambiente. Baixe o DOCX. Detalhe: {exc}",
+            )
+            return _redirect_oficio_documentos_justificativa(oficio_id)
+        except Exception as exc:
+            logger.exception("[justificativa-pdf] falha: oficio_id=%s", oficio_id)
+            messages.error(request, f"Falha ao gerar PDF. Baixe o DOCX. Detalhe: {exc}")
+            return _redirect_oficio_documentos_justificativa(oficio_id)
+
+    filename = f"justificativa_{oficio_id}.docx"
+    return _docx_http_response(docx_bytes, filename)
+
+
+def _justificativa_nome_cargo_from_config():
+    """Retorna (nome, cargo) do assinante padrão de justificativas."""
+    from ..services.text import title_case_pt
+    cfg = get_oficio_config()
+    assinante = getattr(cfg, "assinante_justificativa", None)
+    if not assinante:
+        return "", ""
+    return (
+        title_case_pt((assinante.nome or "").strip()),
+        title_case_pt((assinante.cargo or "").strip()),
+    )
+
+
+@require_GET
+def oficio_download_justificativa_docx(request, oficio_id: int):
+    """Gera DOCX da justificativa a partir do texto salvo no ofício (GET)."""
+    oficio = get_object_or_404(Oficio.objects.all(), id=oficio_id)
+    texto = (getattr(oficio, "justificativa_texto", "") or "").strip()
+    if not texto:
+        messages.warning(request, "Preencha a justificativa antes de gerar o documento.")
+        return _redirect_oficio_documentos_justificativa(oficio_id)
+    nome, cargo = _justificativa_nome_cargo_from_config()
+    mapping = build_justificativa_context_from_config(
+        assinante_nome=nome,
+        assinante_cargo=cargo,
+        justificativa_texto=texto,
+    )
+    try:
+        buf = build_justificativa_docx_bytes(mapping)
+    except Exception as exc:
+        logger.exception("[justificativa-docx] oficio_id=%s", oficio_id)
+        messages.error(request, f"Falha ao gerar justificativa. Detalhe: {exc}")
+        return _redirect_oficio_documentos_justificativa(oficio_id)
     filename = f"justificativa_{oficio_id}.docx"
     return _docx_http_response(buf.getvalue(), filename)
+
+
+@require_GET
+def oficio_download_justificativa_pdf(request, oficio_id: int):
+    """Gera PDF da justificativa a partir do texto salvo no ofício (GET)."""
+    oficio = get_object_or_404(Oficio.objects.all(), id=oficio_id)
+    texto = (getattr(oficio, "justificativa_texto", "") or "").strip()
+    if not texto:
+        messages.warning(request, "Preencha a justificativa antes de gerar o documento.")
+        return _redirect_oficio_documentos_justificativa(oficio_id)
+    nome, cargo = _justificativa_nome_cargo_from_config()
+    mapping = build_justificativa_context_from_config(
+        assinante_nome=nome,
+        assinante_cargo=cargo,
+        justificativa_texto=texto,
+    )
+    try:
+        buf = build_justificativa_docx_bytes(mapping)
+        docx_bytes = buf.getvalue()
+    except Exception as exc:
+        logger.exception("[justificativa-pdf] oficio_id=%s", oficio_id)
+        messages.error(request, f"Falha ao gerar justificativa. Detalhe: {exc}")
+        return _redirect_oficio_documentos_justificativa(oficio_id)
+    try:
+        pdf_bytes = docx_bytes_to_pdf_bytes(docx_bytes, oficio_id=oficio_id)
+        filename = f"justificativa_{oficio_id}.pdf"
+        return _pdf_http_response(pdf_bytes, filename)
+    except DocxPdfConversionError as exc:
+        messages.error(request, f"PDF indisponível. Baixe o DOCX. Detalhe: {exc}")
+        return _redirect_oficio_documentos_justificativa(oficio_id)
+    except Exception as exc:
+        logger.exception("[justificativa-pdf] oficio_id=%s", oficio_id)
+        messages.error(request, f"Falha ao gerar PDF. Baixe o DOCX. Detalhe: {exc}")
+        return _redirect_oficio_documentos_justificativa(oficio_id)
 
 
 def oficio_download_pdf(request, oficio_id):
@@ -6705,6 +7498,13 @@ def oficio_download_pdf(request, oficio_id):
         Oficio.objects.prefetch_related("viajantes", "trechos"),
         id=oficio_id,
     )
+    from viagens.services.justificativa_helpers import exige_justificativa, justificativa_preenchida
+    if exige_justificativa(oficio) and not justificativa_preenchida(oficio):
+        messages.warning(
+            request,
+            "É necessário preencher a justificativa (prazo menor que 10 dias) antes de gerar o ofício.",
+        )
+        return redirect("justificativa_oficio", oficio_id=oficio_id)
 
     try:
         _docx_bytes, pdf_bytes = build_oficio_docx_and_pdf_bytes(oficio)

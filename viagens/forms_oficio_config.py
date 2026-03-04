@@ -21,6 +21,7 @@ class OficioConfigForm(forms.ModelForm):
             "telefone",
             "email",
             "assinante",
+            "assinante_justificativa",
             "sede_cidade_default",
         ]
 
@@ -39,6 +40,17 @@ class OficioConfigForm(forms.ModelForm):
             lambda obj: f"{obj.nome} - {obj.cargo}".strip(" -")
         )
         self.fields["assinante"].widget.attrs.update(
+            {
+                "data-autocomplete-url": "/api/assinantes/",
+                "data-autocomplete-type": "servidor",
+            }
+        )
+        self.fields["assinante_justificativa"].queryset = Viajante.objects.order_by("nome")
+        self.fields["assinante_justificativa"].empty_label = "Selecione"
+        self.fields["assinante_justificativa"].label_from_instance = (
+            lambda obj: f"{obj.nome} - {obj.cargo}".strip(" -")
+        )
+        self.fields["assinante_justificativa"].widget.attrs.update(
             {
                 "data-autocomplete-url": "/api/assinantes/",
                 "data-autocomplete-type": "servidor",

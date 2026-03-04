@@ -116,13 +116,30 @@
         </div>
 
         <div class="sub-card">
-          <div class="sub-card-title">Assinatura</div>
+          <div class="sub-card-title">Assinatura (ofícios)</div>
           <div class="grid">
             <label class="full">
               Assinante
               {{ form.assinante }}
               {{ form.assinante.errors }}
-              <span class="field-help">Digite para buscar a pessoa que assina o oficio.</span>
+              <span class="field-help">Pessoa que assina os ofícios. Digite para buscar.</span>
+            </label>
+          </div>
+          <div class="field-actions">
+            <a class="btn-clear btn-small" href="{% url 'viajante_cadastro' %}" target="_blank" rel="noopener">
+              Cadastrar pessoa
+            </a>
+          </div>
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-title">Assinatura (justificativas)</div>
+          <div class="grid">
+            <label class="full">
+              Assinante padrão
+              {{ form.assinante_justificativa }}
+              {{ form.assinante_justificativa.errors }}
+              <span class="field-help">Usado como padrão no gerador de justificativas. Pode ser outro agente que o dos ofícios. Em cada justificativa você pode alterar.</span>
             </label>
           </div>
           <div class="field-actions">
@@ -174,7 +191,7 @@
       </div>
 
       <div class="preview-doc">
-        <div class="sub-card-title">Assinatura</div>
+        <div class="sub-card-title">Assinatura (ofício)</div>
         <div class="preview-line">
           <span class="preview-label">Nome</span>
           <span class="preview-value" id="previewAssinanteNome">-</span>
@@ -182,6 +199,17 @@
         <div class="preview-line">
           <span class="preview-label">Cargo</span>
           <span class="preview-value" id="previewAssinanteCargo">-</span>
+        </div>
+      </div>
+      <div class="preview-doc">
+        <div class="sub-card-title">Assinatura (justificativas)</div>
+        <div class="preview-line">
+          <span class="preview-label">Nome</span>
+          <span class="preview-value" id="previewAssinanteJustificativaNome">-</span>
+        </div>
+        <div class="preview-line">
+          <span class="preview-label">Cargo</span>
+          <span class="preview-value" id="previewAssinanteJustificativaCargo">-</span>
         </div>
       </div>
     </aside>

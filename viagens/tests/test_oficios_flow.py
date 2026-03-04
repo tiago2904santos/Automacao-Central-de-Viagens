@@ -478,6 +478,7 @@ class OficioFlowTests(TestCase):
             motorista=self.viajante.nome,
             tipo_destino="INTERIOR",
             motivo="Teste",
+            justificativa_texto="Justificativa preenchida para desbloquear download.",
         )
         oficio.viajantes.add(self.viajante)
         Trecho.objects.create(
@@ -516,6 +517,7 @@ class OficioFlowTests(TestCase):
             motorista=self.viajante.nome,
             tipo_destino="INTERIOR",
             motivo="Teste",
+            justificativa_texto="Justificativa preenchida.",
         )
         oficio.viajantes.add(self.viajante)
         Trecho.objects.create(
@@ -557,6 +559,7 @@ class OficioFlowTests(TestCase):
             motivo="Teste",
             retorno_chegada_data="2026-02-11",
             retorno_chegada_hora="18:00",
+            justificativa_texto="Ok.",
         )
         oficio.viajantes.add(self.viajante)
         Trecho.objects.create(
@@ -701,6 +704,7 @@ class OficioFlowTests(TestCase):
             motorista=self.viajante.nome,
             tipo_destino="INTERIOR",
             motivo="Teste",
+            justificativa_texto="Ok.",
         )
         oficio.viajantes.add(self.viajante)
         Trecho.objects.create(

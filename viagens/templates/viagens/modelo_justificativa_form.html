@@ -1,0 +1,68 @@
+{% extends "viagens/base.html" %}
+
+{% block title %}{{ titulo }}{% endblock %}
+
+{% block breadcrumb %}
+  Documentos <span class="breadcrumb-sep">/</span> Modelos de justificativa <span class="breadcrumb-sep">/</span> {{ titulo }}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">{{ titulo }}</h2>
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear" href="{% url 'modelos_justificativa_lista' %}">Voltar</a>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <div class="error">{{ form.non_field_errors }}</div>
+  {% endif %}
+
+  <div class="card" style="max-width: 720px;">
+    <form method="post">
+      {% csrf_token %}
+      <div class="form-group">
+        <label for="id_codigo">Código</label>
+        {{ form.codigo }}
+        {{ form.codigo.errors }}
+        <span class="field-help">Ex: recebimento_tardio (sem espaços, único)</span>
+      </div>
+      <div class="form-group">
+        <label for="id_label">Nome do modelo</label>
+        {{ form.label }}
+        {{ form.label.errors }}
+      </div>
+      <div class="form-group">
+        <label for="id_texto">Texto da justificativa</label>
+        {{ form.texto }}
+        {{ form.texto.errors }}
+        <span class="field-help">Use X/ANO ou Ofício nº X/ANO no texto; será substituído pelo número informado no gerador.</span>
+      </div>
+      <div class="grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label for="id_ordem">Ordem</label>
+          {{ form.ordem }}
+          {{ form.ordem.errors }}
+        </div>
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; padding-top: 1.5rem;">
+          {{ form.ativo }}
+          <label for="id_ativo">Ativo</label>
+          {{ form.ativo.errors }}
+        </div>
+      </div>
+      {% if not modelo or not modelo.padrao %}
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem;">
+          {{ form.padrao }}
+          <label for="id_padrao">Definir como modelo padrão</label>
+          {{ form.padrao.errors }}
+        </div>
+      {% endif %}
+      <div class="wizard-actions" style="margin-top: 1rem;">
+        <button type="submit" class="btn-primary">Salvar</button>
+        <a class="btn-clear" href="{% url 'modelos_justificativa_lista' %}">Cancelar</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}
