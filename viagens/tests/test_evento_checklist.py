@@ -92,8 +92,9 @@ class EventoChecklistTests(TestCase):
         checklist = build_evento_checklist(evento)
         self.assertIn("termos", checklist["required_docs"])
         termos = checklist["required_docs"]["termos"]
-        self.assertEqual(len(termos), 1)
-        self.assertFalse(termos[0]["termo_ok"])
+        # Termos por (ofício, viajante): 2 ofícios × 1 viajante não-ASCOM = 2 itens
+        self.assertEqual(len(termos), 2)
+        self.assertTrue(all(not t["termo_ok"] for t in termos))
         self.assertFalse(checklist["readiness"]["pronto_para_protocolar"])
 
     def test_evento_sem_convite_exige_plano_ou_ordem(self) -> None:

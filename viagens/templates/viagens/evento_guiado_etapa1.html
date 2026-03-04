@@ -1,0 +1,88 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Evento guiado — Etapa 1{% endblock %}
+
+{% block breadcrumb %}
+  Eventos <span class="breadcrumb-sep">/</span> Novo guiado <span class="breadcrumb-sep">/</span> Etapa 1
+{% endblock %}
+
+{% block content %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Cadastro do evento (Etapa 1)</h2>
+      <p class="page-subtitle">Preencha os dados básicos do evento. Você pode salvar e continuar ou pular por agora.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear btn-small" href="{% url 'evento_guiado_painel' evento.id %}">Ir para o painel</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    <ul class="messages-list">
+      {% for message in messages %}
+        <li class="message message-{{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <div class="card doc-manager-resumo">
+    <form method="post" class="wizard-form-stack">
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <ul class="errorlist">{{ form.non_field_errors }}</ul>
+      {% endif %}
+
+      <div class="form-group">
+        <label for="id_titulo">{{ form.titulo.label }}</label>
+        {{ form.titulo }}
+        {% if form.titulo.errors %}<p class="field-errors">{{ form.titulo.errors }}</p>{% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="id_cidade_base">{{ form.cidade_base.label }}</label>
+        {{ form.cidade_base }}
+        {% if form.cidade_base.errors %}<p class="field-errors">{{ form.cidade_base.errors }}</p>{% endif %}
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="id_data_inicio">{{ form.data_inicio.label }}</label>
+          {{ form.data_inicio }}
+          {% if form.data_inicio.errors %}<p class="field-errors">{{ form.data_inicio.errors }}</p>{% endif %}
+        </div>
+        <div class="form-group">
+          <label for="id_data_fim">{{ form.data_fim.label }}</label>
+          {{ form.data_fim }}
+          {% if form.data_fim.errors %}<p class="field-errors">{{ form.data_fim.errors }}</p>{% endif %}
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="id_tipo_demanda">{{ form.tipo_demanda.label }}</label>
+        {{ form.tipo_demanda }}
+        {% if form.tipo_demanda.help_text %}<p class="field-help">{{ form.tipo_demanda.help_text }}</p>{% endif %}
+        {% if form.tipo_demanda.errors %}<p class="field-errors">{{ form.tipo_demanda.errors }}</p>{% endif %}
+      </div>
+
+      <div class="form-group form-group-checkbox">
+        <label class="checkbox-label">
+          {{ form.tem_convite_ou_oficio_evento }}
+          <span>{{ form.tem_convite_ou_oficio_evento.label }}</span>
+        </label>
+        {% if form.tem_convite_ou_oficio_evento.help_text %}
+          <p class="field-help">{{ form.tem_convite_ou_oficio_evento.help_text }}</p>
+        {% endif %}
+        {% if form.tem_convite_ou_oficio_evento.errors %}<p class="field-errors">{{ form.tem_convite_ou_oficio_evento.errors }}</p>{% endif %}
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" name="action" value="save" class="btn-clear">Salvar</button>
+        <button type="submit" name="action" value="save_continue" class="btn-primary">Salvar e continuar</button>
+        <button type="submit" name="action" value="pular" class="btn-clear btn-small">Pular por agora</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Evento guiado — Etapa 4 (PT/OS){% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+{% endblock %}
+
+{% block breadcrumb %}
+  Eventos <span class="breadcrumb-sep">/</span> Guiado <span class="breadcrumb-sep">/</span> Etapa 4 – Base formal ou PT/OS
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Plano de trabalho / Ordem de serviço (Etapa 4)</h2>
+      <p class="page-subtitle">{{ evento.titulo }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear btn-small" href="{% url 'evento_guiado_painel' evento.id %}">Voltar ao painel</a>
+      <a class="btn-primary btn-small" href="{% url 'evento_pacote' evento.id %}">Ir para Pacote do Evento</a>
+    </div>
+  </div>
+
+  {% if tem_convite %}
+    <div class="card doc-manager-resumo">
+      <p class="doc-card-desc">
+        <strong>PT/OS não obrigatório — dispensado (há solicitação formal).</strong><br />
+        Este evento possui convite ou ofício solicitante. O plano de trabalho ou a ordem de serviço não são exigidos.
+      </p>
+      <p class="doc-card-desc">
+        Faça o upload da solicitação formal (convite/ofício) no <strong>Pacote do Evento</strong>.
+      </p>
+      <a href="{% url 'evento_pacote' evento.id %}" class="btn-primary">Ir para o Pacote do Evento</a>
+    </div>
+  {% else %}
+    <p class="page-desc">É necessário um documento de fundamentação: <strong>Plano de Trabalho</strong> ou <strong>Ordem de Serviço</strong> (ou ambos, se desejar).</p>
+
+    <div class="card doc-manager-resumo" style="margin-bottom: 1.5rem;">
+      <div class="sub-card-title">Escolha a fundamentação</div>
+      <p class="field-help">Selecione o ofício base (ou crie um novo) e clique em um dos botões abaixo.</p>
+      <form method="get" id="formEtapa4Base" class="wizard-form-stack">
+        <div class="form-group">
+          <label for="oficio_base">Ofício base</label>
+          <select name="oficio_id" id="oficio_base" class="input-field">
+            <option value="">— Criar novo ofício base para PT/OS —</option>
+            {% for o in oficios %}
+              <option value="{{ o.id }}">{{ o.numero_formatado|default:o.oficio|default:o.id }} – Ofício {{ o.id }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-actions">
+          <a href="#" id="btnCriarPlano" class="btn-primary">Criar Plano de Trabalho</a>
+          <a href="#" id="btnCriarOrdem" class="btn-primary">Criar Ordem de Serviço</a>
+        </div>
+      </form>
+    </div>
+
+    <div class="card doc-manager-resumo">
+      <div class="sub-card-title">Já existente no evento?</div>
+      {% if planos_list or ordens_list %}
+        <ul class="list-card" style="list-style: none; padding-left: 0;">
+          {% for oficio, plano in planos_list %}
+            {% if plano %}
+              <li style="margin-bottom: 0.75rem;">
+                <strong>Plano de Trabalho</strong> (Ofício {{ oficio.numero_formatado|default:oficio.id }})
+                <a href="{% url 'plano_trabalho_step1' oficio.id %}?next={{ return_path_etapa4|urlencode }}" class="btn-clear btn-small">Abrir / Editar</a>
+              </li>
+            {% endif %}
+          {% endfor %}
+          {% for oficio, ordem in ordens_list %}
+            {% if ordem %}
+              <li style="margin-bottom: 0.75rem;">
+                <strong>Ordem de Serviço</strong> (Ofício {{ oficio.numero_formatado|default:oficio.id }})
+                <a href="{% url 'ordem_servico_editar' oficio.id %}?next={{ return_path_etapa4|urlencode }}" class="btn-clear btn-small">Abrir / Editar</a>
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="doc-card-desc">Nenhum plano de trabalho ou ordem de serviço vinculado aos ofícios deste evento ainda.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div class="form-actions" style="margin-top: 1.5rem;">
+    <a class="btn-clear" href="{% url 'evento_guiado_painel' evento.id %}">Voltar ao painel</a>
+    <a class="btn-primary" href="{% url 'evento_pacote' evento.id %}">Ir para Pacote do Evento</a>
+  </div>
+
+  {% if not tem_convite %}
+  <script>
+  (function() {
+    var form = document.getElementById('formEtapa4Base');
+    var select = document.getElementById('oficio_base');
+    var urlCriarPlano = "{{ url_criar_plano|escapejs }}";
+    var urlCriarOrd = "{{ url_criar_ordem|escapejs }}";
+    document.getElementById('btnCriarPlano').addEventListener('click', function(e) {
+      e.preventDefault();
+      var val = select.value;
+      var url = val ? (urlCriarPlano + '?oficio_id=' + encodeURIComponent(val)) : (urlCriarPlano + '?novo=1');
+      window.location.href = url;
+    });
+    document.getElementById('btnCriarOrdem').addEventListener('click', function(e) {
+      e.preventDefault();
+      var val = select.value;
+      var url = val ? (urlCriarOrd + '?oficio_id=' + encodeURIComponent(val)) : (urlCriarOrd + '?novo=1');
+      window.location.href = url;
+    });
+  })();
+  </script>
+  {% endif %}
+{% endblock %}

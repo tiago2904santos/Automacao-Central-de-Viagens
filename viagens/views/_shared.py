@@ -5,7 +5,7 @@ import os
 import re
 from datetime import date, datetime, time, timedelta
 import json
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 import unicodedata
@@ -687,6 +687,10 @@ def _get_wizard_oficio(request, create: bool = False) -> Oficio | None:
         create_kwargs["oficio"] = format_oficio_num(reserved["numero"], reserved["ano"])
     oficio = Oficio.objects.create(**create_kwargs)
     _set_wizard_oficio_id(request, oficio.id)
+    evento_id = request.session.get("wizard_evento_id")
+    if evento_id:
+        oficio.evento_id = int(evento_id)
+        oficio.save(update_fields=["evento_id"])
     return oficio
 
 
@@ -751,6 +755,8 @@ def _clear_wizard_data(request) -> None:
     request.session.pop("oficio_wizard", None)
     request.session.pop("oficio_wizard_id", None)
     request.session.pop(OFICIO_RESERVED_SESSION_KEY, None)
+    request.session.pop("wizard_evento_id", None)
+    request.session.pop("wizard_evento_return_url", None)
     request.session.modified = True
 
 
@@ -922,6 +928,39 @@ def _oficio_step3_trechos_from_db(oficio) -> list[dict[str, str | int]]:
                 ),
             }
         )
+    return result
+
+
+def _seed_trechos_from_evento_roteiros(evento_id: int) -> list[dict[str, str | int]]:
+    """
+    Converte roteiros do evento (TrechoRoteiro) no formato do wizard de ofício (trechos session).
+    Usado em oficio_step3 quando wizard_evento_id está na sessão e ainda não há trechos.
+    """
+    roteiros = list(
+        Roteiro.objects.filter(evento_id=evento_id, ativo=True)
+        .order_by("id")
+        .prefetch_related(
+            "trechos__origem_estado",
+            "trechos__origem_cidade",
+            "trechos__destino_estado",
+            "trechos__destino_cidade",
+        )
+    )
+    result: list[dict[str, str | int]] = []
+    for roteiro in roteiros:
+        for tr in roteiro.trechos.order_by("ordem"):
+            result.append(
+                {
+                    "origem_estado": tr.origem_estado.sigla if tr.origem_estado else "",
+                    "origem_cidade": str(tr.origem_cidade_id or tr.cidade_origem or ""),
+                    "destino_estado": tr.destino_estado.sigla if tr.destino_estado else "",
+                    "destino_cidade": str(tr.destino_cidade_id or tr.cidade_destino or ""),
+                    "saida_data": tr.saida_data.isoformat() if tr.saida_data else "",
+                    "saida_hora": tr.saida_hora.strftime("%H:%M") if tr.saida_hora else "",
+                    "chegada_data": tr.chegada_data.isoformat() if tr.chegada_data else "",
+                    "chegada_hora": tr.chegada_hora.strftime("%H:%M") if tr.chegada_hora else "",
+                }
+            )
     return result
 
 
@@ -2802,6 +2841,17 @@ def formulario(request):
         if not request.GET.get("resume"):
             _clear_wizard_data(request)
             data = {}
+            evento_id_raw = request.GET.get("evento_id")
+            if evento_id_raw:
+                try:
+                    eid = int(evento_id_raw)
+                    request.session["wizard_evento_id"] = eid
+                    request.session["wizard_evento_return_url"] = reverse(
+                        "evento_guiado_etapa6", kwargs={"evento_id": eid}
+                    )
+                    request.session.modified = True
+                except (ValueError, TypeError):
+                    pass
         else:
             data = _ensure_wizard_session(request)
         oficio_obj_get = _get_wizard_oficio(request, create=False)
@@ -3091,6 +3141,20 @@ def oficio_step3(request):
         if trechos_banco:
             trechos_session = trechos_banco
             data = _update_wizard_data(request, {"trechos": trechos_session})
+    if not trechos_session and request.session.get("wizard_evento_id"):
+        evento_id = request.session["wizard_evento_id"]
+        try:
+            trechos_seed = _seed_trechos_from_evento_roteiros(int(evento_id))
+            if trechos_seed:
+                payload = {"trechos": trechos_seed}
+                if trechos_seed and trechos_seed[0].get("origem_estado"):
+                    payload["sede_uf"] = str(trechos_seed[0].get("origem_estado") or "PR")
+                if trechos_seed and trechos_seed[0].get("origem_cidade"):
+                    payload["sede_cidade"] = str(trechos_seed[0].get("origem_cidade") or "")
+                data = _update_wizard_data(request, payload)
+                trechos_session = trechos_seed
+        except (ValueError, TypeError):
+            pass
     if not trechos_session:
         valid_destinos = [
             destino for destino in destinos_session if destino.get("uf") and destino.get("cidade")
@@ -3397,7 +3461,19 @@ def oficio_step4(request):
         erros = _validate_oficio_for_finalize(oficio_obj)
         if not erros:
             oficio_obj, _ = _finalize_oficio_draft(oficio_obj)
+            return_url = request.session.get("wizard_evento_return_url")
+            evento_id = request.session.get("wizard_evento_id")
+            # Modo evento: se exige justificativa e ainda vazia, redirecionar para justificativa com next=etapa6
+            if evento_id and return_url:
+                from viagens.services.justificativa_helpers import exige_justificativa, justificativa_preenchida
+                if exige_justificativa(oficio_obj) and not justificativa_preenchida(oficio_obj):
+                    justificativa_url = reverse("justificativa_oficio", args=[oficio_obj.id])
+                    from urllib.parse import quote
+                    next_etapa6 = return_url
+                    return redirect(f"{justificativa_url}?next={quote(next_etapa6)}")
             _clear_wizard_data(request)
+            if return_url:
+                return redirect(return_url)
             return redirect("oficios_lista")
 
     context = _build_step4_context(wizard_data)
@@ -3408,6 +3484,7 @@ def oficio_step4(request):
             "status_label": status_context["status_label"],
             "status_class": status_context["status_class"],
             "oficio_id": oficio_obj.id if oficio_obj else None,
+            "wizard_evento_return_url": request.session.get("wizard_evento_return_url"),
         }
     )
     return render(request, "viagens/oficio_step4.html", context)
@@ -4523,6 +4600,593 @@ def evento_redirect_from_oficio(request, oficio_id: int):
     return redirect("evento_pacote", evento_id=evento.id)
 
 
+# --- Fluxo guiado por evento (wizard) ---
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def evento_novo_guiado(request):
+    """Cria evento rascunho e redireciona para etapa 1 do fluxo guiado."""
+    evento = Evento.objects.create(titulo="Rascunho")
+    messages.success(request, "Novo evento criado. Preencha os dados na Etapa 1.")
+    return redirect("evento_guiado_etapa1", evento_id=evento.id)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def evento_guiado_etapa1(request, evento_id: int):
+    """Etapa 1: formulário de cadastro do evento (título, cidade base, datas, tem_convite, tipo_demanda)."""
+    evento = get_object_or_404(Evento, id=evento_id)
+    from ..forms_evento_guiado import EventoGuiadoStep1Form
+
+    initial = {}
+    try:
+        default_cidade_id = _get_sede_cidade_default_id()
+        if default_cidade_id:
+            initial["cidade_base"] = int(default_cidade_id)
+    except (ValueError, TypeError):
+        pass
+
+    if request.method == "POST":
+        form = EventoGuiadoStep1Form(request.POST, instance=evento)
+        action = (request.POST.get("action") or "").strip()
+
+        if action == "pular":
+            messages.info(request, "Você pulou a etapa. Complete depois pelo painel.")
+            return redirect("evento_guiado_painel", evento_id=evento.id)
+
+        if form.is_valid():
+            form.save()
+            if action == "save_continue":
+                messages.success(request, "Evento salvo. Avançando para o painel.")
+                return redirect("evento_guiado_painel", evento_id=evento.id)
+            messages.success(request, "Evento salvo.")
+            return redirect("evento_guiado_etapa1", evento_id=evento.id)
+        # form invalid
+        return render(
+            request,
+            "viagens/evento_guiado_etapa1.html",
+            {"form": form, "evento": evento},
+        )
+
+    form = EventoGuiadoStep1Form(instance=evento, initial=initial)
+    return render(
+        request,
+        "viagens/evento_guiado_etapa1.html",
+        {"form": form, "evento": evento},
+    )
+
+
+@login_required
+@require_GET
+def evento_guiado_painel(request, evento_id: int):
+    """Painel do fluxo guiado: progresso e pendências, com link para próximo passo."""
+    evento = get_object_or_404(Evento.objects.select_related("cidade_base"), id=evento_id)
+    from ..services.evento_guiado import build_evento_guiado_progresso
+
+    progresso = build_evento_guiado_progresso(evento)
+    return render(
+        request,
+        "viagens/evento_guiado_painel.html",
+        {"evento": evento, "progresso": progresso},
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def evento_guiado_etapa2(request, evento_id: int):
+    """Etapa 2: roteiros do evento (ida e volta) com cálculo automático de chegada."""
+    evento = get_object_or_404(
+        Evento.objects.select_related("cidade_base"),
+        id=evento_id,
+    )
+    from ..forms_evento_guiado import EventoRoteiroStep2Form
+    from ..services.evento_roteiro_calculo import calcular_chegada, parse_duracao_minutos
+
+    roteiros = list(evento.roteiros.filter(ativo=True).prefetch_related("trechos").order_by("id"))
+    initial = {}
+    editar_roteiro_id = request.GET.get("editar") or (request.POST.get("roteiro_id") if request.method == "POST" else None)
+    if editar_roteiro_id:
+        try:
+            roteiro_editar = evento.roteiros.prefetch_related("trechos").get(id=int(editar_roteiro_id))
+            trecho_ida = roteiro_editar.trechos.order_by("ordem").first()
+            if trecho_ida:
+                initial["origem_cidade"] = trecho_ida.origem_cidade_id or roteiro_editar.cidade_sede_id
+                initial["destino_estado"] = trecho_ida.destino_estado_id
+                initial["destino_cidade"] = trecho_ida.destino_cidade_id
+                initial["saida_data"] = trecho_ida.saida_data
+                initial["saida_hora"] = trecho_ida.saida_hora
+                initial["duracao_ida"] = (
+                    f"{trecho_ida.tempo_viagem_minutos // 60}:{trecho_ida.tempo_viagem_minutos % 60:02d}"
+                    if trecho_ida.tempo_viagem_minutos is not None
+                    else ""
+                )
+            initial["retorno_saida_data"] = roteiro_editar.retorno_saida_data
+            initial["retorno_saida_hora"] = roteiro_editar.retorno_saida_hora
+            if all([
+                roteiro_editar.retorno_saida_data,
+                roteiro_editar.retorno_saida_hora,
+                roteiro_editar.retorno_chegada_data,
+                roteiro_editar.retorno_chegada_hora,
+            ]):
+                from datetime import datetime
+                delta = (
+                    datetime.combine(roteiro_editar.retorno_chegada_data, roteiro_editar.retorno_chegada_hora)
+                    - datetime.combine(roteiro_editar.retorno_saida_data, roteiro_editar.retorno_saida_hora)
+                )
+                mins = int(delta.total_seconds() // 60)
+                if mins >= 0:
+                    initial["duracao_retorno"] = f"{mins // 60}:{mins % 60:02d}"
+        except (ValueError, Roteiro.DoesNotExist):
+            editar_roteiro_id = None
+    if not initial and not evento.cidade_base_id:
+        try:
+            default_cidade_id = _get_sede_cidade_default_id()
+            if default_cidade_id:
+                initial["origem_cidade"] = int(default_cidade_id)
+        except (ValueError, TypeError):
+            pass
+    form = EventoRoteiroStep2Form(request.POST or None, evento=evento, initial=initial or None)
+    if initial.get("destino_estado"):
+        form.fields["destino_cidade"].queryset = Cidade.objects.filter(estado_id=initial["destino_estado"]).order_by("nome")
+
+    # Atualizar queryset de destino_cidade se veio destino_estado no POST
+    if request.method == "POST" and request.POST.get("destino_estado"):
+        try:
+            estado_id = int(request.POST.get("destino_estado"))
+            form.fields["destino_cidade"].queryset = Cidade.objects.filter(estado_id=estado_id).order_by("nome")
+        except (ValueError, TypeError):
+            pass
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+        if action == "remover":
+            roteiro_id = request.POST.get("roteiro_id")
+            try:
+                roteiro = evento.roteiros.get(id=int(roteiro_id))
+                roteiro.evento_id = None
+                roteiro.save(update_fields=["evento_id"])
+                messages.success(request, "Roteiro removido do evento.")
+            except (ValueError, Roteiro.DoesNotExist):
+                messages.error(request, "Roteiro não encontrado.")
+            return redirect("evento_guiado_etapa2", evento_id=evento.id)
+
+        if action == "salvar" and form.is_valid():
+            origem_cidade = form.cleaned_data.get("origem_cidade")
+            destino_cidade = form.cleaned_data.get("destino_cidade")
+            saida_data = form.cleaned_data.get("saida_data")
+            saida_hora = form.cleaned_data.get("saida_hora")
+            duracao_ida_str = (form.cleaned_data.get("duracao_ida") or "").strip()
+            retorno_saida_data = form.cleaned_data.get("retorno_saida_data")
+            retorno_saida_hora = form.cleaned_data.get("retorno_saida_hora")
+            duracao_retorno_str = (form.cleaned_data.get("duracao_retorno") or "").strip()
+
+            if not origem_cidade or not destino_cidade:
+                messages.error(request, "Informe origem e destino.")
+            else:
+                minutos_ida = parse_duracao_minutos(duracao_ida_str) if duracao_ida_str else None
+                minutos_retorno = parse_duracao_minutos(duracao_retorno_str) if duracao_retorno_str else None
+                chegada_data, chegada_hora = calcular_chegada(saida_data, saida_hora, minutos_ida)
+                retorno_chegada_data, retorno_chegada_hora = calcular_chegada(
+                    retorno_saida_data, retorno_saida_hora, minutos_retorno
+                )
+
+                roteiro_id = request.POST.get("roteiro_id")
+                try:
+                    with transaction.atomic():
+                        if roteiro_id:
+                            roteiro = evento.roteiros.get(id=int(roteiro_id))
+                        else:
+                            roteiro = Roteiro(
+                                evento=evento,
+                                ativo=True,
+                                tipo_deslocamento=Roteiro.TipoDeslocamentoChoices.INTERIOR,
+                            )
+                        estado_origem = origem_cidade.estado
+                        estado_destino = destino_cidade.estado
+                        roteiro.estado_sede = estado_origem
+                        roteiro.cidade_sede = origem_cidade
+                        roteiro.uf_origem = estado_origem.sigla if estado_origem else "PR"
+                        roteiro.cidade_origem = origem_cidade.nome
+                        roteiro.uf_destino = estado_destino.sigla if estado_destino else "PR"
+                        roteiro.cidade_destino = destino_cidade.nome
+                        roteiro.retorno_saida_cidade = destino_cidade.nome
+                        roteiro.retorno_saida_data = retorno_saida_data
+                        roteiro.retorno_saida_hora = retorno_saida_hora
+                        roteiro.retorno_chegada_cidade = origem_cidade.nome
+                        roteiro.retorno_chegada_data = retorno_chegada_data
+                        roteiro.retorno_chegada_hora = retorno_chegada_hora
+                        roteiro.save()
+
+                        trechos = list(roteiro.trechos.order_by("ordem"))
+                        trecho_ida = trechos[0] if trechos else None
+                        if not trecho_ida:
+                            trecho_ida = TrechoRoteiro(roteiro=roteiro, ordem=1)
+                        trecho_ida.origem_estado = estado_origem
+                        trecho_ida.origem_cidade = origem_cidade
+                        trecho_ida.destino_estado = estado_destino
+                        trecho_ida.destino_cidade = destino_cidade
+                        trecho_ida.uf_origem = roteiro.uf_origem
+                        trecho_ida.cidade_origem = origem_cidade.nome
+                        trecho_ida.uf_destino = roteiro.uf_destino
+                        trecho_ida.cidade_destino = destino_cidade.nome
+                        trecho_ida.saida_data = saida_data
+                        trecho_ida.saida_hora = saida_hora
+                        trecho_ida.chegada_data = chegada_data
+                        trecho_ida.chegada_hora = chegada_hora
+                        trecho_ida.tempo_viagem_minutos = minutos_ida
+                        trecho_ida.save()
+                    messages.success(request, "Roteiro salvo. Chegada calculada automaticamente.")
+                    return redirect("evento_guiado_etapa2", evento_id=evento.id)
+                except Roteiro.DoesNotExist:
+                    messages.error(request, "Roteiro não encontrado.")
+                except Exception as e:
+                    messages.error(request, f"Erro ao salvar: {e}")
+
+    # GET ou form inválido: garantir destino_cidade com estado PR se vazio
+    if not form.fields["destino_cidade"].queryset.exists():
+        estado_pr = Estado.objects.filter(sigla="PR").first()
+        if estado_pr:
+            form.fields["destino_cidade"].queryset = Cidade.objects.filter(estado=estado_pr).order_by("nome")
+
+    return render(
+        request,
+        "viagens/evento_guiado_etapa2.html",
+        {
+            "evento": evento,
+            "roteiros": roteiros,
+            "form": form,
+            "editar_roteiro_id": int(editar_roteiro_id) if editar_roteiro_id else None,
+        },
+    )
+
+
+@login_required
+@require_GET
+def evento_guiado_etapa3(request, evento_id: int):
+    """Etapa 3: hub de ofícios do evento — lista, criar novo (wizard com contexto evento), editar, central de documentos."""
+    evento = get_object_or_404(
+        Evento.objects.prefetch_related("oficios__trechos"),
+        id=evento_id,
+    )
+    oficios = list(evento.oficios.order_by("id"))
+    return render(
+        request,
+        "viagens/evento_guiado_etapa3.html",
+        {
+            "evento": evento,
+            "oficios": oficios,
+        },
+    )
+
+
+def _evento_etapa4_planos_ordens(evento: Evento) -> tuple[list[tuple[Oficio, PlanoTrabalho | None]], list[tuple[Oficio, OrdemServico | None]]]:
+    """Retorna (lista (oficio, plano), lista (oficio, ordem)) para ofícios do evento."""
+    oficios = list(
+        evento.oficios.prefetch_related("plano_trabalho", "ordem_servico").order_by("id")
+    )
+    planos: list[tuple[Oficio, PlanoTrabalho | None]] = []
+    ordens: list[tuple[Oficio, OrdemServico | None]] = []
+    for oficio in oficios:
+        try:
+            plano = oficio.plano_trabalho
+        except PlanoTrabalho.DoesNotExist:
+            plano = None
+        try:
+            ordem = oficio.ordem_servico
+        except OrdemServico.DoesNotExist:
+            ordem = None
+        planos.append((oficio, plano))
+        ordens.append((oficio, ordem))
+    return planos, ordens
+
+
+@login_required
+@require_GET
+def evento_guiado_etapa4(request, evento_id: int):
+    """Etapa 4: Base formal (convite/ofício) ou PT/OS. Se tem_convite: dispensado. Senão: exigir criar PT ou OS vinculado ao evento."""
+    evento = get_object_or_404(Evento, id=evento_id)
+    tem_convite = getattr(evento, "tem_convite_ou_oficio_evento", True)
+    oficios = list(evento.oficios.order_by("id"))
+    planos_list: list[tuple[Oficio, PlanoTrabalho | None]] = []
+    ordens_list: list[tuple[Oficio, OrdemServico | None]] = []
+    if not tem_convite:
+        planos_list, ordens_list = _evento_etapa4_planos_ordens(evento)
+    url_criar_plano = reverse("evento_guiado_etapa4_criar_plano", kwargs={"evento_id": evento.id})
+    url_criar_ordem = reverse("evento_guiado_etapa4_criar_ordem", kwargs={"evento_id": evento.id})
+    return_path_etapa4 = reverse("evento_guiado_etapa4", kwargs={"evento_id": evento.id})
+    return render(
+        request,
+        "viagens/evento_guiado_etapa4.html",
+        {
+            "evento": evento,
+            "tem_convite": tem_convite,
+            "oficios": oficios,
+            "planos_list": planos_list,
+            "ordens_list": ordens_list,
+            "url_criar_plano": url_criar_plano,
+            "url_criar_ordem": url_criar_ordem,
+            "return_path_etapa4": return_path_etapa4,
+        },
+    )
+
+
+@login_required
+@require_GET
+def evento_guiado_etapa4_criar_plano(request, evento_id: int):
+    """Wrapper: criar ou abrir Plano de Trabalho vinculado ao evento. Redireciona para etapa-1 do plano com ?next=etapa-4."""
+    evento = get_object_or_404(Evento, id=evento_id)
+    return_url = reverse("evento_guiado_etapa4", kwargs={"evento_id": evento.id})
+    oficio_id_raw = request.GET.get("oficio_id")
+    novo = request.GET.get("novo")
+
+    if novo:
+        oficio = Oficio.objects.create(status=Oficio.Status.DRAFT, evento_id=evento.id)
+        _ensure_plano_wizard_instance(oficio)
+        messages.success(request, "Ofício base e plano de trabalho criados. Preencha o plano.")
+        url = reverse("plano_trabalho_step1", kwargs={"oficio_id": oficio.id})
+        return redirect(f"{url}?next={quote(return_url)}")
+    if oficio_id_raw:
+        try:
+            oficio = evento.oficios.get(id=int(oficio_id_raw))
+        except (ValueError, Oficio.DoesNotExist):
+            messages.error(request, "Ofício inválido ou não pertence a este evento.")
+            return redirect("evento_guiado_etapa4", evento_id=evento.id)
+        if oficio.evento_id != evento.id:
+            oficio.evento_id = evento.id
+            oficio.save(update_fields=["evento_id"])
+        _ensure_plano_wizard_instance(oficio)
+        messages.success(request, "Plano de trabalho aberto para edição.")
+        url = reverse("plano_trabalho_step1", kwargs={"oficio_id": oficio.id})
+        return redirect(f"{url}?next={quote(return_url)}")
+
+    messages.warning(request, "Escolha um ofício base ou opte por criar novo ofício para o plano.")
+    return redirect("evento_guiado_etapa4", evento_id=evento.id)
+
+
+@login_required
+@require_GET
+def evento_guiado_etapa4_criar_ordem(request, evento_id: int):
+    """Wrapper: criar ou abrir Ordem de Serviço vinculada ao evento. Redireciona para edição da ordem com ?next=etapa-4."""
+    evento = get_object_or_404(Evento, id=evento_id)
+    return_url = reverse("evento_guiado_etapa4", kwargs={"evento_id": evento.id})
+    oficio_id_raw = request.GET.get("oficio_id")
+    novo = request.GET.get("novo")
+
+    if novo:
+        oficio = Oficio.objects.create(status=Oficio.Status.DRAFT, evento_id=evento.id)
+        ano = int(oficio.ano or timezone.localdate().year)
+        initial = _ordem_initial_data(oficio)
+        acao = _ensure_acao_for_oficio(oficio)
+        OrdemServico.objects.create(
+            oficio=oficio,
+            acao=acao,
+            numero=get_next_ordem_num(ano),
+            ano=ano,
+            referencia=str(initial.get("referencia") or "Diligencias"),
+            determinante_nome=str(initial.get("determinante_nome") or ""),
+            determinante_cargo=str(initial.get("determinante_cargo") or ""),
+            finalidade=str(initial.get("finalidade") or ""),
+        )
+        messages.success(request, "Ofício base e ordem de serviço criados. Preencha a ordem.")
+        url = reverse("ordem_servico_editar", kwargs={"oficio_id": oficio.id})
+        return redirect(f"{url}?next={quote(return_url)}")
+    if oficio_id_raw:
+        try:
+            oficio = evento.oficios.get(id=int(oficio_id_raw))
+        except (ValueError, Oficio.DoesNotExist):
+            messages.error(request, "Ofício inválido ou não pertence a este evento.")
+            return redirect("evento_guiado_etapa4", evento_id=evento.id)
+        if oficio.evento_id != evento.id:
+            oficio.evento_id = evento.id
+            oficio.save(update_fields=["evento_id"])
+        ordem = _get_ordem_servico(oficio)
+        if not ordem:
+            acao = _ensure_acao_for_oficio(oficio)
+            ano = int(oficio.ano or timezone.localdate().year)
+            initial = _ordem_initial_data(oficio)
+            OrdemServico.objects.create(
+                oficio=oficio,
+                acao=acao,
+                numero=get_next_ordem_num(ano),
+                ano=ano,
+                referencia=str(initial.get("referencia") or "Diligencias"),
+                determinante_nome=str(initial.get("determinante_nome") or ""),
+                determinante_cargo=str(initial.get("determinante_cargo") or ""),
+                finalidade=str(initial.get("finalidade") or ""),
+            )
+        messages.success(request, "Ordem de serviço aberta para edição.")
+        url = reverse("ordem_servico_editar", kwargs={"oficio_id": oficio.id})
+        return redirect(f"{url}?next={quote(return_url)}")
+
+    messages.warning(request, "Escolha um ofício base ou opte por criar novo ofício para a ordem.")
+    return redirect("evento_guiado_etapa4", evento_id=evento.id)
+
+
+# --- Etapa 5: Termos de autorização (por ofício e viajante) ---
+
+
+@login_required
+@require_GET
+def evento_guiado_etapa5(request, evento_id: int):
+    """Etapa 5: Termos por ofício e viajante. Lista agrupada por ofício, geração em lote, dispensar, link para pacote."""
+    from ..services.evento_termos_etapa5 import get_termos_etapa5_por_oficio
+
+    evento = get_object_or_404(Evento, id=evento_id)
+    grupos = get_termos_etapa5_por_oficio(evento)
+    url_gerar_lote = reverse("evento_guiado_etapa5_gerar_lote", kwargs={"evento_id": evento.id})
+    url_dispensar = reverse("evento_guiado_etapa5_dispensar", kwargs={"evento_id": evento.id})
+    return_path_etapa5 = reverse("evento_guiado_etapa5", kwargs={"evento_id": evento.id})
+    return render(
+        request,
+        "viagens/evento_guiado_etapa5.html",
+        {
+            "evento": evento,
+            "grupos": grupos,
+            "url_gerar_lote": url_gerar_lote,
+            "url_dispensar": url_dispensar,
+            "return_path_etapa5": return_path_etapa5,
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def evento_guiado_etapa5_gerar_lote(request, evento_id: int):
+    """Cria TermoAutorizacao por (ofício, viajante) para todos os necessários. Pré-preenche com dados do ofício."""
+    from ..services.evento_termos_etapa5 import build_termo_prefill_from_oficio, get_termos_etapa5_por_oficio
+
+    evento = get_object_or_404(Evento, id=evento_id)
+    grupos = get_termos_etapa5_por_oficio(evento)
+    criados = 0
+    hoje = timezone.localdate()
+    for gr in grupos:
+        oficio = gr["oficio"]
+        for row in gr["viajantes"]:
+            if not row["precisa_termo"] or row["status"] != "pendente":
+                continue
+            v = row["viajante"]
+            if TermoAutorizacao.objects.filter(oficio=oficio, viajante=v).exists():
+                continue
+            prefill = build_termo_prefill_from_oficio(oficio, v, evento)
+            data_inicio = prefill.get("data_inicio") or hoje
+            data_fim = prefill.get("data_fim") or data_inicio
+            destinos_raw = prefill.get("destinos") or [{"uf": "PR", "cidade": ""}]
+            destinos_validos = [
+                d for d in destinos_raw
+                if (d.get("uf") or "").strip() and (d.get("cidade") or "").strip()
+            ]
+            if not destinos_validos:
+                destinos_validos = [{"uf": "PR", "cidade": ""}]
+            TermoAutorizacao.objects.create(
+                oficio=oficio,
+                evento=evento,
+                viajante=v,
+                data_inicio=data_inicio,
+                data_fim=data_fim,
+                data_unica=(data_inicio == data_fim),
+                destinos=destinos_validos,
+                motorista_nome=prefill.get("motorista_nome") or "",
+                veiculo_modelo=prefill.get("veiculo_modelo") or "",
+                veiculo_placa=prefill.get("veiculo_placa") or "",
+                combustivel=prefill.get("combustivel") or "",
+            )
+            criados += 1
+    if criados:
+        messages.success(request, f"{criados} termo(s) criado(s) e pré-preenchidos a partir dos ofícios.")
+    else:
+        messages.info(request, "Todos os viajantes necessários já possuem termo ou dispensa.")
+    return redirect("evento_guiado_etapa5", evento_id=evento.id)
+
+
+@login_required
+@require_POST
+def evento_guiado_etapa5_dispensar(request, evento_id: int):
+    """Marca termo como dispensado para (oficio_id, viajante_id) com motivo."""
+    evento = get_object_or_404(Evento, id=evento_id)
+    oficio_id_raw = request.POST.get("oficio_id")
+    viajante_id_raw = request.POST.get("viajante_id")
+    motivo = (request.POST.get("motivo") or "").strip()[:200]
+    if not oficio_id_raw or not viajante_id_raw:
+        messages.error(request, "oficio_id e viajante_id são obrigatórios.")
+        return redirect("evento_guiado_etapa5", evento_id=evento.id)
+    try:
+        oficio = evento.oficios.get(id=int(oficio_id_raw))
+        viajante = Viajante.objects.get(id=int(viajante_id_raw))
+    except (ValueError, Oficio.DoesNotExist, Viajante.DoesNotExist):
+        messages.error(request, "Ofício ou viajante inválido.")
+        return redirect("evento_guiado_etapa5", evento_id=evento.id)
+    if not oficio.viajantes.filter(pk=viajante.id).exists():
+        messages.error(request, "Viajante não pertence a este ofício.")
+        return redirect("evento_guiado_etapa5", evento_id=evento.id)
+    termo = TermoAutorizacao.objects.filter(oficio=oficio, viajante=viajante).first()
+    if termo:
+        termo.dispensado = True
+        termo.dispensa_motivo = motivo
+        termo.save(update_fields=["dispensado", "dispensa_motivo", "updated_at"])
+    else:
+        TermoAutorizacao.objects.create(
+            oficio=oficio,
+            evento=evento,
+            viajante=viajante,
+            data_inicio=timezone.localdate(),
+            data_fim=timezone.localdate(),
+            data_unica=True,
+            destinos=[],
+            dispensado=True,
+            dispensa_motivo=motivo,
+        )
+    messages.success(request, "Termo dispensado com sucesso.")
+    return redirect("evento_guiado_etapa5", evento_id=evento.id)
+
+
+@login_required
+@require_GET
+def evento_guiado_etapa6(request, evento_id: int):
+    """Etapa 6: Finalização — checklist de uploads em ordem fixa (ofícios, solicitação/PT-OS, justificativas, termos)."""
+    from ..services.evento_etapa6 import build_etapa6_checklist, listar_pendencias_etapa6
+
+    evento = get_object_or_404(Evento, id=evento_id)
+    checklist = build_etapa6_checklist(evento)
+    pendencias = listar_pendencias_etapa6(evento)
+    url_upload = reverse("evento_upload_assinado", kwargs={"evento_id": evento.id})
+    return_path_etapa6 = reverse("evento_guiado_etapa6", kwargs={"evento_id": evento.id})
+    url_exportar_zip = reverse("evento_guiado_exportar_zip", kwargs={"evento_id": evento.id})
+    return render(
+        request,
+        "viagens/evento_guiado_etapa6.html",
+        {
+            "evento": evento,
+            "blocos": checklist["blocos"],
+            "etapa6_ok": checklist["etapa6_ok"],
+            "pendencias": pendencias,
+            "url_upload": url_upload,
+            "return_path_etapa6": return_path_etapa6,
+            "url_exportar_zip": url_exportar_zip,
+        },
+    )
+
+
+@login_required
+@require_GET
+def evento_guiado_exportar_zip(request, evento_id: int):
+    """Exporta o pacote do evento em ZIP. Bloqueia se faltarem uploads obrigatórios."""
+    from ..services.evento_export_zip import build_evento_zip
+    from ..services.evento_assinados import is_evento_pronto_para_compilar, listar_pendencias_compilacao
+    from django.http import HttpResponse
+
+    evento = get_object_or_404(Evento, id=evento_id)
+    if not is_evento_pronto_para_compilar(evento):
+        pendencias = listar_pendencias_compilacao(evento)
+        messages.error(
+            request,
+            f"Não é possível exportar: faltam {len(pendencias)} documento(s). Conclua os uploads na Etapa 6.",
+        )
+        for p in pendencias[:5]:
+            messages.warning(request, p)
+        return redirect("evento_guiado_etapa6", evento_id=evento.id)
+    result = build_evento_zip(evento, compilado_por_id=getattr(request.user, "id", None))
+    if not result:
+        messages.error(request, "Falha ao montar o ZIP.")
+        return redirect("evento_guiado_etapa6", evento_id=evento.id)
+    zip_bytes, nome_zip = result
+    resp = HttpResponse(zip_bytes, content_type="application/zip")
+    resp["Content-Disposition"] = f'attachment; filename="{nome_zip}"'
+    return resp
+
+
+@login_required
+@require_GET
+def evento_guiado_etapa_placeholder(request, evento_id: int, etapa_num: int):
+    """Placeholder para etapas 2–5: página 'Em construção'."""
+    evento = get_object_or_404(Evento, id=evento_id)
+    return render(
+        request,
+        "viagens/evento_guiado_placeholder.html",
+        {"evento": evento, "etapa_num": etapa_num},
+    )
+
+
 ALLOWED_UPLOAD_MIMES = {"application/pdf", "image/jpeg", "image/png", "image/jpg"}
 ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
 
@@ -4607,6 +5271,9 @@ def evento_upload_assinado(request, evento_id: int):
         novo.arquivo.save(original_name.replace(" ", "_"), file_to_save, save=True)
         novo.save()
     messages.success(request, "Documento assinado enviado com sucesso.")
+    next_url = (request.POST.get("next") or request.GET.get("next") or "").strip()
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts=[request.get_host()]):
+        return redirect(next_url)
     return redirect("evento_pacote", evento_id=evento.id)
 
 
@@ -4619,6 +5286,9 @@ def evento_remover_assinado(request, evento_id: int, arquivo_id: int):
     arq.is_active = False
     arq.save(update_fields=["is_active"])
     messages.success(request, "Documento assinado removido.")
+    next_url = (request.POST.get("next") or request.GET.get("next") or "").strip()
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts=[request.get_host()]):
+        return redirect(next_url)
     return redirect("evento_pacote", evento_id=evento.id)
 
 
@@ -5159,6 +5829,149 @@ def termo_autorizacao_cadastro(request):
     )
     messages.success(request, f'Termo salvo como "{termo_nome}".')
     return redirect("termos_autorizacao_lista")
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def termo_autorizacao_cadastro_contextual(request):
+    """Cadastro/edição de termo no contexto evento+ofício+viajante (Etapa 5). Aceita evento_id, oficio_id, viajante_id, next."""
+    from ..services.evento_termos_etapa5 import build_termo_prefill_from_oficio
+
+    evento_id_raw = request.GET.get("evento_id") or request.POST.get("evento_id")
+    oficio_id_raw = request.GET.get("oficio_id") or request.POST.get("oficio_id")
+    viajante_id_raw = request.GET.get("viajante_id") or request.POST.get("viajante_id")
+    next_url = (request.GET.get("next") or request.POST.get("next") or "").strip()
+
+    if not evento_id_raw or not oficio_id_raw or not viajante_id_raw:
+        messages.error(request, "Parâmetros evento_id, oficio_id e viajante_id são obrigatórios.")
+        return redirect("termos_autorizacao_lista")
+    try:
+        evento = Evento.objects.get(id=int(evento_id_raw))
+        oficio = Oficio.objects.get(id=int(oficio_id_raw))
+        viajante = Viajante.objects.get(id=int(viajante_id_raw))
+    except (ValueError, Evento.DoesNotExist, Oficio.DoesNotExist, Viajante.DoesNotExist):
+        messages.error(request, "Evento, ofício ou viajante inválido.")
+        return redirect("termos_autorizacao_lista")
+    if oficio.evento_id != evento.id:
+        messages.error(request, "Ofício não pertence a este evento.")
+        return redirect("evento_guiado_etapa5", evento_id=evento.id)
+    if not oficio.viajantes.filter(pk=viajante.id).exists():
+        messages.error(request, "Viajante não pertence a este ofício.")
+        return redirect("evento_guiado_etapa5", evento_id=evento.id)
+
+    termo = TermoAutorizacao.objects.filter(oficio=oficio, viajante=viajante).exclude(dispensado=True).first()
+    erros: dict[str, str] = {}
+    hoje = timezone.localdate()
+
+    if request.method != "POST":
+        if termo:
+            data_inicio_raw = termo.data_inicio.isoformat() if termo.data_inicio else hoje.isoformat()
+            data_fim_raw = (termo.data_fim or termo.data_inicio or hoje).isoformat()
+            data_unica = bool(termo.data_unica or (termo.data_inicio and termo.data_fim and termo.data_inicio == termo.data_fim))
+            destinos_data = termo.destinos if isinstance(termo.destinos, list) else [{"uf": "PR", "cidade": ""}]
+        else:
+            prefill = build_termo_prefill_from_oficio(oficio, viajante, evento)
+            data_inicio_raw = (prefill["data_inicio"] or hoje).isoformat()
+            data_fim_raw = (prefill["data_fim"] or prefill["data_inicio"] or hoje).isoformat()
+            data_unica = prefill.get("data_unica", False)
+            destinos_data = prefill.get("destinos") or [{"uf": "PR", "cidade": ""}]
+        ctx = _termo_form_context(
+            erros=erros,
+            data_unica=data_unica,
+            data_inicio_raw=data_inicio_raw,
+            data_fim_raw=data_fim_raw,
+            destinos_data=destinos_data,
+        )
+        ctx["evento"] = evento
+        ctx["oficio"] = oficio
+        ctx["viajante"] = viajante
+        ctx["termo"] = termo
+        ctx["evento_return_url"] = next_url if next_url else None
+        ctx["evento_id"] = evento.id
+        ctx["oficio_id"] = oficio.id
+        ctx["viajante_id"] = viajante.id
+        ctx["next_url"] = next_url
+        ctx["is_contextual"] = True
+        return render(request, "viagens/termos_autorizacao_form.html", ctx)
+
+    data_unica = _is_truthy_post(request.POST.get("data_unica"))
+    data_inicio_raw = (request.POST.get("data_inicio") or "").strip()
+    data_fim_raw = (request.POST.get("data_fim") or "").strip()
+    _, _, destinos_post = _serialize_sede_destinos_from_post(request.POST)
+    destinos_data = destinos_post or [{}]
+
+    data_inicio = parse_date(data_inicio_raw) if data_inicio_raw else None
+    data_fim = parse_date(data_fim_raw) if data_fim_raw else None
+    if not data_inicio:
+        erros["data_inicio"] = "Informe a primeira data."
+    if data_unica:
+        data_fim = data_inicio
+        data_fim_raw = ""
+    else:
+        if not data_fim:
+            erros["data_fim"] = "Informe a segunda data."
+        if data_inicio and data_fim and data_fim < data_inicio:
+            erros["data_fim"] = "A segunda data deve ser maior ou igual a primeira."
+
+    destinos_validos = [
+        d for d in destinos_post
+        if (d.get("uf") or "").strip() and (d.get("cidade") or "").strip()
+    ]
+    destinos_resolvidos = _resolve_termo_destinos_labels(destinos_validos)
+    if not destinos_resolvidos:
+        erros["destinos"] = "Informe ao menos um destino."
+
+    if erros:
+        ctx = _termo_form_context(
+            erros=erros,
+            data_unica=data_unica,
+            data_inicio_raw=data_inicio_raw,
+            data_fim_raw=data_fim_raw,
+            destinos_data=destinos_data,
+        )
+        ctx["evento"] = evento
+        ctx["oficio"] = oficio
+        ctx["viajante"] = viajante
+        ctx["termo"] = termo
+        ctx["evento_return_url"] = next_url if next_url else None
+        ctx["evento_id"] = evento.id
+        ctx["oficio_id"] = oficio.id
+        ctx["viajante_id"] = viajante.id
+        ctx["next_url"] = next_url
+        ctx["is_contextual"] = True
+        return render(request, "viagens/termos_autorizacao_form.html", ctx)
+
+    prefill = build_termo_prefill_from_oficio(oficio, viajante, evento)
+    if termo:
+        termo.data_inicio = data_inicio or hoje
+        termo.data_fim = data_fim
+        termo.data_unica = data_unica
+        termo.destinos = destinos_validos
+        termo.motorista_nome = prefill.get("motorista_nome") or ""
+        termo.veiculo_modelo = prefill.get("veiculo_modelo") or ""
+        termo.veiculo_placa = prefill.get("veiculo_placa") or ""
+        termo.combustivel = prefill.get("combustivel") or ""
+        termo.save()
+        messages.success(request, "Termo atualizado.")
+    else:
+        TermoAutorizacao.objects.create(
+            oficio=oficio,
+            evento=evento,
+            viajante=viajante,
+            data_inicio=data_inicio or hoje,
+            data_fim=data_fim,
+            data_unica=data_unica,
+            destinos=destinos_validos,
+            motorista_nome=prefill.get("motorista_nome") or "",
+            veiculo_modelo=prefill.get("veiculo_modelo") or "",
+            veiculo_placa=prefill.get("veiculo_placa") or "",
+            combustivel=prefill.get("combustivel") or "",
+        )
+        messages.success(request, "Termo criado e vinculado ao ofício/evento.")
+
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts=[request.get_host()]):
+        return redirect(next_url)
+    return redirect("evento_guiado_etapa5", evento_id=evento.id)
 
 
 @require_http_methods(["GET"])
@@ -6662,6 +7475,11 @@ def plano_trabalho_editar(request, oficio_id: int):
     return redirect("plano_trabalho_step1", oficio_id=oficio.id)
 
 
+def _plano_next_url(request) -> str:
+    """Parâmetro next para retorno ao evento guiado (etapa 4)."""
+    return (request.GET.get("next") or "").strip()
+
+
 @require_http_methods(["GET", "POST"])
 def plano_trabalho_step1(request, oficio_id: int):
     oficio = get_object_or_404(
@@ -6669,6 +7487,7 @@ def plano_trabalho_step1(request, oficio_id: int):
         id=oficio_id,
     )
     plano = _ensure_plano_wizard_instance(oficio)
+    next_url = _plano_next_url(request)
     estados = Estado.objects.order_by("sigla")
     destinos_post = _plano_destinos_initial(plano, oficio)
     erros: dict[str, str] = {}
@@ -6730,7 +7549,10 @@ def plano_trabalho_step1(request, oficio_id: int):
                 _sync_plano_destinos(plano, destinos_payload)
                 plano.save()
 
-            return redirect("plano_trabalho_step2", oficio_id=oficio.id)
+            target = reverse("plano_trabalho_step2", kwargs={"oficio_id": oficio.id})
+            if next_url:
+                target = f"{target}?next={quote(next_url)}"
+            return redirect(target)
     else:
         form = PlanoTrabalhoStep1Form(initial=initial)
 
@@ -6748,6 +7570,7 @@ def plano_trabalho_step1(request, oficio_id: int):
             "destinos_total_forms": len(destinos_post),
             "destinos_order": destinos_order,
             "numero_plano_formatado": f"{int(plano.numero or 0):02d}/{int(plano.ano or timezone.localdate().year)}",
+            "evento_return_url": next_url if next_url else None,
         },
     )
 
@@ -7174,6 +7997,7 @@ def ordem_servico_editar(request, oficio_id: int):
         id=oficio_id,
     )
     ordem = _get_ordem_servico(oficio)
+    next_url = request.GET.get("next", "").strip()
 
     if request.method == "POST":
         form = OrdemServicoForm(request.POST, instance=ordem)
@@ -7186,6 +8010,8 @@ def ordem_servico_editar(request, oficio_id: int):
             ordem_obj.oficio = oficio
             ordem_obj.save()
             messages.success(request, "Ordem de servico salva com sucesso.")
+            if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts=[request.get_host()]):
+                return redirect(next_url)
             return redirect("ordens_servico_list")
     else:
         if ordem:
@@ -7200,6 +8026,7 @@ def ordem_servico_editar(request, oficio_id: int):
             "form": form,
             "oficio": oficio,
             "ordem": ordem,
+            "evento_return_url": next_url if next_url else None,
         },
     )
 

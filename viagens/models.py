@@ -325,7 +325,20 @@ def get_next_ordem_num(ano: int) -> int:
 class Evento(models.Model):
     """Pacote do evento: unidade central que agrupa roteiro, ofícios, plano/ordem, termos e justificativas."""
 
+    class TipoDemanda(models.TextChoices):
+        PCPR_NA_COMUNIDADE = "PCPR_NA_COMUNIDADE", "PCPR na Comunidade"
+        OPERACAO_POLICIAL = "OPERACAO_POLICIAL", "Operação Policial"
+        PARANA_EM_ACAO = "PARANA_EM_ACAO", "Paraná em Ação"
+        OUTRO = "OUTRO", "Outro"
+
     titulo = models.CharField(max_length=255, verbose_name="Título / Nome do evento")
+    tipo_demanda = models.CharField(
+        max_length=32,
+        choices=TipoDemanda.choices,
+        default=TipoDemanda.OUTRO,
+        blank=True,
+        verbose_name="Tipo de demanda",
+    )
     cidade_base = models.ForeignKey(
         "Cidade",
         on_delete=models.SET_NULL,
@@ -358,6 +371,7 @@ class DocumentoEventoArquivo(models.Model):
 
     class Tipo(models.TextChoices):
         OFICIO_ASSINADO = "OFICIO_ASSINADO", "Ofício assinado"
+        SOLICITACAO_FORMAL_ASSINADA = "SOLICITACAO_FORMAL_ASSINADA", "Solicitação formal (convite/ofício) assinada"
         PLANO_ASSINADO = "PLANO_ASSINADO", "Plano de trabalho assinado"
         ORDEM_ASSINADO = "ORDEM_ASSINADO", "Ordem de serviço assinada"
         JUSTIFICATIVA_ASSINADA = "JUSTIFICATIVA_ASSINADA", "Justificativa assinada"
@@ -493,26 +507,44 @@ class TermoAutorizacao(models.Model):
         blank=True,
         verbose_name="Acao Institucional",
     )
-    evento = models.ForeignKey(
-        "Evento",
-        on_delete=models.CASCADE,
-        related_name="termos",
+    oficio = models.ForeignKey(
+        "Oficio",
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
+        related_name="termos_autorizacao",
+        verbose_name="Ofício",
+    )
+    evento = models.ForeignKey(
+        "Evento",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="termos",
         verbose_name="Evento",
     )
     viajante = models.ForeignKey(
         Viajante,
-        on_delete=models.CASCADE,
-        related_name="termos_autorizacao",
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
+        related_name="termos_autorizacao",
         verbose_name="Servidor",
     )
     data_inicio = models.DateField()
     data_fim = models.DateField(null=True, blank=True)
     data_unica = models.BooleanField(default=False)
     destinos = models.JSONField(default=list, blank=True)
+    dispensado = models.BooleanField(
+        default=False,
+        verbose_name="Termo dispensado",
+        help_text="Se marcado, não exige geração/assinatura do termo (motivo em dispensa_motivo).",
+    )
+    dispensa_motivo = models.CharField(max_length=200, blank=True, default="")
+    motorista_nome = models.CharField(max_length=120, blank=True, default="")
+    veiculo_modelo = models.CharField(max_length=120, blank=True, default="")
+    veiculo_placa = models.CharField(max_length=20, blank=True, default="")
+    combustivel = models.CharField(max_length=60, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -520,6 +552,13 @@ class TermoAutorizacao(models.Model):
         verbose_name = "Termo de autorizacao"
         verbose_name_plural = "Termos de autorizacao"
         ordering = ("-created_at", "-id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["oficio", "viajante"],
+                condition=models.Q(dispensado=False) & models.Q(oficio__isnull=False) & models.Q(viajante__isnull=False),
+                name="uniq_termo_oficio_viajante_ativo",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"Termo #{self.id}"
@@ -988,6 +1027,14 @@ class Roteiro(models.Model):
         CAPITAL = "CAPITAL", "Capital"
         OUTRO = "OUTRO", "Outro"
 
+    evento = models.ForeignKey(
+        "Evento",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="roteiros",
+        verbose_name="Evento",
+    )
     nome = models.CharField(max_length=300, blank=True, verbose_name="Nome do Roteiro")
     descricao = models.TextField(blank=True, verbose_name="Descricao")
     estado_sede = models.ForeignKey(

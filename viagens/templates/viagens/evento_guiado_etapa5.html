@@ -1,0 +1,155 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Evento guiado — Etapa 5 (Termos){% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+{% endblock %}
+
+{% block breadcrumb %}
+  Eventos <span class="breadcrumb-sep">/</span> Guiado <span class="breadcrumb-sep">/</span> Etapa 5 – Termos de autorização
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Termos de autorização (Etapa 5)</h2>
+      <p class="page-subtitle">{{ evento.titulo }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear btn-small" href="{% url 'evento_guiado_painel' evento.id %}">Voltar ao painel</a>
+      <a class="btn-primary btn-small" href="{% url 'evento_pacote' evento.id %}">Ir para Pacote do Evento (uploads)</a>
+    </div>
+  </div>
+
+  <p class="page-desc">Termos são por <strong>ofício</strong> e <strong>servidor</strong>. Necessários para servidores <strong>não-ASCOM</strong>. Gere em lote ou edite individualmente. É possível dispensar termo com motivo. O upload do termo assinado é feito no <strong>Pacote do Evento</strong>.</p>
+
+  {% if not grupos %}
+    <div class="card doc-manager-resumo">
+      <p class="doc-card-desc">
+        <strong>Crie um ofício no evento para definir equipe/viagem.</strong><br />
+        Não há ofícios neste evento. Vá à Etapa 3 para criar ofícios e adicionar servidores.
+      </p>
+      <a href="{% url 'evento_guiado_etapa3' evento.id %}" class="btn-primary">Ir para Ofícios do evento</a>
+    </div>
+  {% else %}
+    <div class="card doc-manager-resumo" style="margin-bottom: 1rem;">
+      <div class="sub-card-title">Gerar termos em lote</div>
+      <p class="doc-card-desc">Cria e pré-preenche um termo para cada (ofício, viajante) não-ASCOM que ainda não possui termo. Dados vêm dos trechos e da logística do ofício.</p>
+      <a href="{{ url_gerar_lote }}" class="btn-primary">Gerar termos em lote</a>
+    </div>
+
+    {% for gr in grupos %}
+      <div class="card doc-manager-resumo" style="margin-bottom: 1.5rem;">
+        <div class="sub-card-title">Ofício {{ gr.numero_display }}</div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Nome / Cargo</th>
+              <th>ASCOM?</th>
+              <th>Termo</th>
+              <th class="table-actions-header">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in gr.viajantes %}
+              <tr>
+                <td>
+                  <strong>{{ row.viajante.nome }}</strong><br />
+                  <span class="muted">{{ row.viajante.cargo|default:"—" }}</span>
+                </td>
+                <td>{{ row.is_ascom|yesno:"Sim,Não" }}</td>
+                <td>
+                  {% if row.status == "existe" %}
+                    <span class="doc-card-badge doc-card-badge--ok">Existe</span>
+                  {% elif row.status == "dispensado" %}
+                    <span class="doc-card-badge">Dispensado</span>
+                    {% if row.termo_dispensado.dispensa_motivo %}
+                      <br /><span class="muted" title="{{ row.termo_dispensado.dispensa_motivo }}">{{ row.termo_dispensado.dispensa_motivo|truncatechars:40 }}</span>
+                    {% endif %}
+                  {% elif row.precisa_termo %}
+                    <span class="doc-card-badge doc-card-badge--pendente">Pendente</span>
+                  {% else %}
+                    <span class="doc-card-badge">Não necessário</span>
+                  {% endif %}
+                </td>
+                <td class="table-actions-cell">
+                  {% if row.precisa_termo %}
+                    {% if row.status == "pendente" or row.status == "existe" %}
+                      <a href="{% url 'termo_autorizacao_cadastro_contextual' %}?evento_id={{ evento.id }}&oficio_id={{ gr.oficio.id }}&viajante_id={{ row.viajante.id }}&next={{ return_path_etapa5|urlencode }}" class="btn-clear btn-small">{% if row.termo %}Editar{% else %}Gerar{% endif %}</a>
+                    {% endif %}
+                    {% if row.termo %}
+                      <a href="{% url 'termo_autorizacao_download_pdf' row.termo.id %}" class="btn-clear btn-small" target="_blank">PDF</a>
+                    {% endif %}
+                    {% if row.status == "pendente" %}
+                      <button type="button" class="btn-clear btn-small js-dispensar-termo" data-oficio-id="{{ gr.oficio.id }}" data-viajante-id="{{ row.viajante.id }}" data-viajante-nome="{{ row.viajante.nome }}">Dispensar</button>
+                    {% endif %}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
+
+    <div class="card doc-manager-resumo" style="margin-top: 1rem;">
+      <p class="doc-card-desc">
+        <strong>Assinatura e upload:</strong> Após gerar e imprimir os termos, o servidor e a chefia assinam. O upload do termo assinado (PDF) é feito no <strong>Pacote do Evento</strong>, na seção de documentos/assinados.
+      </p>
+      <a href="{% url 'evento_pacote' evento.id %}" class="btn-primary">Ir para Pacote do Evento (uploads)</a>
+    </div>
+  {% endif %}
+
+  <!-- Modal dispensar termo -->
+  <div id="modal-dispensar" class="doc-manager-modal" style="display: none;" aria-hidden="true">
+    <div class="doc-manager-modal-backdrop"></div>
+    <div class="doc-manager-modal-content">
+      <h3 class="doc-manager-modal-title">Dispensar termo</h3>
+      <p class="doc-manager-modal-desc">Servidor: <strong id="dispensar-viajante-nome"></strong></p>
+      <form method="post" action="{{ url_dispensar }}" id="form-dispensar">
+        {% csrf_token %}
+        <input type="hidden" name="oficio_id" id="dispensar-oficio-id" />
+        <input type="hidden" name="viajante_id" id="dispensar-viajante-id" />
+        <label for="dispensar-motivo">Motivo (opcional):</label>
+        <input type="text" name="motivo" id="dispensar-motivo" maxlength="200" placeholder="Ex.: Servidor em gozo de férias" class="input-block" />
+        <div class="form-actions" style="margin-top: 1rem;">
+          <button type="button" class="btn-clear js-modal-dispensar-close">Cancelar</button>
+          <button type="submit" class="btn-primary">Dispensar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var modal = document.getElementById('modal-dispensar');
+    var form = document.getElementById('form-dispensar');
+    if (!modal || !form) return;
+    document.querySelectorAll('.js-dispensar-termo').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.getElementById('dispensar-oficio-id').value = this.getAttribute('data-oficio-id');
+        document.getElementById('dispensar-viajante-id').value = this.getAttribute('data-viajante-id');
+        document.getElementById('dispensar-viajante-nome').textContent = this.getAttribute('data-viajante-nome') || '';
+        document.getElementById('dispensar-motivo').value = '';
+        modal.style.display = 'block';
+        modal.setAttribute('aria-hidden', 'false');
+      });
+    });
+    function closeModal() {
+      modal.style.display = 'none';
+      modal.setAttribute('aria-hidden', 'true');
+    }
+    modal.querySelector('.js-modal-dispensar-close') && modal.querySelector('.js-modal-dispensar-close').addEventListener('click', closeModal);
+    modal.querySelector('.doc-manager-modal-backdrop') && modal.querySelector('.doc-manager-modal-backdrop').addEventListener('click', closeModal);
+  })();
+  </script>
+
+  <div class="form-actions" style="margin-top: 1.5rem;">
+    <a class="btn-clear" href="{% url 'evento_guiado_painel' evento.id %}">Voltar ao painel</a>
+    <a class="btn-primary" href="{% url 'evento_pacote' evento.id %}">Ir para Pacote do Evento</a>
+  </div>
+{% endblock %}

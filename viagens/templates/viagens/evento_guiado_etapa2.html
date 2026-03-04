@@ -1,0 +1,207 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Evento guiado — Etapa 2 (Roteiro){% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+{% endblock %}
+
+{% block breadcrumb %}
+  Eventos <span class="breadcrumb-sep">/</span> Guiado <span class="breadcrumb-sep">/</span> Etapa 2 – Roteiro
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Roteiro do evento (Etapa 2)</h2>
+      <p class="page-subtitle">{{ evento.titulo }} — Ida e volta, com cálculo automático de chegada.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear btn-small" href="{% url 'evento_guiado_painel' evento.id %}">Ir para o painel</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    <ul class="messages-list">
+      {% for message in messages %}
+        <li class="message message-{{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% for roteiro in roteiros %}
+    <div class="card doc-card evento-roteiro-card">
+      <h3 class="doc-card-title">
+        {{ roteiro.cidade_origem }}/{{ roteiro.uf_origem }} → {{ roteiro.cidade_destino }}/{{ roteiro.uf_destino }}
+      </h3>
+      {% with trecho=roteiro.trechos.first %}
+        {% if trecho %}
+          <p class="doc-card-desc">
+            <strong>Ida:</strong>
+            Saída {% if trecho.saida_data %}{{ trecho.saida_data|date:"d/m/Y" }}{% else %}—{% endif %}
+            {% if trecho.saida_hora %}{{ trecho.saida_hora|time:"H:i" }}{% endif %}
+            → Chegada {% if trecho.chegada_data %}{{ trecho.chegada_data|date:"d/m/Y" }}{% else %}—{% endif %}
+            {% if trecho.chegada_hora %}{{ trecho.chegada_hora|time:"H:i" }}{% else %}—{% endif %}
+          </p>
+        {% endif %}
+      {% endwith %}
+      {% if roteiro.retorno_saida_data %}
+        <p class="doc-card-desc">
+          <strong>Retorno:</strong>
+          Saída {{ roteiro.retorno_saida_data|date:"d/m/Y" }} {% if roteiro.retorno_saida_hora %}{{ roteiro.retorno_saida_hora|time:"H:i" }}{% endif %}
+          → Chegada {% if roteiro.retorno_chegada_data %}{{ roteiro.retorno_chegada_data|date:"d/m/Y" }}{% else %}—{% endif %}
+          {% if roteiro.retorno_chegada_hora %}{{ roteiro.retorno_chegada_hora|time:"H:i" }}{% else %}—{% endif %}
+        </p>
+      {% endif %}
+      <div class="doc-card-actions">
+        <a href="{% url 'evento_guiado_etapa2' evento.id %}?editar={{ roteiro.id }}" class="btn-clear btn-small">Editar</a>
+        <form method="post" style="display: inline;" onsubmit="return confirm('Remover este roteiro do evento?');">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="remover" />
+          <input type="hidden" name="roteiro_id" value="{{ roteiro.id }}" />
+          <button type="submit" class="btn-clear btn-small">Remover</button>
+        </form>
+      </div>
+    </div>
+  {% endfor %}
+
+  <div class="card doc-manager-resumo evento-roteiro-form-card">
+    <h3 class="doc-card-title">{% if editar_roteiro_id %}Editar roteiro{% else %}Adicionar roteiro{% endif %}</h3>
+    <form method="post" id="formRoteiroEvento" class="wizard-form-stack">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="salvar" />
+      {% if editar_roteiro_id %}<input type="hidden" name="roteiro_id" value="{{ editar_roteiro_id }}" />{% endif %}
+      {% if form.non_field_errors %}<ul class="errorlist">{{ form.non_field_errors }}</ul>{% endif %}
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="id_origem_cidade">{{ form.origem_cidade.label }}</label>
+          {{ form.origem_cidade }}
+          {% if form.origem_cidade.errors %}<p class="field-errors">{{ form.origem_cidade.errors }}</p>{% endif %}
+        </div>
+        <div class="form-group">
+          <label for="id_destino_estado">{{ form.destino_estado.label }}</label>
+          {{ form.destino_estado }}
+          {% if form.destino_estado.errors %}<p class="field-errors">{{ form.destino_estado.errors }}</p>{% endif %}
+        </div>
+        <div class="form-group">
+          <label for="id_destino_cidade">{{ form.destino_cidade.label }}</label>
+          {{ form.destino_cidade }}
+          {% if form.destino_cidade.errors %}<p class="field-errors">{{ form.destino_cidade.errors }}</p>{% endif %}
+        </div>
+      </div>
+
+      <div class="evento-roteiro-ida">
+        <h4 class="sub-section-title">Ida</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="id_saida_data">{{ form.saida_data.label }}</label>
+            {{ form.saida_data }}
+            {% if form.saida_data.errors %}<p class="field-errors">{{ form.saida_data.errors }}</p>{% endif %}
+          </div>
+          <div class="form-group">
+            <label for="id_saida_hora">{{ form.saida_hora.label }}</label>
+            {{ form.saida_hora }}
+            {% if form.saida_hora.errors %}<p class="field-errors">{{ form.saida_hora.errors }}</p>{% endif %}
+          </div>
+          <div class="form-group">
+            <label for="id_duracao_ida">{{ form.duracao_ida.label }}</label>
+            {{ form.duracao_ida }}
+            {% if form.duracao_ida.help_text %}<p class="field-help">{{ form.duracao_ida.help_text }}</p>{% endif %}
+            {% if form.duracao_ida.errors %}<p class="field-errors">{{ form.duracao_ida.errors }}</p>{% endif %}
+          </div>
+          <div class="form-group">
+            <label>Chegada (calculada)</label>
+            <p id="chegada_ida_display" class="chegada-display">—</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="evento-roteiro-retorno">
+        <h4 class="sub-section-title">Retorno</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="id_retorno_saida_data">{{ form.retorno_saida_data.label }}</label>
+            {{ form.retorno_saida_data }}
+            {% if form.retorno_saida_data.errors %}<p class="field-errors">{{ form.retorno_saida_data.errors }}</p>{% endif %}
+          </div>
+          <div class="form-group">
+            <label for="id_retorno_saida_hora">{{ form.retorno_saida_hora.label }}</label>
+            {{ form.retorno_saida_hora }}
+            {% if form.retorno_saida_hora.errors %}<p class="field-errors">{{ form.retorno_saida_hora.errors }}</p>{% endif %}
+          </div>
+          <div class="form-group">
+            <label for="id_duracao_retorno">{{ form.duracao_retorno.label }}</label>
+            {{ form.duracao_retorno }}
+            {% if form.duracao_retorno.errors %}<p class="field-errors">{{ form.duracao_retorno.errors }}</p>{% endif %}
+          </div>
+          <div class="form-group">
+            <label>Chegada retorno (calculada)</label>
+            <p id="chegada_retorno_display" class="chegada-display">—</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" name="action" value="salvar" class="btn-primary">{% if editar_roteiro_id %}Atualizar roteiro{% else %}Salvar roteiro{% endif %}</button>
+        {% if editar_roteiro_id %}<a href="{% url 'evento_guiado_etapa2' evento.id %}" class="btn-clear">Cancelar</a>{% endif %}
+      </div>
+    </form>
+  </div>
+
+  <script>
+  (function() {
+    function parseDuracao(str) {
+      if (!str || !str.trim()) return null;
+      str = str.trim();
+      if (str.indexOf(':') >= 0) {
+        var parts = str.split(':', 2);
+        var h = parseInt(parts[0], 10);
+        var m = parseInt(parts[1], 10) || 0;
+        if (isNaN(h) || h < 0 || isNaN(m) || m < 0 || m >= 60) return null;
+        return h * 60 + m;
+      }
+      var n = parseInt(str, 10);
+      return (n >= 0 && !isNaN(n)) ? n : null;
+    }
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function computeChegada(saidaDataVal, saidaHoraVal, duracaoMin) {
+      if (!saidaDataVal || !saidaHoraVal || duracaoMin == null) return null;
+      var d = new Date(saidaDataVal + 'T' + saidaHoraVal + ':00');
+      if (isNaN(d.getTime())) return null;
+      d.setMinutes(d.getMinutes() + duracaoMin);
+      return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    }
+    function updateIda() {
+      var saidaData = document.getElementById('id_saida_data').value;
+      var saidaHora = document.getElementById('id_saida_hora').value;
+      var duracao = parseDuracao(document.getElementById('id_duracao_ida').value);
+      var el = document.getElementById('chegada_ida_display');
+      var r = computeChegada(saidaData, saidaHora, duracao);
+      el.textContent = r || '—';
+    }
+    function updateRetorno() {
+      var saidaData = document.getElementById('id_retorno_saida_data').value;
+      var saidaHora = document.getElementById('id_retorno_saida_hora').value;
+      var duracao = parseDuracao(document.getElementById('id_duracao_retorno').value);
+      var el = document.getElementById('chegada_retorno_display');
+      var r = computeChegada(saidaData, saidaHora, duracao);
+      el.textContent = r || '—';
+    }
+    var form = document.getElementById('formRoteiroEvento');
+    if (form) {
+      ['id_saida_data', 'id_saida_hora', 'id_duracao_ida'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) { el.addEventListener('input', updateIda); el.addEventListener('change', updateIda); }
+      });
+      ['id_retorno_saida_data', 'id_retorno_saida_hora', 'id_duracao_retorno'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) { el.addEventListener('input', updateRetorno); el.addEventListener('change', updateRetorno); }
+      });
+      updateIda();
+      updateRetorno();
+    }
+  })();
+  </script>
+{% endblock %}

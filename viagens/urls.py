@@ -250,6 +250,76 @@ urlpatterns = [
     ),
     path("eventos/", views.eventos_lista, name="eventos_lista"),
     path(
+        "eventos/novo-guiado/",
+        views.evento_novo_guiado,
+        name="evento_novo_guiado",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-1/",
+        views.evento_guiado_etapa1,
+        name="evento_guiado_etapa1",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/painel/",
+        views.evento_guiado_painel,
+        name="evento_guiado_painel",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-2/",
+        views.evento_guiado_etapa2,
+        name="evento_guiado_etapa2",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-3/",
+        views.evento_guiado_etapa3,
+        name="evento_guiado_etapa3",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-4/",
+        views.evento_guiado_etapa4,
+        name="evento_guiado_etapa4",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-4/criar-plano/",
+        views.evento_guiado_etapa4_criar_plano,
+        name="evento_guiado_etapa4_criar_plano",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-4/criar-ordem/",
+        views.evento_guiado_etapa4_criar_ordem,
+        name="evento_guiado_etapa4_criar_ordem",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-5/",
+        views.evento_guiado_etapa5,
+        name="evento_guiado_etapa5",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-5/gerar-lote/",
+        views.evento_guiado_etapa5_gerar_lote,
+        name="evento_guiado_etapa5_gerar_lote",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-5/dispensar/",
+        views.evento_guiado_etapa5_dispensar,
+        name="evento_guiado_etapa5_dispensar",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-6/",
+        views.evento_guiado_etapa6,
+        name="evento_guiado_etapa6",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/exportar-zip/",
+        views.evento_guiado_exportar_zip,
+        name="evento_guiado_exportar_zip",
+    ),
+    path(
+        "eventos/<int:evento_id>/guiado/etapa-<int:etapa_num>/",
+        views.evento_guiado_etapa_placeholder,
+        name="evento_guiado_etapa_placeholder",
+    ),
+    path(
         "eventos/<int:evento_id>/pacote/",
         views.evento_pacote,
         name="evento_pacote",
@@ -338,6 +408,11 @@ urlpatterns = [
         "termos-autorizacao/novo/",
         views.termo_autorizacao_cadastro,
         name="termo_autorizacao_cadastro",
+    ),
+    path(
+        "termos-autorizacao/novo-contexto/",
+        views.termo_autorizacao_cadastro_contextual,
+        name="termo_autorizacao_cadastro_contextual",
     ),
     path(
         "termos-autorizacao/<int:termo_id>/download-docx/",

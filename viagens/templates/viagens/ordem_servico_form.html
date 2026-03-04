@@ -35,6 +35,9 @@
       <div class="wizard-actions">
         <a class="btn-clear" href="{% url 'ordens_servico_list' %}">Voltar</a>
         <button class="btn-primary" type="submit">Salvar</button>
+        {% if evento_return_url %}
+          <a class="btn-clear" href="{{ evento_return_url }}">Voltar ao Evento Guiado</a>
+        {% endif %}
       </div>
     </form>
   </div>

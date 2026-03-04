@@ -1,0 +1,75 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Evento guiado — Etapa 3 (Ofícios){% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+{% endblock %}
+
+{% block breadcrumb %}
+  Eventos <span class="breadcrumb-sep">/</span> Guiado <span class="breadcrumb-sep">/</span> Etapa 3 – Ofícios
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Ofícios do evento (Etapa 3)</h2>
+      <p class="page-subtitle">{{ evento.titulo }}</p>
+    </div>
+    <div class="page-actions">
+      <a href="{% url 'formulario' %}?evento_id={{ evento.id }}" class="btn-primary" id="btnCriarOficioEvento">Criar Ofício neste Evento</a>
+      <a class="btn-clear btn-small" href="{% url 'evento_guiado_painel' evento.id %}">Voltar ao painel</a>
+      <a class="btn-clear btn-small" href="{% url 'evento_pacote' evento.id %}">Ir para Pacote do Evento</a>
+    </div>
+  </div>
+
+  <p class="page-desc">Ofícios vinculados a este evento. Ao clicar em «Criar Ofício neste Evento», o wizard será aberto com contexto do evento e os trechos poderão ser pré-preenchidos a partir dos roteiros cadastrados na Etapa 2.</p>
+
+  {% if oficios %}
+    <div class="list-card">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Número / Ano</th>
+            <th>Protocolo</th>
+            <th>Destino</th>
+            <th>Status</th>
+            <th class="table-actions-header">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for oficio in oficios %}
+            <tr>
+              <td><strong>{{ oficio.numero_formatado|default:oficio.oficio|default:"—" }}</strong></td>
+              <td>{{ oficio.protocolo|default:"—" }}</td>
+              <td>{{ oficio.get_tipo_destino_display|default:oficio.tipo_destino|default:"—" }}</td>
+              <td>
+                {% if oficio.status == "FINAL" %}
+                  <span class="doc-card-badge doc-card-badge--ok">Finalizado</span>
+                {% else %}
+                  <span class="doc-card-badge doc-card-badge--pendente">Rascunho</span>
+                {% endif %}
+              </td>
+              <td class="table-actions-cell">
+                <a href="{% url 'oficio_edit_step1' oficio.id %}" class="btn-clear btn-small">Editar</a>
+                <a href="{% url 'oficio_documentos' oficio.id %}" class="btn-primary btn-small">Central de Documentos</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="card doc-manager-resumo">
+      <p class="doc-card-desc">Nenhum ofício vinculado a este evento ainda.</p>
+      <a href="{% url 'formulario' %}?evento_id={{ evento.id }}" class="btn-primary">Criar Ofício neste Evento</a>
+    </div>
+  {% endif %}
+
+  <div class="form-actions" style="margin-top: 1.5rem;">
+    <a href="{% url 'formulario' %}?evento_id={{ evento.id }}" class="btn-primary">Criar Ofício neste Evento</a>
+    <a class="btn-clear" href="{% url 'evento_guiado_painel' evento.id %}">Voltar ao painel</a>
+    <a class="btn-clear" href="{% url 'evento_pacote' evento.id %}">Ir para Pacote do Evento</a>
+  </div>
+{% endblock %}

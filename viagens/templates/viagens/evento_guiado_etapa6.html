@@ -1,0 +1,125 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Evento guiado — Etapa 6 (Finalização){% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+{% endblock %}
+
+{% block breadcrumb %}
+  Eventos <span class="breadcrumb-sep">/</span> Guiado <span class="breadcrumb-sep">/</span> Etapa 6 – Finalização
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Finalização (Etapa 6)</h2>
+      <p class="page-subtitle">{{ evento.titulo }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear btn-small" href="{% url 'evento_guiado_painel' evento.id %}">Voltar ao painel</a>
+      {% if etapa6_ok %}
+        <a class="btn-primary btn-small" href="{{ url_exportar_zip }}">Exportar ZIP do pacote</a>
+      {% endif %}
+      <a class="btn-primary btn-small" href="{% url 'evento_pacote' evento.id %}">Abrir Pacote do Evento</a>
+    </div>
+  </div>
+
+  <p class="page-desc">Confira os uploads na ordem abaixo. Todos os itens obrigatórios devem ter documento assinado enviado. Ao concluir, exporte o ZIP do pacote.</p>
+
+  {% if pendencias %}
+    <div class="card doc-manager-resumo" style="margin-bottom: 1rem; border-left: 4px solid var(--brand-warning, #d97706);">
+      <div class="sub-card-title">Pendências</div>
+      <ul class="messages-list">
+        {% for p in pendencias %}
+          <li class="message message-info">{{ p }}</li>
+        {% endfor %}
+      </ul>
+      <p class="doc-card-desc">Resolva as pendências antes de exportar o ZIP. Use os botões Upload abaixo ou acesse o Pacote do Evento.</p>
+    </div>
+  {% endif %}
+
+  {% for bloco in blocos %}
+    <div class="card doc-manager-resumo" style="margin-bottom: 1.5rem;">
+      <div class="sub-card-title">
+        {{ bloco.titulo }}
+        {% if bloco.status_ok %}
+          <span class="doc-card-badge doc-card-badge--ok">OK</span>
+        {% else %}
+          <span class="doc-card-badge doc-card-badge--pendente">Pendente</span>
+        {% endif %}
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Documento</th>
+            <th>Status</th>
+            <th class="table-actions-header">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in bloco.items %}
+            <tr>
+              <td>{{ item.label }}</td>
+              <td>
+                {% if item.dispensado %}
+                  <span class="doc-card-badge">Dispensado (OK)</span>
+                {% elif item.nao_necessario %}
+                  <span class="doc-card-badge">Não necessário</span>
+                {% elif item.assinado %}
+                  <span class="doc-card-badge doc-card-badge--ok">Enviado</span>
+                  {% if item.arquivo.name %}<br /><span class="muted">{{ item.arquivo.name }}</span>{% endif %}
+                {% else %}
+                  <span class="doc-card-badge doc-card-badge--pendente">Pendente</span>
+                {% endif %}
+              </td>
+              <td class="table-actions-cell">
+                {% if not item.dispensado and not item.nao_necessario %}
+                  <form method="post" action="{{ url_upload }}" enctype="multipart/form-data" style="display: inline-block; margin-right: 8px;">
+                    {% csrf_token %}
+                    <input type="hidden" name="tipo" value="{{ item.tipo }}" />
+                    <input type="hidden" name="next" value="{{ return_path_etapa6 }}" />
+                    {% if item.oficio_id %}<input type="hidden" name="oficio_id" value="{{ item.oficio_id }}" />{% endif %}
+                    {% if item.viajante_id %}<input type="hidden" name="viajante_id" value="{{ item.viajante_id }}" />{% endif %}
+                    <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" required style="max-width: 180px;" />
+                    <button type="submit" class="btn-primary btn-small">{% if item.assinado %}Substituir{% else %}Upload{% endif %}</button>
+                  </form>
+                  {% if item.assinado and item.arquivo.id %}
+                    <form method="post" action="{% url 'evento_remover_assinado' evento.id item.arquivo.id %}" style="display: inline;">
+                      {% csrf_token %}
+                      <input type="hidden" name="next" value="{{ return_path_etapa6 }}" />
+                      <button type="submit" class="btn-clear btn-small">Remover</button>
+                    </form>
+                  {% endif %}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+
+  <div class="card doc-manager-resumo" style="margin-top: 1rem;">
+    <div class="sub-card-title">Atalhos</div>
+    <p class="doc-card-desc">Ir para uma etapa anterior para gerar/editar documentos ou abrir o pacote completo.</p>
+    <div class="form-actions" style="flex-wrap: wrap; gap: 0.5rem;">
+      <a class="btn-clear btn-small" href="{% url 'evento_guiado_etapa3' evento.id %}">Etapa 3 (Ofícios)</a>
+      <a class="btn-clear btn-small" href="{% url 'evento_guiado_etapa4' evento.id %}">Etapa 4 (PT/OS)</a>
+      <a class="btn-clear btn-small" href="{% url 'evento_guiado_etapa5' evento.id %}">Etapa 5 (Termos)</a>
+      <a class="btn-primary btn-small" href="{% url 'evento_pacote' evento.id %}">Abrir Pacote do Evento</a>
+    </div>
+  </div>
+
+  <div class="form-actions" style="margin-top: 1.5rem;">
+    <a class="btn-clear" href="{% url 'evento_guiado_painel' evento.id %}">Voltar ao painel</a>
+    {% if etapa6_ok %}
+      <a class="btn-primary" href="{{ url_exportar_zip }}">Exportar ZIP do pacote</a>
+    {% else %}
+      <span class="muted">Conclua todos os uploads obrigatórios para habilitar a exportação ZIP.</span>
+    {% endif %}
+  </div>
+{% endblock %}

@@ -100,10 +100,13 @@
 
   <div class="page-header">
     <div>
-      <h2 class="page-title">Cadastrar termo</h2>
-      <p class="page-subtitle">Preencha datas e destinos para gerar documentos depois.</p>
+      <h2 class="page-title">{% if is_contextual %}{% if termo %}Editar{% else %}Gerar{% endif %} termo – {{ viajante.nome }}{% else %}Cadastrar termo{% endif %}</h2>
+      <p class="page-subtitle">{% if is_contextual %}Evento: {{ evento.titulo }}{% if oficio %} — Ofício {{ oficio.numero_formatado|default:oficio.id }}{% endif %}{% else %}Preencha datas e destinos para gerar documentos depois.{% endif %}</p>
     </div>
     <div class="page-actions">
+      {% if evento_return_url %}
+        <a class="btn-clear" href="{{ evento_return_url }}">Voltar ao Evento Guiado</a>
+      {% endif %}
       <a class="btn-clear" href="{% url 'termos_autorizacao_lista' %}">Lista de termos</a>
     </div>
   </div>
@@ -111,6 +114,12 @@
   <div class="card termo-form-shell">
     <form method="post" id="termoForm">
       {% csrf_token %}
+      {% if is_contextual %}
+        <input type="hidden" name="evento_id" value="{{ evento_id }}" />
+        <input type="hidden" name="oficio_id" value="{{ oficio_id }}" />
+        <input type="hidden" name="viajante_id" value="{{ viajante_id }}" />
+        <input type="hidden" name="next" value="{{ next_url }}" />
+      {% endif %}
 
       {% if erros.geral %}
         <div class="error">
@@ -210,6 +219,9 @@
 
       <div class="form-actions">
         <button type="submit" class="btn-primary">Salvar termo</button>
+        {% if evento_return_url %}
+          <a class="btn-clear" href="{{ evento_return_url }}">Voltar ao Evento Guiado</a>
+        {% endif %}
       </div>
     </form>
   </div>

@@ -52,11 +52,26 @@
               </li>
             </ul>
           </li>
-          <li>
-            <a href="{% url 'eventos_lista' %}">
+          <li class="has-submenu">
+            <a href="#" class="submenu-toggle">
               <i data-lucide="calendar-days"></i>
-              Eventos (pacotes)
+              Eventos
+              <i data-lucide="chevron-down" class="chevron"></i>
             </a>
+            <ul class="submenu">
+              <li>
+                <a href="{% url 'evento_novo_guiado' %}">
+                  <i data-lucide="plus-circle"></i>
+                  Novo evento (fluxo guiado)
+                </a>
+              </li>
+              <li>
+                <a href="{% url 'eventos_lista' %}">
+                  <i data-lucide="list"></i>
+                  Eventos (pacotes)
+                </a>
+              </li>
+            </ul>
           </li>
           <li class="has-submenu">
             <a href="#" class="submenu-toggle">

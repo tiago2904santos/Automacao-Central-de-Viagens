@@ -1,0 +1,26 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Em construção — Etapa {{ etapa_num }}{% endblock %}
+
+{% block breadcrumb %}
+  Eventos <span class="breadcrumb-sep">/</span> Guiado <span class="breadcrumb-sep">/</span> Etapa {{ etapa_num }}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Etapa {{ etapa_num }} — Em construção</h2>
+      <p class="page-subtitle">Esta etapa do fluxo guiado ainda não está disponível.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-clear" href="{% url 'evento_guiado_painel' evento.id %}">Voltar ao painel</a>
+    </div>
+  </div>
+
+  <div class="card doc-manager-resumo">
+    <p>Evento: <strong>{{ evento.titulo }}</strong></p>
+    <p>Você será redirecionado para esta etapa em uma versão futura. Use o painel para acompanhar o progresso.</p>
+    <a href="{% url 'evento_guiado_painel' evento.id %}" class="btn-primary">Ir para o painel</a>
+  </div>
+{% endblock %}

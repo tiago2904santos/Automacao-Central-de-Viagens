@@ -217,8 +217,9 @@
       <div class="wizard-actions">
         <button class="btn-clear" type="submit" name="action" value="prev">Voltar</button>
         <button class="btn-primary" type="submit" name="action" value="save">Finalizar ofício</button>
-        <!-- teste de botao -->
-
+        {% if wizard_evento_return_url %}
+          <a href="{{ wizard_evento_return_url }}" class="btn-clear">Voltar ao Evento</a>
+        {% endif %}
       </div>
     </form>
   </div>

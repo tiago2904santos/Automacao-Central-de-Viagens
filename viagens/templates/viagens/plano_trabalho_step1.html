@@ -159,6 +159,9 @@
       <div class="wizard-actions wizard-actions--spaced">
         <a class="btn-clear" href="{% url 'oficio_documentos' oficio.id %}">Voltar</a>
         <button class="btn-primary" type="submit">Continuar</button>
+        {% if evento_return_url %}
+          <a class="btn-clear" href="{{ evento_return_url }}">Voltar ao Evento Guiado</a>
+        {% endif %}
       </div>
     </form>
   </div>

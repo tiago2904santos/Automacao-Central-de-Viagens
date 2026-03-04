@@ -51,35 +51,31 @@ def build_evento_checklist(evento: Evento) -> dict:
             "dias_antecedencia": get_dias_antecedencia(o),
         })
 
-    # Viajantes do evento (união de todos os ofícios) — não-ASCOM exigem termo
-    seen_v = set()
-    viajantes_nao_ascom = []
-    for o in oficios:
-        for v in o.viajantes.all():
-            if v.id not in seen_v:
-                seen_v.add(v.id)
-                if not getattr(v, "is_ascom", True):
-                    viajantes_nao_ascom.append(v)
-
-    # Termos: 1 por servidor não-ASCOM (termos do evento com viajante preenchido)
-    termos_evento = list(
-        evento.termos.filter(viajante__isnull=False).select_related("viajante")
-    )
-    viajantes_com_termo = {t.viajante_id for t in termos_evento}
+    # Termos: por (ofício, viajante) não-ASCOM; dispensado conta como ok
     termos_check = []
     termos_ok = True
-    for v in viajantes_nao_ascom:
-        tem_termo = v.id in viajantes_com_termo
-        termos_ok = termos_ok and tem_termo
-        termos_check.append({
-            "viajante_id": v.id,
-            "nome": v.nome or "",
-            "is_ascom": getattr(v, "is_ascom", True),
-            "termo_ok": tem_termo,
-        })
-
-    # Se não há viajante não-ASCOM, termos estão ok
-    if not viajantes_nao_ascom:
+    for o in oficios:
+        termos_oficio = {
+            t.viajante_id: t
+            for t in o.termos_autorizacao.select_related("viajante").all()
+            if t.viajante_id
+        }
+        for v in o.viajantes.all():
+            if getattr(v, "is_ascom", True):
+                continue
+            termo = termos_oficio.get(v.id)
+            ok = termo is not None  # existe (ativo ou dispensado)
+            if not ok:
+                termos_ok = False
+            termos_check.append({
+                "oficio_id": o.id,
+                "viajante_id": v.id,
+                "nome": v.nome or "",
+                "is_ascom": False,
+                "termo_ok": ok,
+                "dispensado": termo.dispensado if termo else False,
+            })
+    if not any(not c["is_ascom"] for c in termos_check):
         termos_ok = True
 
     pronto_para_protocolar = (

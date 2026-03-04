@@ -1,0 +1,60 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Painel — {{ evento.titulo }}{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'viagens/documentos_manager.css' %}" />
+{% endblock %}
+
+{% block breadcrumb %}
+  Eventos <span class="breadcrumb-sep">/</span> Guiado <span class="breadcrumb-sep">/</span> Painel
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Painel do evento guiado</h2>
+      <p class="page-subtitle">{{ evento.titulo }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-primary" href="{{ progresso.proximo_passo_url }}">{{ progresso.proximo_passo_label }}</a>
+      <a class="btn-clear btn-small" href="{% url 'eventos_lista' %}">Voltar para eventos</a>
+    </div>
+  </div>
+
+  <div class="doc-manager-grid evento-guiado-painel-cards">
+    {% for etapa in progresso.etapas %}
+      <div class="doc-card evento-guiado-card">
+        <h3 class="doc-card-title">
+          Etapa {{ etapa.numero }}: {{ etapa.label }}
+          {% if etapa.status == "ok" %}
+            <span class="doc-card-badge doc-card-badge--ok">OK</span>
+          {% elif etapa.status == "pendente" %}
+            <span class="doc-card-badge doc-card-badge--pendente">Pendente</span>
+          {% elif etapa.status == "nao_necessario" %}
+            <span class="doc-card-badge doc-card-badge--nao-exigido">Não necessário</span>
+          {% endif %}
+        </h3>
+        {% if etapa.em_construcao %}
+          <p class="doc-card-desc">Em construção.</p>
+        {% endif %}
+        <div class="doc-card-actions">
+          <a href="{{ etapa.url }}" class="btn-primary btn-small">Abrir</a>
+        </div>
+      </div>
+    {% endfor %}
+
+    <div class="doc-card evento-guiado-card evento-guiado-final">
+      <h3 class="doc-card-title">Pacote do evento</h3>
+      <p class="doc-card-desc">Acesse a central de documentos do pacote (ofícios, termos, plano/ordem, justificativas).</p>
+      <div class="doc-card-actions">
+        <a href="{{ progresso.url_pacote }}" class="btn-primary">Abrir pacote</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="evento-guiado-proximo-wrap" style="margin-top: 1.5rem;">
+    <a href="{{ progresso.proximo_passo_url }}" class="btn-primary">{{ progresso.proximo_passo_label }}</a>
+  </div>
+{% endblock %}

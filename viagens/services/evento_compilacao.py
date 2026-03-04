@@ -64,7 +64,14 @@ def _ordenar_pdfs_para_protocolo(evento: Evento) -> list[DocumentoEventoArquivo]
             arq_j = DocumentoEventoArquivo.objects.filter(pk=j["arquivo"]["id"], is_active=True).first()
             if arq_j:
                 resultado.append(arq_j)
-    # 2) Plano ou Ordem (um só)
+    # 2) Solicitação formal (quando tem convite)
+    if status.get("tem_convite_ou_oficio_evento") and status.get("solicitacao_formal", {}).get("arquivo", {}).get("id"):
+        arq_sol = DocumentoEventoArquivo.objects.filter(
+            pk=status["solicitacao_formal"]["arquivo"]["id"], is_active=True
+        ).first()
+        if arq_sol:
+            resultado.append(arq_sol)
+    # 3) Plano ou Ordem (um só)
     if status["plano_ou_ordem"].get("arquivo_plano") and status["plano_ou_ordem"]["arquivo_plano"].get("id"):
         arq = DocumentoEventoArquivo.objects.filter(pk=status["plano_ou_ordem"]["arquivo_plano"]["id"], is_active=True).first()
         if arq:
@@ -73,7 +80,7 @@ def _ordenar_pdfs_para_protocolo(evento: Evento) -> list[DocumentoEventoArquivo]
         arq = DocumentoEventoArquivo.objects.filter(pk=status["plano_ou_ordem"]["arquivo_ordem"]["id"], is_active=True).first()
         if arq:
             resultado.append(arq)
-    # 3) Termos (já ordenados por nome no status)
+    # 4) Termos (já ordenados por nome no status)
     for t in status["termos"]:
         if t.get("arquivo") and t["arquivo"].get("id"):
             arq = DocumentoEventoArquivo.objects.filter(pk=t["arquivo"]["id"], is_active=True).first()

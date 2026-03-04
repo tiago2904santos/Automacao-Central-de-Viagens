@@ -252,3 +252,128 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Evento guiado (etapa 1) form ---- */
+.wizard-form-stack .form-group {
+  margin-bottom: 1rem;
+}
+.wizard-form-stack .form-group label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  margin-bottom: 0.35rem;
+  color: var(--brand-ink, #0f172a);
+}
+.wizard-form-stack .form-group .input-field,
+.wizard-form-stack .form-group input[type="text"],
+.wizard-form-stack .form-group input[type="date"],
+.wizard-form-stack .form-group select {
+  width: 100%;
+  max-width: 400px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--brand-border, #e2e8f0);
+  border-radius: 8px;
+  font-size: 0.9375rem;
+}
+.wizard-form-stack .form-row {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+.wizard-form-stack .form-row .form-group {
+  flex: 1;
+  min-width: 160px;
+}
+.wizard-form-stack .field-errors {
+  color: var(--danger, #b91c1c);
+  font-size: 0.875rem;
+  margin: 0.25rem 0 0 0;
+}
+.wizard-form-stack .field-help {
+  font-size: 0.8125rem;
+  color: var(--brand-muted, #5b6677);
+  margin: 0.25rem 0 0 0;
+}
+.wizard-form-stack .form-group-checkbox .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.wizard-form-stack .form-actions {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--brand-border, #e2e8f0);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+.messages-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem 0;
+}
+.messages-list .message {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  font-size: 0.9375rem;
+}
+.messages-list .message-success { background: var(--brand-soft, #e6f4f1); color: var(--brand-primary-dark, #115e59); }
+.messages-list .message-error { background: #fef2f2; color: #b91c1c; }
+.messages-list .message-info { background: #e0f2fe; color: #0369a1; }
+
+/* Etapa 2 – Roteiro do evento */
+.evento-roteiro-card { margin-bottom: 1rem; }
+.evento-roteiro-form-card .sub-section-title { font-size: 0.9375rem; margin: 1rem 0 0.5rem 0; color: var(--brand-muted, #5b6677); }
+.evento-roteiro-form-card .chegada-display { font-weight: 600; margin: 0.35rem 0 0 0; min-height: 1.25rem; }
+
+/* Modal (ex.: dispensar termo Etapa 5) */
+.doc-manager-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.doc-manager-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+.doc-manager-modal-content {
+  position: relative;
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.5rem;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+.doc-manager-modal-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.125rem;
+}
+.doc-manager-modal-desc {
+  margin: 0 0 1rem 0;
+  font-size: 0.9375rem;
+  color: var(--brand-muted, #5b6677);
+}
+.doc-manager-modal-content .input-block {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.35rem;
+  border: 1px solid var(--brand-border, #e2e8f0);
+  border-radius: 8px;
+  font-size: 0.9375rem;
+}
+.doc-manager-modal-content label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-top: 0.75rem;
+}

@@ -48,7 +48,15 @@ def get_status_assinados_evento(evento: Evento) -> dict:
             "arquivo": _arquivo_info(arq),
         })
 
-    # Plano / Ordem (1 por evento)
+    # Solicitação formal (quando tem convite/ofício solicitante)
+    arq_solicitacao = _get_arquivo_assinado_ativo(evento, DocumentoEventoArquivo.Tipo.SOLICITACAO_FORMAL_ASSINADA) if tem_convite else None
+    solicitacao_formal_status = {
+        "required": tem_convite,
+        "assinado": arq_solicitacao is not None,
+        "arquivo": _arquivo_info(arq_solicitacao),
+    }
+
+    # Plano / Ordem (1 por evento; quando não tem convite)
     plano_assinado = _get_arquivo_assinado_ativo(evento, DocumentoEventoArquivo.Tipo.PLANO_ASSINADO) is not None
     ordem_assinado = _get_arquivo_assinado_ativo(evento, DocumentoEventoArquivo.Tipo.ORDEM_ASSINADO) is not None
     arq_plano = _get_arquivo_assinado_ativo(evento, DocumentoEventoArquivo.Tipo.PLANO_ASSINADO)
@@ -74,27 +82,45 @@ def get_status_assinados_evento(evento: Evento) -> dict:
             "arquivo": _arquivo_info(arq),
         })
 
-    # Viajantes não-ASCOM e termos assinados
-    seen_v = set()
-    viajantes_nao_ascom = []
-    for o in oficios:
-        for v in o.viajantes.all():
-            if v.id not in seen_v:
-                seen_v.add(v.id)
-                if not getattr(v, "is_ascom", True):
-                    viajantes_nao_ascom.append(v)
+    # Termos: por (ofício, viajante) não-ASCOM; dispensado não exige upload
     termos_status = []
-    for v in sorted(viajantes_nao_ascom, key=lambda x: (x.nome or "")):
-        arq = _get_arquivo_assinado_ativo(evento, DocumentoEventoArquivo.Tipo.TERMO_ASSINADO, viajante_id=v.id)
-        termos_status.append({
-            "viajante_id": v.id,
-            "nome": v.nome or "",
-            "assinado": arq is not None,
-            "arquivo": _arquivo_info(arq),
-        })
+    for o in oficios:
+        termos_oficio = {
+            t.viajante_id: t
+            for t in o.termos_autorizacao.select_related("viajante").all()
+            if t.viajante_id
+        }
+        for v in o.viajantes.all():
+            if getattr(v, "is_ascom", True):
+                continue
+            termo = termos_oficio.get(v.id)
+            dispensado = termo and termo.dispensado
+            if dispensado:
+                termos_status.append({
+                    "oficio_id": o.id,
+                    "viajante_id": v.id,
+                    "nome": v.nome or "",
+                    "assinado": True,
+                    "dispensado": True,
+                    "arquivo": None,
+                })
+                continue
+            arq = _get_arquivo_assinado_ativo(
+                evento, DocumentoEventoArquivo.Tipo.TERMO_ASSINADO,
+                oficio_id=o.id, viajante_id=v.id,
+            )
+            termos_status.append({
+                "oficio_id": o.id,
+                "viajante_id": v.id,
+                "nome": v.nome or "",
+                "assinado": arq is not None,
+                "dispensado": False,
+                "arquivo": _arquivo_info(arq),
+            })
 
     return {
         "oficios": oficios_status,
+        "solicitacao_formal": solicitacao_formal_status,
         "plano_ou_ordem": plano_ou_ordem_status,
         "justificativas": justificativas_status,
         "termos": termos_status,
@@ -127,6 +153,9 @@ def is_evento_pronto_para_compilar(evento: Evento) -> bool:
     for o in status["oficios"]:
         if not o["assinado"]:
             return False
+    if status.get("solicitacao_formal", {}).get("required"):
+        if not status["solicitacao_formal"].get("assinado"):
+            return False
     if status["plano_ou_ordem"]["required"]:
         if not (status["plano_ou_ordem"]["plano_assinado"] or status["plano_ou_ordem"]["ordem_assinado"]):
             return False
@@ -146,6 +175,8 @@ def listar_pendencias_compilacao(evento: Evento) -> list[str]:
     for o in status["oficios"]:
         if not o["assinado"]:
             pendencias.append(f"Ofício {o['numero_display']}: falta upload do documento assinado.")
+    if status.get("solicitacao_formal", {}).get("required") and not status["solicitacao_formal"].get("assinado"):
+        pendencias.append("Solicitação formal (convite/ofício): falta upload do documento assinado.")
     if status["plano_ou_ordem"]["required"]:
         if not (status["plano_ou_ordem"]["plano_assinado"] or status["plano_ou_ordem"]["ordem_assinado"]):
             pendencias.append("Plano de Trabalho ou Ordem de Serviço: falta upload do documento assinado.")
