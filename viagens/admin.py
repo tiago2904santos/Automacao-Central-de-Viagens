@@ -5,13 +5,16 @@ from .models import (
     Cidade,
     CoordenadorMunicipal,
     Estado,
+    ModeloMotivo,
     Oficio,
     OficioRoteiro,
+    OficioViajante,
     PlanoTrabalho,
     PlanoTrabalhoAtividade,
     PlanoTrabalhoLocalAtuacao,
     PlanoTrabalhoMeta,
     PlanoTrabalhoRecurso,
+    RoteiroDestino,
     Roteiro,
     Trecho,
     TrechoRoteiro,
@@ -219,3 +222,26 @@ class PlanoTrabalhoAdmin(admin.ModelAdmin):
         PlanoTrabalhoRecursoInline,
         PlanoTrabalhoLocalInline,
     )
+
+
+@admin.register(OficioViajante)
+class OficioViajanteAdmin(admin.ModelAdmin):
+    list_display = ("oficio", "viajante", "ordem", "nome_snapshot", "cargo_snapshot")
+    list_filter = ("oficio__ano",)
+    search_fields = ("viajante__nome", "oficio__oficio", "nome_snapshot")
+    autocomplete_fields = ("viajante",)
+
+
+@admin.register(RoteiroDestino)
+class RoteiroDestinoAdmin(admin.ModelAdmin):
+    list_display = ("roteiro", "nome", "estado", "cidade", "principal", "ordem")
+    list_filter = ("principal",)
+    search_fields = ("nome", "roteiro__nome")
+    autocomplete_fields = ("estado", "cidade")
+
+
+@admin.register(ModeloMotivo)
+class ModeloMotivoAdmin(admin.ModelAdmin):
+    list_display = ("codigo", "label", "ordem", "ativo", "padrao")
+    list_filter = ("ativo", "padrao")
+    search_fields = ("codigo", "label")

@@ -853,3 +853,91 @@
     width: 100%;
   }
 }
+
+/* ===================================================================
+   Central de Documentos — Hub Grid
+   =================================================================== */
+
+.doc-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.doc-hub-card {
+  background: #fff;
+  border: 1px solid #e2ebe7;
+  border-radius: 10px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: box-shadow 0.15s ease;
+}
+
+.doc-hub-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.doc-hub-card--secondary {
+  border-style: dashed;
+  background: #f9fbfa;
+}
+
+.doc-hub-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.doc-hub-card-header [data-lucide] {
+  width: 22px;
+  height: 22px;
+  color: #2d7a5a;
+  flex-shrink: 0;
+}
+
+.doc-hub-card-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a3c2e;
+  margin: 0;
+  flex: 1;
+}
+
+.doc-hub-count {
+  background: #e6f4ef;
+  color: #2d7a5a;
+  border-radius: 99px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.doc-hub-card-desc {
+  font-size: 0.85rem;
+  color: #6b7c75;
+  margin: 0;
+  line-height: 1.45;
+  flex: 1;
+}
+
+.doc-hub-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+
+@media (max-width: 600px) {
+  .doc-hub-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .doc-hub-card-actions {
+    flex-direction: column;
+  }
+}

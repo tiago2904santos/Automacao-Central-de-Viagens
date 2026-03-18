@@ -7,6 +7,8 @@ urlpatterns = [
     path("", views.dashboard_home, name="dashboard_home"),
     path("dashboard/", views.dashboard_home, name="dashboard_home_alt"),
     path("dashboard/data/", views.dashboard_data_api, name="dashboard_data_api"),
+    # Central de Documentos — hub principal independente de evento
+    path("documentos/central/", views.documentos_central, name="documentos_central"),
     path("efetivo/", views.efetivo, name="efetivo"),
     path("diarias/", views.diarias, name="diarias"),
     path("simulacao-diarias/", views.simulacao_diarias, name="simulacao_diarias"),

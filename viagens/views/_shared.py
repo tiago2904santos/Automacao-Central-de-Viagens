@@ -55,14 +55,17 @@ from ..models import (
     Evento,
     EventoProtocoloArquivo,
     ModeloJustificativa,
+    ModeloMotivo,
     Oficio,
     OficioCounter,
+    OficioViajante,
     OrdemServico,
     PlanoTrabalho,
     PlanoTrabalhoAtividade,
     PlanoTrabalhoLocalAtuacao,
     PlanoTrabalhoMeta,
     PlanoTrabalhoRecurso,
+    RoteiroDestino,
     Roteiro,
     TrechoRoteiro,
     get_next_ordem_num,
@@ -757,6 +760,9 @@ def _clear_wizard_data(request) -> None:
     request.session.pop(OFICIO_RESERVED_SESSION_KEY, None)
     request.session.pop("wizard_evento_id", None)
     request.session.pop("wizard_evento_return_url", None)
+    request.session.pop("wizard_return_to", None)
+    request.session.pop("wizard_context_source", None)
+    request.session.pop("wizard_preselected_roteiro_id", None)
     request.session.modified = True
 
 
@@ -2833,6 +2839,28 @@ def simulacao_diarias_calcular(request):
     return JsonResponse(resultado)
 
 
+@require_GET
+def documentos_central(request):
+    """Hub principal da Central de Documentos.
+
+    Ponto de entrada para criar/listar todos os tipos de documentos de forma
+    independente, sem obrigatoriedade de evento.
+    """
+    counts = {
+        "total_oficios": Oficio.objects.count(),
+        "total_termos": TermoAutorizacao.objects.count(),
+        "total_planos": PlanoTrabalho.objects.count(),
+        "total_ordens": OrdemServico.objects.count(),
+        "total_roteiros": Roteiro.objects.count(),
+        "total_eventos": Evento.objects.count(),
+    }
+    return render(
+        request,
+        "viagens/documentos_central.html",
+        counts,
+    )
+
+
 @require_http_methods(["GET", "POST"])
 def formulario(request):
     data = _get_wizard_data(request)
@@ -2841,7 +2869,7 @@ def formulario(request):
         if not request.GET.get("resume"):
             _clear_wizard_data(request)
             data = {}
-            evento_id_raw = request.GET.get("evento_id")
+            evento_id_raw = request.GET.get("evento_id") or request.GET.get("preselected_event_id")
             if evento_id_raw:
                 try:
                     eid = int(evento_id_raw)
@@ -2852,6 +2880,19 @@ def formulario(request):
                     request.session.modified = True
                 except (ValueError, TypeError):
                     pass
+            # Parâmetros de contexto e retorno para fluxos guiados
+            return_to = request.GET.get("return_to", "").strip()
+            context_source = request.GET.get("context_source", "").strip()
+            preselected_roteiro_id = request.GET.get("preselected_roteiro_id", "").strip()
+            if return_to:
+                request.session["wizard_return_to"] = return_to
+                request.session.modified = True
+            if context_source:
+                request.session["wizard_context_source"] = context_source
+                request.session.modified = True
+            if preselected_roteiro_id:
+                request.session["wizard_preselected_roteiro_id"] = preselected_roteiro_id
+                request.session.modified = True
         else:
             data = _ensure_wizard_session(request)
         oficio_obj_get = _get_wizard_oficio(request, create=False)
@@ -2951,6 +2992,8 @@ def formulario(request):
             "status_label": status_context["status_label"],
             "status_class": status_context["status_class"],
             "erro": erro,
+            "return_to": request.session.get("wizard_return_to", ""),
+            "context_source": request.session.get("wizard_context_source", ""),
         },
     )
 
@@ -3474,6 +3517,12 @@ def oficio_step4(request):
             _clear_wizard_data(request)
             if return_url:
                 return redirect(return_url)
+            # Suporte ao padrão return_to genérico (fluxos guiados sem evento)
+            generic_return_to = request.session.pop("wizard_return_to", None)
+            request.session.pop("wizard_context_source", None)
+            request.session.pop("wizard_preselected_roteiro_id", None)
+            if generic_return_to:
+                return redirect(generic_return_to)
             return redirect("oficios_lista")
 
     context = _build_step4_context(wizard_data)
