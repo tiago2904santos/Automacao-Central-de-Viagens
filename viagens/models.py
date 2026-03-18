@@ -564,6 +564,53 @@ class TermoAutorizacao(models.Model):
         return f"Termo #{self.id}"
 
 
+class OficioViajante(models.Model):
+    """Tabela intermediária explícita para o vínculo Ofício ↔ Viajante.
+
+    Permite ordenação e snapshot de dados do viajante no momento do registro.
+    """
+
+    oficio = models.ForeignKey(
+        "Oficio",
+        on_delete=models.CASCADE,
+        related_name="oficio_viajantes",
+        verbose_name="Ofício",
+    )
+    viajante = models.ForeignKey(
+        Viajante,
+        on_delete=models.CASCADE,
+        related_name="oficio_viajantes",
+        verbose_name="Viajante",
+    )
+    ordem = models.PositiveIntegerField(default=0, verbose_name="Ordem")
+    nome_snapshot = models.CharField(
+        max_length=200, blank=True, default="", verbose_name="Nome (snapshot)"
+    )
+    cargo_snapshot = models.CharField(
+        max_length=200, blank=True, default="", verbose_name="Cargo (snapshot)"
+    )
+    unidade_snapshot = models.CharField(
+        max_length=200, blank=True, default="", verbose_name="Unidade (snapshot)"
+    )
+
+    class Meta:
+        unique_together = [("oficio", "viajante")]
+        ordering = ["ordem", "id"]
+        verbose_name = "Viajante do Ofício"
+        verbose_name_plural = "Viajantes do Ofício"
+
+    def __str__(self) -> str:
+        nome = self.nome_snapshot or (self.viajante.nome if self.viajante_id else "")
+        return f"{nome} — Ofício #{self.oficio_id}"
+
+    def save(self, *args, **kwargs):
+        if self.viajante_id and not self.nome_snapshot:
+            self.nome_snapshot = self.viajante.nome or ""
+        if self.viajante_id and not self.cargo_snapshot:
+            self.cargo_snapshot = self.viajante.cargo or ""
+        super().save(*args, **kwargs)
+
+
 class Oficio(models.Model):
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Rascunho"
@@ -766,7 +813,12 @@ class Oficio(models.Model):
         blank=True,
         related_name="oficios",
     )
-    viajantes = models.ManyToManyField(Viajante, related_name="oficios", blank=True)
+    viajantes = models.ManyToManyField(
+        Viajante,
+        through="OficioViajante",
+        related_name="oficios",
+        blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1451,6 +1503,66 @@ TrechoRoteiroViagem = TrechoRoteiro
 TrechoRoteiroDestino = TrechoRoteiro
 
 
+class RoteiroDestino(models.Model):
+    """Destino vinculado a um Roteiro — permite múltiplos destinos por roteiro."""
+
+    roteiro = models.ForeignKey(
+        Roteiro,
+        on_delete=models.CASCADE,
+        related_name="destinos",
+        verbose_name="Roteiro",
+    )
+    nome = models.CharField(max_length=200, verbose_name="Nome do destino")
+    estado = models.ForeignKey(
+        Estado,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="roteiro_destinos",
+        verbose_name="Estado",
+    )
+    cidade = models.ForeignKey(
+        Cidade,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="roteiro_destinos",
+        verbose_name="Cidade",
+    )
+    principal = models.BooleanField(default=False, verbose_name="Destino principal")
+    ordem = models.PositiveIntegerField(default=0, verbose_name="Ordem")
+
+    class Meta:
+        ordering = ["ordem", "id"]
+        verbose_name = "Destino do Roteiro"
+        verbose_name_plural = "Destinos do Roteiro"
+
+    def __str__(self) -> str:
+        return self.nome or f"Destino #{self.id}"
+
+
+class ModeloMotivo(models.Model):
+    """Modelo de texto para o campo 'motivo' do ofício.
+
+    Equivalente a ModeloJustificativa, mas para o campo motivo.
+    """
+
+    codigo = models.CharField(max_length=50, unique=True, verbose_name="Código")
+    label = models.CharField(max_length=200, verbose_name="Rótulo")
+    texto = models.TextField(verbose_name="Texto do motivo")
+    ordem = models.PositiveIntegerField(default=0, verbose_name="Ordem")
+    ativo = models.BooleanField(default=True, verbose_name="Ativo")
+    padrao = models.BooleanField(default=False, verbose_name="Padrão")
+
+    class Meta:
+        ordering = ["ordem", "label"]
+        verbose_name = "Modelo de Motivo"
+        verbose_name_plural = "Modelos de Motivo"
+
+    def __str__(self) -> str:
+        return self.label
+
+
 class PlanoTrabalho(models.Model):
     oficio = models.OneToOneField(
         Oficio,
@@ -1868,6 +1980,19 @@ class Trecho(models.Model):
     saida_hora = models.TimeField(null=True, blank=True)
     chegada_data = models.DateField(null=True, blank=True)
     chegada_hora = models.TimeField(null=True, blank=True)
+    distancia_km = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True, verbose_name="Distância (km)"
+    )
+    duracao_minutos = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Duração (minutos)"
+    )
+    is_retorno = models.BooleanField(default=False, verbose_name="Trecho de retorno")
+    tempo_pre_minutos = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Tempo auxiliar pré-saída (min)"
+    )
+    tempo_pos_minutos = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Tempo auxiliar pós-chegada (min)"
+    )
 
     class Meta:
         ordering = ["ordem"]
@@ -1876,3 +2001,7 @@ class Trecho(models.Model):
         origem = self.origem_cidade or self.origem_estado
         destino = self.destino_cidade or self.destino_estado
         return f"Trecho {self.ordem}: {origem} -> {destino}"
+
+
+#: Alias semântico — o mesmo modelo, referenciado pelo nome arquitetural.
+OficioTrecho = Trecho

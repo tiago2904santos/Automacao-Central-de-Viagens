@@ -1,0 +1,180 @@
+{% extends "viagens/base.html" %}
+{% load static %}
+
+{% block title %}Central de Documentos{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{% url 'documentos_central' %}">Central de Documentos</a>
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Central de Documentos</h2>
+      <p class="page-subtitle">
+        Crie e gerencie todos os documentos de forma independente — sem necessidade de vincular a um evento.
+      </p>
+    </div>
+  </div>
+
+  <div class="doc-hub-grid">
+
+    {# Ofícios #}
+    <div class="doc-hub-card">
+      <div class="doc-hub-card-header">
+        <i data-lucide="file-text"></i>
+        <h3>Ofícios</h3>
+        <span class="doc-hub-count">{{ total_oficios }}</span>
+      </div>
+      <p class="doc-hub-card-desc">
+        Autorizações de viagem independentes. Podem ser vinculados a eventos ou roteiros de forma opcional.
+      </p>
+      <div class="doc-hub-card-actions">
+        <a href="{% url 'formulario' %}" class="btn btn-primary btn-sm">
+          <i data-lucide="plus-circle"></i> Novo ofício
+        </a>
+        <a href="{% url 'oficios_lista' %}" class="btn btn-secondary btn-sm">
+          <i data-lucide="list"></i> Ver todos
+        </a>
+      </div>
+    </div>
+
+    {# Termos de Autorização #}
+    <div class="doc-hub-card">
+      <div class="doc-hub-card-header">
+        <i data-lucide="file-check"></i>
+        <h3>Termos de Autorização</h3>
+        <span class="doc-hub-count">{{ total_termos }}</span>
+      </div>
+      <p class="doc-hub-card-desc">
+        Termos emitidos para viajantes. Podem existir de forma independente ou vinculados a um ofício.
+      </p>
+      <div class="doc-hub-card-actions">
+        <a href="{% url 'termo_autorizacao_cadastro' %}" class="btn btn-primary btn-sm">
+          <i data-lucide="plus-circle"></i> Novo termo
+        </a>
+        <a href="{% url 'termos_autorizacao_lista' %}" class="btn btn-secondary btn-sm">
+          <i data-lucide="list"></i> Ver todos
+        </a>
+      </div>
+    </div>
+
+    {# Justificativas #}
+    <div class="doc-hub-card">
+      <div class="doc-hub-card-header">
+        <i data-lucide="align-left"></i>
+        <h3>Justificativas</h3>
+        <span class="doc-hub-count"></span>
+      </div>
+      <p class="doc-hub-card-desc">
+        Justificativas de viagem independentes ou vinculadas a um documento.
+      </p>
+      <div class="doc-hub-card-actions">
+        <a href="{% url 'justificativa_nova' %}" class="btn btn-primary btn-sm">
+          <i data-lucide="plus-circle"></i> Nova justificativa
+        </a>
+        <a href="{% url 'justificativas_lista' %}" class="btn btn-secondary btn-sm">
+          <i data-lucide="list"></i> Ver todas
+        </a>
+      </div>
+    </div>
+
+    {# Planos de Trabalho #}
+    <div class="doc-hub-card">
+      <div class="doc-hub-card-header">
+        <i data-lucide="clipboard-list"></i>
+        <h3>Planos de Trabalho</h3>
+        <span class="doc-hub-count">{{ total_planos }}</span>
+      </div>
+      <p class="doc-hub-card-desc">
+        Planejamento detalhado das atividades previstas na viagem.
+      </p>
+      <div class="doc-hub-card-actions">
+        <a href="{% url 'plano_trabalho_criar' %}" class="btn btn-primary btn-sm">
+          <i data-lucide="plus-circle"></i> Novo plano
+        </a>
+        <a href="{% url 'planos_trabalho_list' %}" class="btn btn-secondary btn-sm">
+          <i data-lucide="list"></i> Ver todos
+        </a>
+      </div>
+    </div>
+
+    {# Ordens de Serviço #}
+    <div class="doc-hub-card">
+      <div class="doc-hub-card-header">
+        <i data-lucide="briefcase"></i>
+        <h3>Ordens de Serviço</h3>
+        <span class="doc-hub-count">{{ total_ordens }}</span>
+      </div>
+      <p class="doc-hub-card-desc">
+        Ordens formais para execução de serviços durante viagens.
+      </p>
+      <div class="doc-hub-card-actions">
+        <a href="{% url 'ordem_servico_criar' %}" class="btn btn-primary btn-sm">
+          <i data-lucide="plus-circle"></i> Nova ordem
+        </a>
+        <a href="{% url 'ordens_servico_list' %}" class="btn btn-secondary btn-sm">
+          <i data-lucide="list"></i> Ver todas
+        </a>
+      </div>
+    </div>
+
+    {# Roteiros #}
+    <div class="doc-hub-card">
+      <div class="doc-hub-card-header">
+        <i data-lucide="map-pin"></i>
+        <h3>Roteiros</h3>
+        <span class="doc-hub-count">{{ total_roteiros }}</span>
+      </div>
+      <p class="doc-hub-card-desc">
+        Itinerários reutilizáveis. Podem ser criados de forma independente e vinculados opcionalmente a ofícios.
+      </p>
+      <div class="doc-hub-card-actions">
+        <a href="{% url 'roteiro_novo' %}" class="btn btn-primary btn-sm">
+          <i data-lucide="plus-circle"></i> Novo roteiro
+        </a>
+        <a href="{% url 'roteiro_lista' %}" class="btn btn-secondary btn-sm">
+          <i data-lucide="list"></i> Ver todos
+        </a>
+      </div>
+    </div>
+
+    {# Simulação de Diárias #}
+    <div class="doc-hub-card">
+      <div class="doc-hub-card-header">
+        <i data-lucide="calculator"></i>
+        <h3>Simulação de Diárias</h3>
+        <span class="doc-hub-count"></span>
+      </div>
+      <p class="doc-hub-card-desc">
+        Calcule e simule valores de diárias antes de emitir um ofício.
+      </p>
+      <div class="doc-hub-card-actions">
+        <a href="{% url 'simulacao_diarias' %}" class="btn btn-primary btn-sm">
+          <i data-lucide="play-circle"></i> Simular
+        </a>
+      </div>
+    </div>
+
+    {# Eventos (opcional) #}
+    <div class="doc-hub-card doc-hub-card--secondary">
+      <div class="doc-hub-card-header">
+        <i data-lucide="calendar-days"></i>
+        <h3>Eventos</h3>
+        <span class="doc-hub-count">{{ total_eventos }}</span>
+      </div>
+      <p class="doc-hub-card-desc">
+        Agrupador opcional. Use quando precisar organizar múltiplos documentos em um mesmo pacote de evento.
+      </p>
+      <div class="doc-hub-card-actions">
+        <a href="{% url 'evento_novo_guiado' %}" class="btn btn-primary btn-sm">
+          <i data-lucide="plus-circle"></i> Novo evento
+        </a>
+        <a href="{% url 'eventos_lista' %}" class="btn btn-secondary btn-sm">
+          <i data-lucide="list"></i> Ver todos
+        </a>
+      </div>
+    </div>
+
+  </div>
+{% endblock %}

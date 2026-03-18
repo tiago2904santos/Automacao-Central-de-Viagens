@@ -1,6 +1,6 @@
 from . import _shared as _shared_module
 from ._shared import *  # noqa: F401,F403
-from ._shared import _get_cargo_choices, _normalizar_cargo_key
+from ._shared import _get_cargo_choices, _normalizar_cargo_key, documentos_central  # noqa: F401
 from .api import *  # noqa: F401,F403
 from .cadastros import *  # noqa: F401,F403
 from .configuracoes import *  # noqa: F401,F403

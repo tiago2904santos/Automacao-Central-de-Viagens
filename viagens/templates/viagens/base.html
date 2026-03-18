@@ -31,6 +31,13 @@
               Painel
             </a>
           </li>
+          <li>
+            <a href="{% url 'documentos_central' %}"
+               class="{% if request.resolver_match.url_name == 'documentos_central' %}active{% endif %}">
+              <i data-lucide="folder-open"></i>
+              Central de Documentos
+            </a>
+          </li>
           <li class="has-submenu">
             <a href="#" class="submenu-toggle">
               <i data-lucide="file-text"></i>
@@ -128,6 +135,12 @@
               <i data-lucide="chevron-down" class="chevron"></i>
             </a>
             <ul class="submenu">
+              <li>
+                <a href="{% url 'documentos_central' %}">
+                  <i data-lucide="folder-open"></i>
+                  Central de Documentos
+                </a>
+              </li>
               <li>
                 <a href="{% url 'planos_trabalho_list' %}">
                   <i data-lucide="file-text"></i>
